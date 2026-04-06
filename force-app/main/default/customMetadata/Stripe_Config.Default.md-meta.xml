@@ -22,8 +22,4 @@
         <field>UseSandbox__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
-    <values>
-        <field>WebhookSigningSecret__c</field>
-        <value xsi:type="xsd:string">whsec_KstMNaBlO4sTB9eL5F0X7UYc6TlH</value>
-    </values>
 </CustomMetadata>
