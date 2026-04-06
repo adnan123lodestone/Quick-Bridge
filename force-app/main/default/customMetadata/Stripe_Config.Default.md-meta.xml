@@ -24,6 +24,6 @@
     </values>
     <values>
         <field>WebhookSigningSecret__c</field>
-        <value xsi:type="xsd:string">whsec_KstMNaBlO4sTB9eL5F0X7UYc6TlHt8H5</value>
+        <value xsi:type="xsd:string">whsec_KstMNaBlO4sTB9eL5F0X7UYc6TlH</value>
     </values>
 </CustomMetadata>
