@@ -1,0 +1,189 @@
+.container {
+    padding: 1.5rem;
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+.header-section {
+    margin-bottom: 2rem;
+}
+
+.header-section h1 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    color: #0b5394;
+    margin: 0;
+}
+
+.configuration-section {
+    background-color: #f3f3f3;
+    border-radius: 0.25rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.configuration-section .slds-col {
+    margin-bottom: 1rem;
+}
+
+.mapping-section {
+    background-color: #ffffff;
+    border: 1px solid #d8d8d8;
+    border-radius: 0.25rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.mapping-section h2 {
+    color: #0b5394;
+    margin-top: 0;
+}
+
+.slds-scrollable {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+    border-radius: 0.25rem;
+}
+
+.slds-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #ffffff;
+}
+
+.slds-table thead {
+    background-color: #f3f3f3;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.slds-table th {
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid #d8d8d8;
+    color: #333;
+    background-color: #f3f3f3;
+}
+
+.slds-table td {
+    padding: 0.75rem;
+    border: 1px solid #d8d8d8;
+    vertical-align: middle;
+}
+
+.slds-table tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+.slds-table tbody tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+::slotted(.combobox-cell) {
+    width: 100%;
+}
+
+.action-section {
+    text-align: center;
+    padding: 1rem 0;
+}
+
+.slds-m-right_medium {
+    margin-right: 1rem;
+}
+
+.slds-theme_error {
+    background-color: #ffd7d7;
+    border: 1px solid #c23030;
+    border-radius: 0.25rem;
+    padding: 1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+
+    .header-section h1 {
+        font-size: 1.5rem;
+    }
+
+    .slds-table {
+        font-size: 0.875rem;
+    }
+
+    .slds-table th,
+    .slds-table td {
+        padding: 0.5rem;
+    }
+
+    .slds-col {
+        padding: 0.5rem !important;
+    }
+
+    .mapping-section {
+        padding: 1rem;
+    }
+
+    .configuration-section {
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 0.5rem;
+    }
+
+    .header-section h1 {
+        font-size: 1.25rem;
+    }
+
+    .slds-table {
+        font-size: 0.75rem;
+    }
+
+    .slds-table th,
+    .slds-table td {
+        padding: 0.25rem;
+    }
+
+    .action-section lightning-button {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Form and Input Styling */
+fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+.slds-form-element__control {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.slds-radio {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.slds-radio__label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin: 0;
+}
+
+.slds-radio_faux {
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+}

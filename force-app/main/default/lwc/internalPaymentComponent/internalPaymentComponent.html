@@ -1,0 +1,276 @@
+<template>
+    <div class="payment-frame">
+    <lightning-card class="payment-card">
+        <div class="payment-shell">
+        <div class="payment-header">
+            <div>
+                <p class="payment-eyebrow">Secure Checkout</p>
+                <div class="provider-title">Choose Payment Method</div>
+                <p class="payment-subtitle">Select a gateway and complete the order using encrypted payment details.</p>
+            </div>
+            <div class="payment-trust-badge">Protected payment flow</div>
+        </div>
+
+        <div class="provider-section">
+            <div class="provider-section-header">
+                <div>
+                    <p class="provider-section-eyebrow">Available Gateways</p>
+                    <p class="provider-section-copy">Choose the best available gateway for this order. Disabled options will show the current blocker below.</p>
+                </div>
+                <div class="provider-section-badge">{selectedProviderLabel}</div>
+            </div>
+            <div class="provider-grid">
+                <div class="provider-tile-wrap">
+                    <button
+                        type="button"
+                        class={authorizeNetTileClass}
+                        data-provider="authorizenet"
+                        onclick={handleProviderSelection}
+                        disabled={isAuthorizeNetDisabled}
+                    >
+                        <span class="tile-logo tile-logo-authorize">AN</span>
+                        <span class="tile-name">Authorize.Net</span>
+                        <span class="tile-status">{authorizeNetStatusText}</span>
+                    </button>
+                    <template if:true={showAuthorizeNetHint}>
+                        <span class="provider-tile-hint" aria-label={authorizeNetDisabledMessage} tabindex="0">
+                            <lightning-icon icon-name="utility:error" size="xx-small" alternative-text="Unavailable reason"></lightning-icon>
+                            <span class="provider-tile-tooltip" role="tooltip">{authorizeNetDisabledMessage}</span>
+                        </span>
+                    </template>
+                </div>
+                <div class="provider-tile-wrap">
+                    <button
+                        type="button"
+                        class={stripeTileClass}
+                        data-provider="stripe"
+                        onclick={handleProviderSelection}
+                        disabled={isStripeDisabled}
+                    >
+                        <span class="tile-logo tile-logo-stripe">S</span>
+                        <span class="tile-name">Stripe</span>
+                        <span class="tile-status">{stripeStatusText}</span>
+                    </button>
+                    <template if:true={showStripeHint}>
+                        <span class="provider-tile-hint" aria-label={stripeDisabledMessage} tabindex="0">
+                            <lightning-icon icon-name="utility:error" size="xx-small" alternative-text="Unavailable reason"></lightning-icon>
+                            <span class="provider-tile-tooltip" role="tooltip">{stripeDisabledMessage}</span>
+                        </span>
+                    </template>
+                </div>
+                <div class="provider-tile-wrap">
+                    <button
+                        type="button"
+                        class={paypalTileClass}
+                        data-provider="paypal"
+                        onclick={handleProviderSelection}
+                        disabled={isPaypalDisabled}
+                    >
+                        <span class="tile-logo tile-logo-paypal">P</span>
+                        <span class="tile-name">PayPal</span>
+                        <span class="tile-status">{paypalStatusText}</span>
+                    </button>
+                    <template if:true={showPaypalHint}>
+                        <span class="provider-tile-hint" aria-label={paypalDisabledMessage} tabindex="0">
+                            <lightning-icon icon-name="utility:error" size="xx-small" alternative-text="Unavailable reason"></lightning-icon>
+                            <span class="provider-tile-tooltip" role="tooltip">{paypalDisabledMessage}</span>
+                        </span>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <template if:true={showUnavailableState}>
+        <section class="payment-panel payment-unavailable-panel">
+            <div class="payment-panel-header">
+                <p class="payment-panel-kicker">Payment Access</p>
+                <h3 class="payment-panel-title">No payment method is available</h3>
+                <p class="payment-panel-copy">Your current subscription does not include an active payment gateway. Subscribe to use these services and unlock secure checkout for this order.</p>
+            </div>
+            <div class="payment-unavailable-body">
+                <div class="payment-unavailable-badge">Subscription required</div>
+                <p class="payment-unavailable-copy">Once a gateway is activated, the card details or hosted checkout experience will appear here automatically.</p>
+            </div>
+        </section>
+        </template>
+
+        <template if:true={isAuthorizeNetSelected}>
+        <section class="payment-panel">
+        <div class="payment-panel-header">
+            <h3 class="payment-panel-title">Authorize.Net Card Entry</h3>
+            <p class="payment-panel-copy">Enter the cardholder and billing details below. Sensitive card data is tokenized before it is sent to the gateway.</p>
+        </div>
+        <div>
+            <lightning-input label={CardPayment_lables.index0} type="text" required class="slds-m-around--small Namecard" data-id="Namecard" value={paymentForm.cardName} oninput={handleCardNameInput} onblur={handleCardNameBlur} style="--lwc-colorTextError: black;--sds-c-input-text-color: black;"></lightning-input>
+            <lightning-input label={CardPayment_lables.index1} type="tel" required class="slds-m-around--small cardNumber" data-id="cardNumber" value={paymentForm.cardNumber} oninput={handleCardNumberInput} onblur={handleCardNumberBlur} style="--lwc-colorTextError: black;--sds-c-input-text-color: black;"></lightning-input>
+        </div>
+
+        <div class="cvv_expiery slds-grid slds-m-around--small">
+            <lightning-input label={CardPayment_lables.index2} type="tel" required class="slds-m-right--large cvvNumber" data-id="cvvNumber" value={paymentForm.securityCode} oninput={handleCvvInput} onblur={handleCvvBlur} style="--lwc-colorTextError: black;--sds-c-input-text-color: black;"></lightning-input>
+            <lightning-combobox name={CardPayment_lables.index3} label="Month" value={paymentForm.cardMonth} placeholder="Select Month" options={monthOptions} class="slds-m-right--large monthOptions" onchange={handleExpiryChange} style="--lwc-colorTextError: black;--sds-c-input-text-color: black;"></lightning-combobox>
+            <lightning-combobox name={CardPayment_lables.index4} label="Year" value={paymentForm.cardYear} placeholder="Select Year" options={yearOptions} class="slds-m-right--large yearOptions" onchange={handleExpiryChange} style="--lwc-colorTextError: black;--sds-c-input-text-color: black;"></lightning-combobox>
+
+        </div>
+        <div class="addressvalues slds-m-around--small">
+            <lightning-input label={CardPayment_lables.index5} type="text" class="cardAddressValue" data-id="cardAddressValue" data-field="cardAddressOne" value={paymentForm.cardAddressOne} onchange={handleTextFieldChange} style="--sds-c-input-text-color: black;"></lightning-input>
+        </div>
+        <div class="slds-grid slds-m-around--small">
+            <lightning-input label={CardPayment_lables.index6} type="text" class="slds-m-right--large cardcity slds-size--6-of-12" data-id="cardcity" data-field="cardCity" value={paymentForm.cardCity} onchange={handleTextFieldChange} style="--sds-c-input-text-color: black;"></lightning-input>
+            <lightning-combobox name={CardPayment_lables.index7} label="State" value={paymentForm.cardState} placeholder="Select State" options={stateValues} class="slds-m-right--large cardState" data-field="cardState" onchange={handleTextFieldChange} style="--sds-c-input-text-color: black;"></lightning-combobox>
+
+            <lightning-input label={CardPayment_lables.index8} type="text" class="slds-m-right--large cardZip" data-id="cardZip" value={paymentForm.cardZipCode} oninput={handleZipInput} onblur={handleZipBlur} style="--sds-c-input-text-color: black;"></lightning-input>
+        </div>
+
+        <div class="slds-m-around--small">
+            <lightning-input label={CardPayment_lables.index9} type="text" data-id="cardCountry" data-field="cardCountry" value={paymentForm.cardCountry} onchange={handleTextFieldChange} class="slds-m-right--large cardCountry" style="--sds-c-input-text-color: black;"></lightning-input>
+        </div>
+        <div class="payment-action-row slds-m-around--small">
+            <lightning-button variant="brand" label={proceedButtonLabel} onclick={handleProceedClick} disabled={isProceedDisabled}></lightning-button>
+        </div>
+        </section>
+        </template>
+
+        <template if:true={isStripeSelected}>
+            <section class="payment-panel">
+            <div class="payment-panel-header">
+                <h3 class="payment-panel-title">Stripe Secure Card Entry</h3>
+                <p class="payment-panel-copy">Stripe creates or reuses the customer on the order account and keeps the active card attached for future payments.</p>
+            </div>
+            <div>
+                <lightning-input label={CardPayment_lables.index0} type="text" required class="slds-m-around--small Namecard" data-id="Namecard" value={paymentForm.cardName} oninput={handleCardNameInput} onblur={handleCardNameBlur} style="--lwc-colorTextError: black;--sds-c-input-text-color: black;"></lightning-input>
+            </div>
+
+            <template if:true={showStripeLoader}>
+                <div class="stripe-loader slds-m-around--small">
+                    <lightning-spinner alternative-text="Loading Stripe" size="small"></lightning-spinner>
+                    <div class="stripe-loader-text">Loading Stripe secure card entry...</div>
+                </div>
+            </template>
+
+            <div class="slds-m-around--small">
+                <label class="stripe-card-label">Card Details</label>
+                <div class="stripe-card-shell">
+                    <div class="stripe-card-element" lwc:dom="manual"></div>
+                </div>
+                <div class="stripe-card-help">Type the Stripe test card details directly into the embedded Stripe field below.</div>
+                <div class="stripe-test-card">Test card: {stripeTestCardNumber}</div>
+                <template if:true={stripeCardError}>
+                    <div class="stripe-card-error">{stripeCardError}</div>
+                </template>
+            </div>
+
+            <div class="addressvalues slds-m-around--small">
+                <lightning-input label={CardPayment_lables.index5} type="text" class="cardAddressValue" data-id="cardAddressValue" data-field="cardAddressOne" value={paymentForm.cardAddressOne} onchange={handleTextFieldChange} style="--sds-c-input-text-color: black;"></lightning-input>
+            </div>
+            <div class="slds-grid slds-m-around--small">
+                <lightning-input label={CardPayment_lables.index6} type="text" class="slds-m-right--large cardcity slds-size--6-of-12" data-id="cardcity" data-field="cardCity" value={paymentForm.cardCity} onchange={handleTextFieldChange} style="--sds-c-input-text-color: black;"></lightning-input>
+                <lightning-combobox name={CardPayment_lables.index7} label="State" value={paymentForm.cardState} placeholder="Select State" options={stateValues} class="slds-m-right--large cardState" data-field="cardState" onchange={handleTextFieldChange} style="--sds-c-input-text-color: black;"></lightning-combobox>
+                <lightning-input label={CardPayment_lables.index8} type="text" class="slds-m-right--large cardZip" data-id="cardZip" value={paymentForm.cardZipCode} oninput={handleZipInput} onblur={handleZipBlur} style="--sds-c-input-text-color: black;"></lightning-input>
+            </div>
+
+            <div class="slds-m-around--small">
+                <lightning-input label={CardPayment_lables.index9} type="text" data-id="cardCountry" data-field="cardCountry" value={paymentForm.cardCountry} onchange={handleTextFieldChange} class="slds-m-right--large cardCountry" style="--sds-c-input-text-color: black;"></lightning-input>
+            </div>
+            <div class="payment-action-row slds-m-around--small">
+                <lightning-button variant="brand" label={proceedButtonLabel} onclick={handleProceedClick} disabled={isProceedDisabled}></lightning-button>
+            </div>
+            </section>
+        </template>
+
+        <template if:true={isPaypalSelected}>
+            <section class="payment-panel provider-placeholder">
+                <div class="payment-panel-header payment-panel-header-compact">
+                    <h3 class="payment-panel-title">PayPal Checkout</h3>
+                    <p class="payment-panel-copy">Use PayPal’s hosted approval flow when the current subscription is active.</p>
+                </div>
+                <template if:true={showPaypalLoader}>
+                    <lightning-spinner alternative-text="Loading PayPal" size="small"></lightning-spinner>
+                </template>
+                <div class="paypal-help">{paypalPreviewMessage}</div>
+                <div class="paypal-button-stage">
+                    <template if:true={canRenderPayPalButtons}>
+                        <div class="paypal-button-container" lwc:dom="manual"></div>
+                    </template>
+                    <template if:false={canRenderPayPalButtons}>
+                        <button type="button" class="paypal-final-button" disabled>
+                            <span class="paypal-final-brand">PayPal</span>
+                            <span class="paypal-final-separator"></span>
+                            <span class="paypal-final-label">Checkout</span>
+                        </button>
+                    </template>
+                </div>
+                <template if:true={showPaypalStatusMessage}>
+                    <div class="paypal-status-note">Current status: {paypalStatusMessage}</div>
+                </template>
+                <div class="payment-action-row slds-m-top_small">
+                    <lightning-button variant="brand" label={proceedButtonLabel} onclick={handleProceedClick} disabled={isProceedDisabled}></lightning-button>
+                </div>
+            </section>
+        </template>
+
+        </div>
+    </lightning-card>
+
+    <template if:true={showSuccessModal}>
+        <div class="payment-modal-layer" role="presentation">
+            <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="payment-success-heading" class="payment-modal payment-modal-success">
+                <div class="payment-modal-header">
+                    <div class="payment-modal-badge">Approved</div>
+                    <h2 id="payment-success-heading" class="payment-modal-title">Payment Successful</h2>
+                    <p class="payment-modal-subtitle">Your payment has been recorded successfully.</p>
+                </div>
+                <div class="payment-modal-content">
+                    <p class="payment-modal-message">{successDetails.message}</p>
+                    <div class="payment-modal-stat">
+                        <span class="payment-modal-stat-label">Transaction ID</span>
+                        <span class="payment-modal-stat-value">{successDetails.transId}</span>
+                    </div>
+                    <template if:true={successDetails.authCode}>
+                        <div class="payment-modal-stat">
+                            <span class="payment-modal-stat-label">Auth Code</span>
+                            <span class="payment-modal-stat-value">{successDetails.authCode}</span>
+                        </div>
+                    </template>
+                    <div class="payment-modal-stat">
+                        <span class="payment-modal-stat-label">Result</span>
+                        <span class="payment-modal-stat-value">{successDetails.resultCode}</span>
+                    </div>
+                </div>
+                <div class="payment-modal-footer">
+                    <lightning-button variant="brand" label="Close" onclick={closeSuccessModal}></lightning-button>
+                </div>
+            </section>
+        </div>
+    </template>
+
+    <template if:true={showErrorModal}>
+        <div class="payment-modal-layer" role="presentation">
+            <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="payment-error-heading" class="payment-modal payment-modal-error">
+                <div class="payment-modal-header payment-modal-header-error">
+                    <div class="payment-modal-badge payment-modal-badge-error">Needs Attention</div>
+                    <h2 id="payment-error-heading" class="payment-modal-title">Payment Error</h2>
+                    <p class="payment-modal-subtitle">The payment could not be completed. Review the details below.</p>
+                </div>
+                <div class="payment-modal-content">
+                    <p class="payment-modal-message">{errorDetails.message}</p>
+                    <template if:true={errorDetails.provider}>
+                        <div class="payment-modal-stat">
+                            <span class="payment-modal-stat-label">Provider</span>
+                            <span class="payment-modal-stat-value">{errorDetails.provider}</span>
+                        </div>
+                    </template>
+                    <template if:true={errorDetails.step}>
+                        <div class="payment-modal-stat">
+                            <span class="payment-modal-stat-label">Last step</span>
+                            <span class="payment-modal-stat-value">{errorDetails.step}</span>
+                        </div>
+                    </template>
+                </div>
+                <div class="payment-modal-footer">
+                    <lightning-button variant="neutral" label="Close" onclick={closeErrorModal}></lightning-button>
+                </div>
+            </section>
+        </div>
+    </template>
+    </div>
+</template>

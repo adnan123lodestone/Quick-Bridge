@@ -1,31 +1,53 @@
 public class QBAccountService {
+    public class SyncResult {
+        public Id accountId { get; set; }
+        public Boolean created { get; set; }
+        public String quickBooksId { get; set; }
+    }
+
     public static void syncAccountsToQuickBooks(List<Account> accounts, Boolean isInsert) {
-        List<Account> accountsToUpdate = new List<Account>();
-        
         for (Account acc : accounts) {
             try {
-                if (isInsert || acc.QuickbookID__c == null) {
-                    // Create new customer in QuickBooks
-                    String qbCustomerId = createCustomerInQuickBooks(acc);
-                    accountsToUpdate.add(new Account(
-                        Id = acc.Id,
-                        QuickbookID__c = qbCustomerId
-                    ));
-                } else {
-                    // Update existing customer in QuickBooks
-                    updateCustomerInQuickBooks(acc);
-                }
+                syncAccountToQuickBooks(acc, isInsert);
             } catch (Exception e) {
                 System.debug('Error syncing account ID ' + acc.Id + ': ' + e.getMessage());
                 System.debug(e.getStackTraceString());
                 // Consider adding error handling to notify admins
             }
         }
-        
-        // Update accounts with QuickBooks IDs
-        if (!accountsToUpdate.isEmpty()) {
-            Database.update(accountsToUpdate, false); // Allow partial success
+    }
+
+    public static SyncResult syncAccountToQuickBooks(Account acc, Boolean forceCreate) {
+        if (acc == null) {
+            throw new QBIntegrationException('Account is required for QuickBooks sync.');
         }
+
+        SyncResult result = new SyncResult();
+        result.accountId = acc.Id;
+
+        if (forceCreate || acc.QuickbookID__c == null) {
+            String qbCustomerId = createCustomerInQuickBooks(acc);
+            result.created = true;
+            result.quickBooksId = qbCustomerId;
+
+            if (acc.Id != null) {
+                QBTriggerHandler.isAccountProcessing = true;
+                try {
+                    update new Account(
+                        Id = acc.Id,
+                        QuickbookID__c = qbCustomerId
+                    );
+                } finally {
+                    QBTriggerHandler.isAccountProcessing = false;
+                }
+            }
+        } else {
+            updateCustomerInQuickBooks(acc);
+            result.created = false;
+            result.quickBooksId = acc.QuickbookID__c;
+        }
+
+        return result;
     }
     
     private static String createCustomerInQuickBooks(Account acc) {
@@ -119,7 +141,12 @@ public class QBAccountService {
                 }
             }
         }
-        
+
+        if (String.isNotBlank(acc.Name)) {
+            customerMap.put('DisplayName', acc.Name);
+            customerMap.put('FullyQualifiedName', acc.Name);
+        }
+
         // Ensure sparse is set to false for full updates
         customerMap.put('sparse', false);
         

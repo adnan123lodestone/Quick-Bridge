@@ -1,6 +1,6 @@
 public class QuickBooksAuthHandler {
     private static final String xvy;
-    private static final String NAMED_CREDENTIAL = 'Test_App';
+    private static final String NAMED_CREDENTIAL = 'QuickBookSandbox';
     private static final String QB_API_PATH = '/v3/company/';
     private static final String MINOR_VERSION = '?minorversion=65';
     

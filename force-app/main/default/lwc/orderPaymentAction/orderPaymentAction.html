@@ -1,0 +1,50 @@
+<template>
+    <template if:true={hasLoadError}>
+        <div class="order-payment-state order-payment-state-error">{loadError}</div>
+    </template>
+
+    <template if:false={hasLoadError}>
+        <template if:true={showLoadingState}>
+            <div class="order-payment-state order-payment-state-loading slds-is-relative">
+                <lightning-spinner alternative-text="Loading order payment details" size="small"></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:true={isReady}>
+            <section class="order-payment-shell">
+                <div class="order-payment-summary">
+                    <div class="order-payment-copy">
+                        <p class="order-payment-eyebrow">Order Payment</p>
+                        <h2 class="order-payment-title">Secure checkout for this order</h2>
+                        <p class="order-payment-subtitle">Review the amount and complete payment with the gateway of your choice.</p>
+                        <div class="order-payment-pill-row">
+                            <span class="order-payment-pill">Amount due now</span>
+                            <span class="order-payment-pill">Encrypted card flow</span>
+                            <span class="order-payment-pill">USD checkout</span>
+                        </div>
+                    </div>
+                    <div class="order-payment-amount-card">
+                        <span class="order-payment-amount-label">Order Amount</span>
+                        <span class="order-payment-amount-value">
+                            <lightning-formatted-number
+                                value={totalAmount}
+                                format-style="currency"
+                                currency-code="USD"
+                            ></lightning-formatted-number>
+                        </span>
+                        <span class="order-payment-amount-note">Collected securely through the selected payment gateway.</span>
+                    </div>
+                </div>
+
+                <div class="order-payment-body">
+                    <c-internal-payment-component
+                        amount={totalAmount}
+                        order-id={recordId}
+                        use-platform-session="true"
+                        onsuccessmodalclose={handlePaymentSuccessModalClose}
+                    ></c-internal-payment-component>
+                </div>
+            </section>
+        </template>
+    </template>
+</template>

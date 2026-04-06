@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Default</label>
+    <protected>true</protected>
+    <values>
+        <field>Active__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>EndDate__c</field>
+        <value xsi:type="xsd:date">2027-03-22</value>
+    </values>
+    <values>
+        <field>PublishableKey__c</field>
+        <value xsi:type="xsd:string">pk_test_51TGdnaCkZ7oErXIzo1ovaj4tqyGLrNhELk3Rf3MTvPSCsGTwqdxrUi4vdu5o4EL83lEbCUTqOy5xpOOgFKae5CcI00oCe25gsF</value>
+    </values>
+    <values>
+        <field>StartDate__c</field>
+        <value xsi:type="xsd:date">2026-04-03</value>
+    </values>
+    <values>
+        <field>UseSandbox__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>WebhookSigningSecret__c</field>
+        <value xsi:type="xsd:string">whsec_KstMNaBlO4sTB9eL5F0X7UYc6TlHt8H5</value>
+    </values>
+</CustomMetadata>
