@@ -156,7 +156,7 @@
     </values>
     <values>
         <field>Stripe_Publishable_Key__c</field>
-        <value xsi:type="xsd:string">pk_test_51TJeAS2cwei2qgKuoBMTKdW0G3AFtjaazAALWxhqFJV7X2kdQ91mO1WbNmwlkZg6ux9PwaJ3O9MCgMEpwH5vC7jw00inJ8a84J</value>
+        <value xsi:type="xsd:string"></value>
     </values>
     <values>
         <field>Stripe_Start_Date__c</field>
