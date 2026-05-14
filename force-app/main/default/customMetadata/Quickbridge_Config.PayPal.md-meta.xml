@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>PayPal</label>
+    <protected>false</protected>
+    <values>
+        <field>AuthorizeNet_API_Login_ID__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>AuthorizeNet_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>AuthorizeNet_End_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>AuthorizeNet_Public_Client_Key__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>AuthorizeNet_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>AuthorizeNet_Use_Sandbox__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>AuthorizeNet_Webhook_Signing_Key__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Available_Products_Visible__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Company_Name__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Account_Number__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>FedEx_Client_Id__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Client_Secret__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Default_Packaging_Type__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Default_Pickup_Type__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Default_Service_Type__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_End_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>FedEx_Environment__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Password__c</field>
+        <value xsi:type="xsd:string">1234</value>
+    </values>
+    <values>
+        <field>PayPal_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>PayPal_ClientId__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>PayPal_EndDate__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>PayPal_StartDate__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>PayPal_UseSandbox__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>QuickBooks_End_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>QuickBooks_Is_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>QuickBooks_Realm_ID__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>QuickBooks_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>QuickBooks_Verifier_Token__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Quickbooks_Default_Tax_Agency_Id__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Shopify_API_Key__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Shopify_API_Secret__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Shopify_Access_Token__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Shopify_End_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Shopify_Is_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Shopify_Store_URL__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Stripe_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Stripe_End_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Stripe_Publishable_Key__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Stripe_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Stripe_Use_Sandbox__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Stripe_Webhook_Signing_Secret__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Account_Number__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>UPS_Client_Id__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Client_Secret__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Default_Service_Code__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_End_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Environment__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Username__c</field>
+        <value xsi:type="xsd:string">testuser</value>
+    </values>
+</CustomMetadata>

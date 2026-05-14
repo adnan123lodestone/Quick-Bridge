@@ -25,6 +25,13 @@ public class QBTriggerHandler {
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleAccountTrigger: ' + e.getMessage());
             System.debug(e.getStackTraceString());
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QBTriggerHandler.handleAccountTrigger',
+                e,
+                'Account',
+                newList == null || newList.isEmpty() ? null : newList[0].Id
+            );
         } finally {
             isAccountProcessing = false;
         }
@@ -49,6 +56,13 @@ public class QBTriggerHandler {
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleProductTrigger: ' + e.getMessage());
             System.debug(e.getStackTraceString());
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QBTriggerHandler.handleProductTrigger',
+                e,
+                'Product2',
+                newList == null || newList.isEmpty() ? null : newList[0].Id
+            );
         } finally {
             isProductProcessing = false;
         }

@@ -1,0 +1,127 @@
+<template>
+    <div class="fedex-mapping">
+        <template if:true={isLoading}>
+            <div class="loading-spinner">
+                <lightning-spinner alternative-text="Loading FedEx mappings..." size="medium"></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:false={isLoading}>
+            <section class="action-panel">
+                <div class="action-header">
+                    <div>
+                        <h2>FedEx Operations</h2>
+                        <p>Configure request and response field mappings for the shipping workflows exposed in QuickBridge.</p>
+                    </div>
+                    <span class="scope-pill">{selectedActionScope}</span>
+                </div>
+
+                <div class="action-grid">
+                    <template for:each={actionOptions} for:item="action">
+                        <button key={action.value} type="button" class={action.className} data-action={action.value} onclick={handleActionSelect}>
+                            <span>{action.label}</span>
+                            <small>{action.scope}</small>
+                        </button>
+                    </template>
+                </div>
+            </section>
+
+            <section class="mapping-shell">
+                <div class="mapping-summary">
+                    <div>
+                        <h3>{selectedActionLabel}</h3>
+                        <p>{selectedActionNote}</p>
+                    </div>
+                    <template if:true={isExceptionAction}>
+                        <div class="exception-callout">
+                            Exception handling is rule-driven. Use mapping only for the final exception fields you want written back.
+                        </div>
+                    </template>
+                </div>
+
+                <div class="selector-row">
+                    <div class="selector-field">
+                        <label>Salesforce Object</label>
+                        <select value={selectedSFObject} onchange={handleSalesforceObjectChange}>
+                            <template for:each={sfObjectOptions} for:item="option">
+                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="selector-field">
+                        <label>Mapping Direction</label>
+                        <select value={selectedDirection} onchange={handleDirectionChange}>
+                            <template for:each={directionOptions} for:item="option">
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="selector-action">
+                        <button type="button" class="btn-primary" onclick={handleAddRow}>Add Field</button>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>FedEx Field</th>
+                                <th>Salesforce Field</th>
+                                <th>Direction</th>
+                                <th class="action-col">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template for:each={mappingRows} for:item="row">
+                                <tr key={row.id}>
+                                    <td>
+                                        <div class="field-with-required">
+                                            <select value={row.externalField} onchange={handleExternalFieldChange} data-row-id={row.id} disabled={row.isMandatory}>
+                                                <option value="">-- None --</option>
+                                                <template for:each={row.externalFieldOptions} for:item="option">
+                                                    <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                                </template>
+                                            </select>
+                                            <template if:true={row.isMandatory}>
+                                                <span title="Required FedEx field">*</span>
+                                            </template>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <select value={row.sfField} onchange={handleSFFieldChange} data-row-id={row.id} disabled={row.isSFFieldDisabled}>
+                                            <option value="">-- None --</option>
+                                            <template for:each={row.sfFieldOptions} for:item="option">
+                                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                            </template>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <span class="direction-chip">{row.syncDirection}</span>
+                                    </td>
+                                    <td class="action-col">
+                                        <template if:false={row.isMandatory}>
+                                            <button type="button" class="icon-button" title="Delete" onclick={handleRemoveRow} data-row-id={row.id}>
+                                                <lightning-icon icon-name="utility:delete" size="x-small"></lightning-icon>
+                                            </button>
+                                        </template>
+                                        <template if:true={row.isMandatory}>
+                                            <lightning-icon icon-name="utility:lock" size="x-small" title="Required field"></lightning-icon>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <footer class="footer-actions">
+                    <p>Address validation issue/warning fields are intentionally excluded from mapping.</p>
+                    <div>
+                        <button type="button" class="btn-secondary" onclick={handleReset}>Reset</button>
+                        <button type="button" class="btn-primary" onclick={handleSave}>Save Mappings</button>
+                    </div>
+                </footer>
+            </section>
+        </template>
+    </div>
+</template>

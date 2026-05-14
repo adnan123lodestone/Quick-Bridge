@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Sync_Direction__c</fullName>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Sync Direction</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Two-Way</fullName>
+                <default>true</default>
+                <label>Two-Way</label>
+            </value>
+            <value>
+                <fullName>SF to QBO</fullName>
+                <default>false</default>
+                <label>SF to QBO</label>
+            </value>
+            <value>
+                <fullName>QBO to SF</fullName>
+                <default>false</default>
+                <label>QBO to SF</label>
+            </value>
+            <value>
+                <fullName>SF to Shopify</fullName>
+                <default>false</default>
+                <label>SF to Shopify</label>
+            </value>
+            <value>
+                <fullName>Shopify to SF</fullName>
+                <default>false</default>
+                <label>Shopify to SF</label>
+            </value>
+            <value>
+                <fullName>SF to FedEx</fullName>
+                <default>false</default>
+                <label>SF to FedEx</label>
+            </value>
+            <value>
+                <fullName>FedEx to SF</fullName>
+                <default>false</default>
+                <label>FedEx to SF</label>
+            </value>
+            <value>
+                <fullName>SF to UPS</fullName>
+                <default>false</default>
+                <label>SF to UPS</label>
+            </value>
+            <value>
+                <fullName>UPS to SF</fullName>
+                <default>false</default>
+                <label>UPS to SF</label>
+            </value>
+            <value>
+                <fullName>SF to Carrier</fullName>
+                <default>false</default>
+                <label>SF to Carrier</label>
+            </value>
+            <value>
+                <fullName>Carrier to SF</fullName>
+                <default>false</default>
+                <label>Carrier to SF</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

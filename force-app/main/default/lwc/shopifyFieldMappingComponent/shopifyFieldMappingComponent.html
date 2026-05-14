@@ -1,0 +1,117 @@
+<template>
+    <div class="mapping-container">
+        <template if:true={isLoading}>
+            <div class="loading-spinner">
+                <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:false={isLoading}>
+            <div class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large">
+                <div class="slds-grid slds-grid_vertical-align-center slds-gutters">
+                    <div class="slds-col slds-size_2-of-5">
+                        <label class="custom-label">Salesforce Object</label>
+                        <select class="custom-select" name="sfObject" value={selectedSFObject} onchange={handleSalesforceObjectChange}>
+                            <template for:each={sfObjectOptions} for:item="option">
+                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="slds-col icon-col slds-text-align_center">
+                        <lightning-icon icon-name="utility:right" size="x-small" class="swap-icon"></lightning-icon>
+                    </div>
+                    <div class="slds-col slds-size_2-of-5">
+                        <label class="custom-label">Shopify Object</label>
+                        <select class="custom-select" name="shopifyObject" value={selectedShopifyObject} onchange={handleShopifyObjectChange}>
+                            <template for:each={shopifyObjectOptions} for:item="option">
+                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="slds-col action-btn-col">
+                        <button class="btn-primary" onclick={handleAddRow} disabled={isMappingBlocked}>Add Field</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ui-card table-card slds-p-around_large">
+                <h3 class="box-title">Sync Settings - Shopify Field Mappings</h3>
+                <p class="slds-m-bottom_medium slds-text-color_weak font-size-sm">Choose fields from Salesforce and Shopify to sync between.</p>
+                <template if:true={directionConflictMessage}>
+                    <div class="slds-notify slds-notify_alert slds-alert_warning slds-m-bottom_medium" role="alert">
+                        <span>{directionConflictMessage}</span>
+                    </div>
+                </template>
+
+                <table class="new-mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Shopify Field</th>
+                            <th style="text-align: center;">Sync Direction</th>
+                            <th>Salesforce Field</th>
+                            <th style="text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template for:each={mappingRows} for:item="row">
+                            <tr key={row.id}>
+                                <td class="input-cell">
+                                    <div style="display: flex; align-items: center;">
+                                        <select class="custom-select-table" name="externalField" value={row.externalField} onchange={handleExternalFieldChange} data-row-id={row.id} disabled={row.isMandatory}>
+                                            <option value="">-- None --</option>
+                                            <template for:each={row.externalFieldOptions} for:item="option">
+                                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                            </template>
+                                        </select>
+                                        <template if:true={row.isMandatory}>
+                                            <span style="color: #ef4444; font-size: 1.2rem; font-weight: bold; margin-left: 6px; line-height: 1;" title="Required Shopify Field">*</span>
+                                        </template>
+                                    </div>
+                                </td>
+
+                                <td style="text-align: center; padding: 0.5rem;">
+                                    <div class="slds-grid slds-grid_vertical-align-center slds-grid_align-center">
+                                        <select class="custom-select-table" style="text-align: center; font-size:0.85rem;" name="syncDirection" value={row.syncDirection} onchange={handleSyncDirectionChange} data-row-id={row.id} disabled={isMappingBlocked}>
+                                            <template for:each={row.syncDirectionOptions} for:item="option">
+                                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                            </template>
+                                        </select>
+                                        <lightning-icon icon-name="utility:back" size="x-small" class="dir-icon-green slds-m-left_x-small" style="transform: rotate(180deg); margin-left: 10px;"></lightning-icon>
+                                    </div>
+                                </td>
+
+                                <td class="input-cell">
+                                    <select class="custom-select-table" name="sfField" value={row.sfField} onchange={handleSFFieldChange} data-row-id={row.id} disabled={row.isSFFieldDisabled}>
+                                        <option value="">-- None --</option>
+                                        <template for:each={row.sfFieldOptions} for:item="option">
+                                            <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                        </template>
+                                    </select>
+                                </td>
+
+                                <td class="action-cell">
+                                    <template if:false={row.isMandatory}>
+                                        <button class="slds-button slds-button_icon trash-btn" title="Delete" onclick={handleRemoveRow} data-row-id={row.id}>
+                                            <lightning-icon icon-name="utility:delete" size="x-small"></lightning-icon>
+                                        </button>
+                                    </template>
+                                    <template if:true={row.isMandatory}>
+                                        <lightning-icon icon-name="utility:lock" size="x-small" title="Locked" style="--sds-c-icon-color-foreground-default: #94a3b8;"></lightning-icon>
+                                    </template>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="slds-m-top_large slds-grid slds-grid_align-spread">
+                <div><p class="slds-text-color_weak font-size-sm">Map fields between Salesforce and Shopify, then save.</p></div>
+                <div class="slds-grid slds-gutters">
+                    <div class="slds-col"><button class="btn-secondary" onclick={handleReset}>Reset</button></div>
+                    <div class="slds-col"><button class="btn-primary" onclick={handleSave} disabled={isMappingBlocked}>Save Mappings</button></div>
+                </div>
+            </div>
+        </template>
+    </div>
+</template>

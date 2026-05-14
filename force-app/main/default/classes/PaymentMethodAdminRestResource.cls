@@ -28,12 +28,33 @@ global without sharing class PaymentMethodAdminRestResource {
             return JSON.serialize(response);
         } catch (PaymentMethodAdminService.PaymentMethodAdminException e) {
             restResponse.statusCode = 400;
+            ErrorLogUtility.logException(
+                'QuickBridge',
+                'PaymentMethodAdminRestResource.deactivatePaymentMethods',
+                e,
+                null,
+                null
+            );
             return JSON.serialize(buildErrorResponse(e.getMessage()));
         } catch (JSONException e) {
             restResponse.statusCode = 400;
+            ErrorLogUtility.logException(
+                'QuickBridge',
+                'PaymentMethodAdminRestResource.deactivatePaymentMethods.parse',
+                e,
+                null,
+                null
+            );
             return JSON.serialize(buildErrorResponse('The request body could not be parsed.'));
         } catch (Exception e) {
             restResponse.statusCode = 500;
+            ErrorLogUtility.logException(
+                'QuickBridge',
+                'PaymentMethodAdminRestResource.deactivatePaymentMethods.unexpected',
+                e,
+                null,
+                null
+            );
             return JSON.serialize(
                 buildErrorResponse('Payment method sync failed: ' + e.getMessage())
             );

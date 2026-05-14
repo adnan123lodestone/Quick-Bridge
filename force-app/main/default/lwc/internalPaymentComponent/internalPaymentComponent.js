@@ -7,16 +7,16 @@ import getPayPalClientConfig from "@salesforce/apex/PayPalPaymentService.getClie
 import createPayPalOrder from "@salesforce/apex/PayPalPaymentService.createOrder";
 import capturePayPalOrder from "@salesforce/apex/PayPalPaymentService.captureOrder";
 import CardPayment_lables from "@salesforce/label/c.CardPayment_lables";
+import getActiveGatewaysForCheckout from "@salesforce/apex/PaymentGatewayService.getActiveGatewaysForCheckout";
 
 let acceptJsPromise;
 let stripeJsPromise;
 let paypalJsPromise;
 
-const AUTHORIZE_NET_TEST_CARD_NUMBER = "5424 0000 0000 0015";
-const STRIPE_TEST_CARD_NUMBER = "4242 4242 4242 4242";
+const FORM_CACHE_KEY = 'QuickBridge_Payment_Form_Data';
 
 export default class PaymentComponent extends LightningElement {
-  selectedProvider = "authorizenet";
+  selectedProvider = null; 
   @api amount = 1;
   @api orderId = "";
   @api usePlatformSession = false;
@@ -27,18 +27,20 @@ export default class PaymentComponent extends LightningElement {
   successDetails = {};
   stripeDebugMessages = [];
   stripeLastStep = "Idle";
+  
   paymentForm = {
-    cardName: "Akash Memon",
-    cardNumber: AUTHORIZE_NET_TEST_CARD_NUMBER,
-    securityCode: "123",
-    cardMonth: "12",
-    cardYear: "2026",
-    cardAddressOne: "ABC Street",
-    cardCity: "Karachi",
-    cardState: "AK",
-    cardZipCode: "12345",
-    cardCountry: "PK",
+    cardName: "",
+    cardNumber: "",
+    securityCode: "",
+    cardMonth: "",
+    cardYear: "",
+    cardAddressOne: "",
+    cardCity: "",
+    cardState: "",
+    cardZipCode: "",
+    cardCountry: "",
   };
+  
   authorizeNetConfig;
   authorizeNetReadyPromise;
   authorizeNetLibraryUrl;
@@ -66,6 +68,8 @@ export default class PaymentComponent extends LightningElement {
   errorReturnObj;
   yearOptions = [];
 
+  showCancelWarningModal = false;
+
   connectedCallback() {
     this.monthOptions = Array.from({ length: 12 }, (_, index) => {
       const value = String(index + 1);
@@ -78,25 +82,24 @@ export default class PaymentComponent extends LightningElement {
       return { label: value, value };
     });
 
+    const cachedData = sessionStorage.getItem(FORM_CACHE_KEY);
+    if (cachedData) {
+      try {
+        const parsedData = JSON.parse(cachedData);
+        this.paymentForm = { ...this.paymentForm, ...parsedData };
+      } catch (e) {
+        console.error('Error reading cached payment data');
+      }
+    }
+
     this.initializeProviderConfigs();
   }
 
   renderedCallback() {
-    if (
-      this.selectedProvider === "stripe" &&
-      this.stripeInstance &&
-      !this.stripeCardMounted &&
-      !this.isStripeInitializing
-    ) {
+    if (this.selectedProvider === "stripe" && this.stripeInstance && !this.stripeCardMounted && !this.isStripeInitializing) {
       this.mountStripeCardElement();
     }
-
-    if (
-      this.selectedProvider === "paypal" &&
-      this.canRenderPayPalButtons &&
-      !this.paypalButtonsMounted &&
-      !this.isPaypalInitializing
-    ) {
+    if (this.selectedProvider === "paypal" && this.canRenderPayPalButtons && !this.paypalButtonsMounted && !this.isPaypalInitializing) {
       this.mountPayPalButtons();
     }
   }
@@ -107,219 +110,62 @@ export default class PaymentComponent extends LightningElement {
   }
 
   stateValues = [
-    { label: "AK", value: "AK" },
-    { label: "AL", value: "AL" },
-    { label: "AR", value: "AR" },
-    { label: "AZ", value: "AZ" },
-    { label: "CA", value: "CA" },
-    { label: "CO", value: "CO" },
-    { label: "CT", value: "CT" },
-    { label: "DC", value: "DC" },
-    { label: "DE", value: "DE" },
-    { label: "FL", value: "FL" },
-    { label: "GA", value: "GA" },
-    { label: "HI", value: "HI" },
-    { label: "IA", value: "IA" },
-    { label: "ID", value: "ID" },
-    { label: "IL", value: "IL" },
-    { label: "IN", value: "IN" },
-    { label: "KS", value: "KS" },
-    { label: "KY", value: "KY" },
-    { label: "LA", value: "LA" },
-    { label: "MA", value: "MA" },
-    { label: "MD", value: "MD" },
-    { label: "ME", value: "ME" },
-    { label: "MI", value: "MI" },
-    { label: "MN", value: "MN" },
-    { label: "MO", value: "MO" },
-    { label: "MS", value: "MS" },
-    { label: "MT", value: "MT" },
-    { label: "NC", value: "NC" },
-    { label: "ND", value: "ND" },
-    { label: "NE", value: "NE" },
-    { label: "NH", value: "NH" },
-    { label: "NJ", value: "NJ" },
-    { label: "NM", value: "NM" },
-    { label: "NV", value: "NV" },
-    { label: "NY", value: "NY" },
-    { label: "OH", value: "OH" },
-    { label: "OK", value: "OK" },
-    { label: "OR", value: "OR" },
-    { label: "PA", value: "PA" },
-    { label: "RI", value: "RI" },
-    { label: "SC", value: "SC" },
-    { label: "SD", value: "SD" },
-    { label: "TN", value: "TN" },
-    { label: "TX", value: "TX" },
-    { label: "UT", value: "UT" },
-    { label: "VA", value: "VA" },
-    { label: "VT", value: "VT" },
-    { label: "WA", value: "WA" },
-    { label: "WI", value: "WI" },
-    { label: "WV", value: "WV" },
-    { label: "WY", value: "WY" },
-    { label: "PR", value: "PR" },
-    { label: "AB", value: "AB" },
-    { label: "BC", value: "BC" },
-    { label: "MB", value: "MB" },
-    { label: "NB", value: "NB" },
-    { label: "NL", value: "NL" },
-    { label: "NT", value: "NT" },
-    { label: "NS", value: "NS" },
-    { label: "NU", value: "NU" },
-    { label: "ON", value: "ON" },
-    { label: "PE", value: "PE" },
-    { label: "QC", value: "QC" },
-    { label: "SK", value: "SK" },
-    { label: "YT", value: "YT" },
-    { label: "Outside US/Canada", value: "Outside US/Canada" },
+    { label: "AK", value: "AK" }, { label: "AL", value: "AL" }, { label: "AR", value: "AR" },
+    { label: "CA", value: "CA" }, { label: "FL", value: "FL" }, { label: "NY", value: "NY" },
+    { label: "TX", value: "TX" }, { label: "Outside US/Canada", value: "Outside US/Canada" },
   ];
 
-  get isAuthorizeNetSelected() {
-    return this.selectedProvider === "authorizenet";
-  }
-
-  get isStripeSelected() {
-    return this.selectedProvider === "stripe";
-  }
-
-  get isPaypalSelected() {
-    return this.selectedProvider === "paypal";
-  }
-
-  get hasAvailableProviders() {
-    return this.availableProviderCount > 0;
-  }
-
-  get showUnavailableState() {
-    return !this.hasAvailableProviders;
-  }
+  get isAuthorizeNetSelected() { return this.selectedProvider === "authorizenet"; }
+  get isStripeSelected() { return this.selectedProvider === "stripe"; }
+  get isPaypalSelected() { return this.selectedProvider === "paypal"; }
+  get hasAvailableProviders() { return this.availableProviderCount > 0; }
+  get showUnavailableState() { return !this.hasAvailableProviders; }
 
   get availableProviderCount() {
     let count = 0;
-
-    if (this.isAuthorizeNetActive) {
-      count += 1;
-    }
-
-    if (this.isStripeActive) {
-      count += 1;
-    }
-
-    if (this.isPayPalActive) {
-      count += 1;
-    }
-
+    if (this.isAuthorizeNetActive) count += 1;
+    if (this.isStripeActive) count += 1;
+    if (this.isPayPalActive) count += 1;
     return count;
   }
 
-  get authorizeNetTileClass() {
-    return this.getProviderTileClass("authorizenet");
-  }
+  get authorizeNetTileClass() { return this.getProviderTileClass("authorizenet"); }
+  get stripeTileClass() { return this.getProviderTileClass("stripe"); }
+  get paypalTileClass() { return this.getProviderTileClass("paypal"); }
 
-  get stripeTileClass() {
-    return this.getProviderTileClass("stripe");
-  }
+  get isAuthorizeNetActive() { return this.authorizeNetConfig?.active === true; }
+  get isStripeActive() { return this.stripeConfig?.active === true; }
+  get isPayPalActive() { return this.paypalConfig?.active === true; }
+  get isPayPalConfigured() { return this.paypalConfig?.configured === true; }
+  get canRenderPayPalButtons() { return this.isPayPalActive && this.isPayPalConfigured; }
 
-  get paypalTileClass() {
-    return this.getProviderTileClass("paypal");
-  }
+  get isAuthorizeNetDisabled() { return !this.isProviderSelectable("authorizenet"); }
+  get isStripeDisabled() { return !this.isProviderSelectable("stripe"); }
+  get isPaypalDisabled() { return !this.isProviderSelectable("paypal"); }
 
-  get isAuthorizeNetActive() {
-    return this.authorizeNetConfig?.active === true;
-  }
+  get authorizeNetDisabledMessage() { return this.getDisabledProviderMessage(this.authorizeNetConfig); }
+  get stripeDisabledMessage() { return this.getDisabledProviderMessage(this.stripeConfig); }
+  get paypalDisabledMessage() { return this.getDisabledProviderMessage(this.paypalConfig); }
 
-  get isStripeActive() {
-    return this.stripeConfig?.active === true;
-  }
+  get showAuthorizeNetHint() { return this.isAuthorizeNetDisabled && !!this.authorizeNetDisabledMessage; }
+  get showStripeHint() { return this.isStripeDisabled && !!this.stripeDisabledMessage; }
+  get showPaypalHint() { return this.isPaypalDisabled && !!this.paypalDisabledMessage; }
 
-  get isPayPalActive() {
-    return this.paypalConfig?.active === true;
-  }
-
-  get isPayPalConfigured() {
-    return this.paypalConfig?.configured === true;
-  }
-
-  get canRenderPayPalButtons() {
-    return this.isPayPalActive && this.isPayPalConfigured;
-  }
-
-  get isAuthorizeNetDisabled() {
-    return !this.isProviderSelectable("authorizenet");
-  }
-
-  get isStripeDisabled() {
-    return !this.isProviderSelectable("stripe");
-  }
-
-  get isPaypalDisabled() {
-    return !this.isProviderSelectable("paypal");
-  }
-
-  get authorizeNetDisabledMessage() {
-    return this.getDisabledProviderMessage(this.authorizeNetConfig);
-  }
-
-  get stripeDisabledMessage() {
-    return this.getDisabledProviderMessage(this.stripeConfig);
-  }
-
-  get paypalDisabledMessage() {
-    return this.getDisabledProviderMessage(this.paypalConfig);
-  }
-
-  get showAuthorizeNetHint() {
-    return this.isAuthorizeNetDisabled && !!this.authorizeNetDisabledMessage;
-  }
-
-  get showStripeHint() {
-    return this.isStripeDisabled && !!this.stripeDisabledMessage;
-  }
-
-  get showPaypalHint() {
-    return this.isPaypalDisabled && !!this.paypalDisabledMessage;
-  }
-
-  get stripeTestCardNumber() {
-    return this.paymentForm.cardNumber || STRIPE_TEST_CARD_NUMBER;
-  }
+  get stripeTestCardNumber() { return this.paymentForm.cardNumber || ""; }
 
   get selectedProviderLabel() {
-    if (!this.hasAvailableProviders) {
-      return "No Active Gateway";
-    }
-
-    if (this.selectedProvider === "stripe") {
-      return "Stripe Selected";
-    }
-
-    if (this.selectedProvider === "paypal") {
-      return "PayPal Selected";
-    }
-
+    if (!this.hasAvailableProviders) return "No Active Gateway";
+    if (this.selectedProvider === "stripe") return "Stripe Selected";
+    if (this.selectedProvider === "paypal") return "PayPal Selected";
     return "Authorize.Net Selected";
   }
 
-  get authorizeNetStatusText() {
-    return this.getProviderStatusText(this.authorizeNetConfig);
-  }
+  get authorizeNetStatusText() { return this.getProviderStatusText(this.authorizeNetConfig); }
+  get stripeStatusText() { return this.getProviderStatusText(this.stripeConfig); }
+  get paypalStatusText() { return this.getProviderStatusText(this.paypalConfig); }
 
-  get stripeStatusText() {
-    return this.getProviderStatusText(this.stripeConfig);
-  }
-
-  get paypalStatusText() {
-    return this.getProviderStatusText(this.paypalConfig);
-  }
-
-  get showStripeLoader() {
-    return this.isStripeSelected && this.isStripeInitializing;
-  }
-
-  get showPaypalLoader() {
-    return this.isPaypalSelected && this.isPaypalInitializing;
-  }
+  get showStripeLoader() { return this.isStripeSelected && this.isStripeInitializing; }
+  get showPaypalLoader() { return this.isPaypalSelected && this.isPaypalInitializing; }
 
   get paypalPreviewMessage() {
     return this.canRenderPayPalButtons
@@ -327,103 +173,79 @@ export default class PaymentComponent extends LightningElement {
       : "PayPal will appear here once the current PayPal configuration is active.";
   }
 
-  get paypalStatusMessage() {
-    return this.canRenderPayPalButtons ? "" : this.paypalConfig?.message || "";
-  }
-
-  get showPaypalStatusMessage() {
-    return !!this.paypalStatusMessage;
-  }
+  get paypalStatusMessage() { return this.canRenderPayPalButtons ? "" : this.paypalConfig?.message || ""; }
+  get showPaypalStatusMessage() { return !!this.paypalStatusMessage; }
 
   get proceedButtonLabel() {
-    if (this.isSubmitting) {
-      return "Processing...";
-    }
-
-    if (this.selectedProvider === "stripe") {
-      return "Proceed with Stripe";
-    }
-
-    if (this.selectedProvider === "paypal") {
-      return "Pay with PayPal";
-    }
-
+    if (this.isSubmitting) return "Processing...";
+    if (this.selectedProvider === "stripe") return "Proceed with Stripe";
+    if (this.selectedProvider === "paypal") return "Pay with PayPal";
     return "Proceed with Authorize.Net";
   }
 
   get isProceedDisabled() {
-    if (!this.hasAvailableProviders) {
-      return true;
-    }
-
-    if (this.selectedProvider === "paypal") {
-      return true;
-    }
-
+    if (!this.hasAvailableProviders) return true;
+    if (this.selectedProvider === "paypal") return true;
     return this.isSubmitting || this.showStripeLoader || !this.hasValidAmount() || !this.isProviderSelectable(this.selectedProvider);
   }
 
   getProviderTileClass(providerName) {
     const classes = ["provider-tile"];
-    if (this.selectedProvider === providerName) {
-      classes.push("provider-tile-selected");
-    }
-    if (!this.isProviderSelectable(providerName)) {
-      classes.push("provider-tile-disabled");
-    }
+    if (this.selectedProvider === providerName) classes.push("provider-tile-selected");
+    if (!this.isProviderSelectable(providerName)) classes.push("provider-tile-disabled");
     return classes.join(" ");
   }
 
   async initializeProviderConfigs() {
-    const [authorizeNetResult, stripeResult, paypalResult] = await Promise.allSettled([
-      getAuthorizeNetClientConfig(),
-      getStripeClientConfig(),
-      getPayPalClientConfig(),
-    ]);
+    try {
+      const serverResponseStr = await getActiveGatewaysForCheckout();
+      const serverResponse = JSON.parse(serverResponseStr);
 
-    this.authorizeNetConfig = authorizeNetResult.status === "fulfilled"
-      ? authorizeNetResult.value
-      : this.buildUnavailableProviderConfig(
-          "Authorize.Net configuration could not be loaded.",
-          authorizeNetResult.reason
-        );
-
-    this.stripeConfig = stripeResult.status === "fulfilled"
-      ? stripeResult.value
-      : this.buildUnavailableProviderConfig(
-          "Stripe configuration could not be loaded.",
-          stripeResult.reason
-        );
-
-    this.paypalConfig = paypalResult.status === "fulfilled"
-      ? paypalResult.value
-      : this.buildUnavailableProviderConfig(
-          "PayPal configuration could not be loaded.",
-          paypalResult.reason
-        );
-
-    if (!this.isProviderSelectable(this.selectedProvider)) {
-      if (this.isProviderSelectable("authorizenet")) {
-        this.selectedProvider = "authorizenet";
-      } else if (this.isProviderSelectable("stripe")) {
-        this.selectedProvider = "stripe";
-      } else if (this.isProviderSelectable("paypal")) {
-        this.selectedProvider = "paypal";
-      } else {
-        this.selectedProvider = null;
+      if (serverResponse.status !== 'Success') {
+        this.selectedProvider = null; // Reset
+        this.dispatchError(serverResponse.message || "Failed to validate credentials with Server Org.");
+        this.authorizeNetConfig = this.buildUnavailableProviderConfig(serverResponse.message);
+        this.stripeConfig = this.buildUnavailableProviderConfig(serverResponse.message);
+        this.paypalConfig = this.buildUnavailableProviderConfig(serverResponse.message);
+        return;
       }
-    }
 
-    if (this.selectedProvider === "authorizenet" && this.isAuthorizeNetActive) {
-      this.primeAuthorizeNet();
-    }
+      const activeGateways = (serverResponse.activeGateways || []).map(g => g.toLowerCase().trim());
 
-    if (this.isStripeActive) {
-      this.preloadStripeInBackground();
-    }
+      const [authorizeNetResult, stripeResult, paypalResult] = await Promise.allSettled([
+        getAuthorizeNetClientConfig(),
+        getStripeClientConfig(),
+        getPayPalClientConfig(),
+      ]);
 
-    if (this.selectedProvider === "paypal" && this.canRenderPayPalButtons) {
-      this.primePayPal();
+      // Intersection Logic
+      this.authorizeNetConfig = authorizeNetResult.status === "fulfilled"
+        ? { ...authorizeNetResult.value, active: authorizeNetResult.value.active && activeGateways.includes("authorize.net") }
+        : this.buildUnavailableProviderConfig("Authorize.Net configuration could not be loaded.", authorizeNetResult.reason);
+
+      this.stripeConfig = stripeResult.status === "fulfilled"
+        ? { ...stripeResult.value, active: stripeResult.value.active && activeGateways.includes("stripe") }
+        : this.buildUnavailableProviderConfig("Stripe configuration could not be loaded.", stripeResult.reason);
+
+      this.paypalConfig = paypalResult.status === "fulfilled"
+        ? { ...paypalResult.value, active: paypalResult.value.active && activeGateways.includes("paypal") }
+        : this.buildUnavailableProviderConfig("PayPal configuration could not be loaded.", paypalResult.reason);
+
+      // Auto-select provider
+      if (!this.isProviderSelectable(this.selectedProvider)) {
+        if (this.isProviderSelectable("authorizenet")) this.selectedProvider = "authorizenet";
+        else if (this.isProviderSelectable("stripe")) this.selectedProvider = "stripe";
+        else if (this.isProviderSelectable("paypal")) this.selectedProvider = "paypal";
+        else this.selectedProvider = null;
+      }
+
+      if (this.selectedProvider === "authorizenet" && this.isAuthorizeNetActive) this.primeAuthorizeNet();
+      if (this.isStripeActive) this.preloadStripeInBackground();
+      if (this.selectedProvider === "paypal" && this.canRenderPayPalButtons) this.primePayPal();
+
+    } catch (error) {
+      this.selectedProvider = null;
+      this.dispatchError(this.getErrorMessage(error, "Failed to connect to Server Org."));
     }
   }
 
@@ -436,18 +258,9 @@ export default class PaymentComponent extends LightningElement {
   }
 
   isProviderSelectable(providerName) {
-    if (providerName === "authorizenet") {
-      return this.isAuthorizeNetActive;
-    }
-
-    if (providerName === "stripe") {
-      return this.isStripeActive;
-    }
-
-    if (providerName === "paypal") {
-      return this.isPayPalActive;
-    }
-
+    if (providerName === "authorizenet") return this.isAuthorizeNetActive;
+    if (providerName === "stripe") return this.isStripeActive;
+    if (providerName === "paypal") return this.isPayPalActive;
     return false;
   }
 
@@ -456,74 +269,39 @@ export default class PaymentComponent extends LightningElement {
   }
 
   getProviderStatusText(config) {
-    if (config?.active === true) {
-      return "Available now";
-    }
-
-    return "Unavailable";
+    return config?.active === true ? "Available now" : "Unavailable";
   }
 
   handleProviderSelection(event) {
-    const selected = event.currentTarget?.dataset?.provider;
-    if (!selected || selected === this.selectedProvider) {
-      return;
-    }
+    const selected = this.getProviderFromEvent(event);
+    if (!selected || selected === this.selectedProvider || !this.isProviderSelectable(selected)) return;
 
-    if (!this.isProviderSelectable(selected)) {
-      return;
-    }
-
-    if (this.selectedProvider === "stripe" && selected !== "stripe") {
-      this.unmountStripeCardElement();
-    }
-
-    if (this.selectedProvider === "paypal" && selected !== "paypal") {
-      this.unmountPayPalButtons();
-    }
+    if (this.selectedProvider === "stripe" && selected !== "stripe") this.unmountStripeCardElement();
+    if (this.selectedProvider === "paypal" && selected !== "paypal") this.unmountPayPalButtons();
 
     this.selectedProvider = selected;
     this.applyProviderTestDefaults();
+    this.clearPaymentBillingFields();
 
     if (this.selectedProvider === "stripe") {
       this.resetStripeDiagnostics();
       this.logStripeStep("Stripe provider selected");
-    }
-
-    if (this.selectedProvider === "authorizenet") {
-      this.primeAuthorizeNet();
-    } else if (this.selectedProvider === "stripe") {
       this.primeStripe();
+    } else if (this.selectedProvider === "authorizenet") {
+      this.primeAuthorizeNet();
     } else if (this.selectedProvider === "paypal") {
       this.primePayPal();
     }
 
-    this.dispatchEvent(
-      new CustomEvent("providerchange", {
-        detail: {
-          provider: this.selectedProvider,
-        },
-      })
-    );
-
+    this.dispatchEvent(new CustomEvent("providerchange", { detail: { provider: this.selectedProvider } }));
   }
 
   applyProviderTestDefaults() {
-    const nextCardNumber = this.selectedProvider === "stripe"
-      ? STRIPE_TEST_CARD_NUMBER
-      : AUTHORIZE_NET_TEST_CARD_NUMBER;
-
-    this.paymentForm = {
-      ...this.paymentForm,
-      cardNumber: nextCardNumber,
-    };
+    this.paymentForm = { ...this.paymentForm, cardNumber: "" };
   }
 
   async primeAuthorizeNet() {
-    try {
-      await this.ensureAuthorizeNetReady();
-    } catch (error) {
-      // Defer surfacing initialization errors until the user submits.
-    }
+    try { await this.ensureAuthorizeNetReady(); } catch (error) {}
   }
 
   async primeStripe() {
@@ -536,7 +314,6 @@ export default class PaymentComponent extends LightningElement {
     } catch (error) {
       this.isStripeInitializing = false;
       this.logStripeStep(`Stripe initialization failed: ${this.getErrorMessage(error)}`, error);
-      // Defer surfacing initialization errors until the user submits.
     }
   }
 
@@ -545,7 +322,6 @@ export default class PaymentComponent extends LightningElement {
       this.isPaypalInitializing = false;
       return;
     }
-
     this.isPaypalInitializing = true;
     try {
       await this.ensurePayPalReady();
@@ -557,25 +333,14 @@ export default class PaymentComponent extends LightningElement {
   }
 
   preloadStripeInBackground() {
-    if (!this.isStripeActive) {
-      return;
-    }
-
-    if (this.stripePreloadQueued || this.stripeReadyPromise || this.stripeInstance) {
-      return;
-    }
-
+    if (!this.isStripeActive || this.stripePreloadQueued || this.stripeReadyPromise || this.stripeInstance) return;
     this.stripePreloadQueued = true;
-
-    const schedulePreload =
-      typeof window.requestIdleCallback === "function"
+    const schedulePreload = typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback.bind(window)
         : (callback) => window.setTimeout(callback, 0);
 
     schedulePreload(() => {
-      this.ensureStripeReady().catch(() => {
-        this.stripeReadyPromise = null;
-      });
+      this.ensureStripeReady().catch(() => { this.stripeReadyPromise = null; });
     });
   }
 
@@ -586,12 +351,8 @@ export default class PaymentComponent extends LightningElement {
         this.isStripeInitializing = false;
         return;
       }
-
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, delayMs);
-      });
+      await new Promise((resolve) => { window.setTimeout(resolve, delayMs); });
     }
-
     this.isStripeInitializing = false;
     throw new Error("Stripe card entry could not be rendered.");
   }
@@ -603,10 +364,7 @@ export default class PaymentComponent extends LightningElement {
     }
 
     try {
-      if (this.isSubmitting) {
-        return;
-      }
-
+      if (this.isSubmitting) return;
       this.isSubmitting = true;
       this.showErrorModal = false;
       const resolvedAmount = this.resolveAmount(priceValue);
@@ -630,7 +388,6 @@ export default class PaymentComponent extends LightningElement {
       this.dispatchError("No payment option is available right now. Subscribe to use these services.");
       return;
     }
-
     await this.handlesubmit(this.amount);
   }
 
@@ -679,7 +436,6 @@ export default class PaymentComponent extends LightningElement {
       this.dispatchError(response?.message || "Transaction Unsuccessful");
       return;
     }
-
     this.dispatchSuccess(response);
   }
 
@@ -726,8 +482,8 @@ export default class PaymentComponent extends LightningElement {
     }
 
     this.logStripeStep(`Stripe PaymentMethod created: ${stripeResponse?.paymentMethod?.id || "missing id"}`);
-
     this.logStripeStep("Calling Apex StripePaymentService.processPayment");
+
     const response = await processStripePayment({
       request: {
         amount: Number(resolvedAmount),
@@ -831,9 +587,7 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("cardName", value);
   }
 
-  handleCardNameBlur(event) {
-    this.validateCardNameField(event.target);
-  }
+  handleCardNameBlur(event) { this.validateCardNameField(event.target); }
 
   handleCardNumberInput(event) {
     const digits = (event.target.value || "").replace(/\D/g, "").slice(0, 16);
@@ -842,9 +596,7 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("cardNumber", value);
   }
 
-  handleCardNumberBlur(event) {
-    this.validateCardNumberField(event.target);
-  }
+  handleCardNumberBlur(event) { this.validateCardNumberField(event.target); }
 
   handleCvvInput(event) {
     const value = (event.target.value || "").replace(/\D/g, "").slice(0, 4);
@@ -852,9 +604,7 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("securityCode", value);
   }
 
-  handleCvvBlur(event) {
-    this.validateCvvField(event.target);
-  }
+  handleCvvBlur(event) { this.validateCvvField(event.target); }
 
   handleZipInput(event) {
     const value = (event.target.value || "").replace(/[^a-zA-Z0-9\-\s]/g, "").slice(0, 20);
@@ -862,18 +612,11 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("cardZipCode", value);
   }
 
-  handleZipBlur(event) {
-    this.validateZipField(event.target);
-  }
+  handleZipBlur(event) { this.validateZipField(event.target); }
 
   handleExpiryChange(event) {
-    if (event?.target?.classList?.contains("monthOptions")) {
-      this.updatePaymentForm("cardMonth", event.target.value || "");
-    }
-
-    if (event?.target?.classList?.contains("yearOptions")) {
-      this.updatePaymentForm("cardYear", event.target.value || "");
-    }
+    if (event?.target?.classList?.contains("monthOptions")) this.updatePaymentForm("cardMonth", event.target.value || "");
+    if (event?.target?.classList?.contains("yearOptions")) this.updatePaymentForm("cardYear", event.target.value || "");
 
     const monthField = this.template.querySelector(".monthOptions");
     const yearField = this.template.querySelector(".yearOptions");
@@ -882,34 +625,22 @@ export default class PaymentComponent extends LightningElement {
 
   handleTextFieldChange(event) {
     const fieldName = event.target?.dataset?.field;
-    if (!fieldName) {
-      return;
-    }
-
+    if (!fieldName) return;
     this.updatePaymentForm(fieldName, event.target.value || "");
   }
 
   updatePaymentForm(fieldName, value) {
-    this.paymentForm = {
-      ...this.paymentForm,
-      [fieldName]: value,
-    };
+    this.paymentForm = { ...this.paymentForm, [fieldName]: value };
+    sessionStorage.setItem(FORM_CACHE_KEY, JSON.stringify(this.paymentForm));
   }
 
   validateCardNameField(field) {
-    if (!field) {
-      return "Card Name is missing";
-    }
-
+    if (!field) return "Card Name is missing";
     const value = (field.value || "").trim();
     let message = "";
-    if (!value) {
-      message = "Card Name is missing";
-    } else if (value.length < 2) {
-      message = "Enter the full cardholder name";
-    } else if (!/^[a-zA-Z .,'-]{2,64}$/.test(value)) {
-      message = "Enter a valid cardholder name";
-    }
+    if (!value) message = "Card Name is missing";
+    else if (value.length < 2) message = "Enter the full cardholder name";
+    else if (!/^[a-zA-Z .,'-]{2,64}$/.test(value)) message = "Enter a valid cardholder name";
 
     field.setCustomValidity(message);
     field.reportValidity();
@@ -917,19 +648,12 @@ export default class PaymentComponent extends LightningElement {
   }
 
   validateCardNumberField(field) {
-    if (!field) {
-      return "Card Number is missing";
-    }
-
+    if (!field) return "Card Number is missing";
     const digits = (field.value || "").replace(/\D/g, "");
     let message = "";
-    if (!digits) {
-      message = "Card Number is missing";
-    } else if (digits.length < 13 || digits.length > 16) {
-      message = "Enter a valid card number";
-    } else if (!this.isValidCardNumber(digits)) {
-      message = "Enter a valid card number";
-    }
+    if (!digits) message = "Card Number is missing";
+    else if (digits.length < 13 || digits.length > 16) message = "Enter a valid card number";
+    else if (!this.isValidCardNumber(digits)) message = "Enter a valid card number";
 
     field.setCustomValidity(message);
     field.reportValidity();
@@ -937,17 +661,11 @@ export default class PaymentComponent extends LightningElement {
   }
 
   validateCvvField(field) {
-    if (!field) {
-      return "Security Number is missing";
-    }
-
+    if (!field) return "Security Number is missing";
     const value = (field.value || "").trim();
     let message = "";
-    if (!value) {
-      message = "Security Number is missing";
-    } else if (!/^\d{3,4}$/.test(value)) {
-      message = "Enter a valid CVV";
-    }
+    if (!value) message = "Security Number is missing";
+    else if (!/^\d{3,4}$/.test(value)) message = "Enter a valid CVV";
 
     field.setCustomValidity(message);
     field.reportValidity();
@@ -959,90 +677,63 @@ export default class PaymentComponent extends LightningElement {
     const yearValue = yearField?.value;
     let message = "";
 
-    if (!monthValue) {
-      message = "Card Month is missing";
-    } else if (!yearValue) {
-      message = "Card Year is missing";
-    } else {
+    if (!monthValue) message = "Card Month is missing";
+    else if (!yearValue) message = "Card Year is missing";
+    else {
       const monthNumber = Number(monthValue);
       const yearNumber = Number(yearValue);
       const today = new Date();
       const currentMonth = today.getMonth() + 1;
       const currentYear = today.getFullYear();
 
-      if (Number.isNaN(monthNumber) || monthNumber < 1 || monthNumber > 12) {
-        message = "Enter a valid expiry month";
-      } else if (Number.isNaN(yearNumber) || yearNumber < currentYear || yearNumber > currentYear + 20) {
-        message = "Enter a valid expiry year";
-      } else if (yearNumber === currentYear && monthNumber < currentMonth) {
-        message = "Card expiry date must be in the future";
-      }
+      if (Number.isNaN(monthNumber) || monthNumber < 1 || monthNumber > 12) message = "Enter a valid expiry month";
+      else if (Number.isNaN(yearNumber) || yearNumber < currentYear || yearNumber > currentYear + 20) message = "Enter a valid expiry year";
+      else if (yearNumber === currentYear && monthNumber < currentMonth) message = "Card expiry date must be in the future";
     }
 
     if (monthField) {
       monthField.setCustomValidity(message === "Card Month is missing" || message === "Enter a valid expiry month" ? message : "");
       monthField.reportValidity();
     }
-
     if (yearField) {
       yearField.setCustomValidity(message === "Card Year is missing" || message === "Enter a valid expiry year" || message === "Card expiry date must be in the future" ? message : "");
       yearField.reportValidity();
     }
-
     return message;
   }
 
   validateZipField(field) {
-    if (!field) {
-      return "";
-    }
-
+    if (!field) return "";
     const value = (field.value || "").trim();
     let message = "";
-    if (value && !/^[a-zA-Z0-9\-\s]{3,20}$/.test(value)) {
-      message = "Enter a valid ZIP or postal code";
-    }
-
+    if (value && !/^[a-zA-Z0-9\-\s]{3,20}$/.test(value)) message = "Enter a valid ZIP or postal code";
     field.setCustomValidity(message);
     field.reportValidity();
     return message;
   }
 
   validateStripeCardElement() {
-    if (!this.stripeCardMounted || !this.stripeCardElement) {
-      return "Stripe card details are not ready.";
-    }
-
-    if (this.stripeCardError) {
-      return this.stripeCardError;
-    }
-
+    if (!this.stripeCardMounted || !this.stripeCardElement) return "Stripe card details are not ready.";
+    if (this.stripeCardError) return this.stripeCardError;
     if (!this.stripeCardComplete) {
-      if (typeof this.stripeCardElement.focus === "function") {
-        this.stripeCardElement.focus();
-      }
-      return "Enter the card number, expiry, and CVC in the Stripe card field. The test card number shown below is reference only and is not auto-filled.";
+      if (typeof this.stripeCardElement.focus === "function") this.stripeCardElement.focus();
+      return "Enter the card number, expiry, and CVC in the Stripe card field.";
     }
-
     return "";
   }
 
   isValidCardNumber(cardNumber) {
     let sum = 0;
     let shouldDouble = false;
-
     for (let index = cardNumber.length - 1; index >= 0; index -= 1) {
       let digit = Number(cardNumber.charAt(index));
       if (shouldDouble) {
         digit *= 2;
-        if (digit > 9) {
-          digit -= 9;
-        }
+        if (digit > 9) digit -= 9;
       }
       sum += digit;
       shouldDouble = !shouldDouble;
     }
-
     return sum % 10 === 0;
   }
 
@@ -1053,37 +744,18 @@ export default class PaymentComponent extends LightningElement {
         throw error;
       });
     }
-
     return this.authorizeNetReadyPromise;
   }
 
   async loadAuthorizeNetResources() {
-    if (!this.authorizeNetConfig) {
-      this.authorizeNetConfig = await getAuthorizeNetClientConfig();
-    }
-
-    if (this.authorizeNetConfig?.active === false) {
-      throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is currently inactive.");
-    }
-
-    if (!this.authorizeNetConfig?.configured) {
-      throw new Error(
-        this.authorizeNetConfig?.message ||
-          "Authorize.Net is not fully configured."
-      );
-    }
+    if (!this.authorizeNetConfig) this.authorizeNetConfig = await getAuthorizeNetClientConfig();
+    if (this.authorizeNetConfig?.active === false) throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is currently inactive.");
+    if (!this.authorizeNetConfig?.configured) throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is not fully configured.");
 
     const libraryUrl = this.authorizeNetConfig.acceptJsUrl;
-    if (!libraryUrl) {
-      throw new Error("Authorize.Net script URL is missing.");
-    }
+    if (!libraryUrl) throw new Error("Authorize.Net script URL is missing.");
 
-    if (
-      window.Accept &&
-      this.authorizeNetLibraryUrl === libraryUrl
-    ) {
-      return this.authorizeNetConfig;
-    }
+    if (window.Accept && this.authorizeNetLibraryUrl === libraryUrl) return this.authorizeNetConfig;
 
     if (!acceptJsPromise || this.authorizeNetLibraryUrl !== libraryUrl) {
       this.authorizeNetLibraryUrl = libraryUrl;
@@ -1092,7 +764,6 @@ export default class PaymentComponent extends LightningElement {
 
     await acceptJsPromise;
     await this.waitForAcceptGlobal();
-
     return this.authorizeNetConfig;
   }
 
@@ -1103,39 +774,21 @@ export default class PaymentComponent extends LightningElement {
         throw error;
       });
     }
-
     return this.stripeReadyPromise;
   }
 
   async loadStripeResources() {
     if (!this.stripeConfig) {
-      try {
-        this.stripeConfig = await getStripeClientConfig();
-      } catch (error) {
-        throw new Error(this.getErrorMessage(error));
-      }
+      try { this.stripeConfig = await getStripeClientConfig(); } catch (error) { throw new Error(this.getErrorMessage(error)); }
     }
-
-    if (this.stripeConfig?.active === false) {
-      throw new Error(this.stripeConfig?.message || "Stripe is currently inactive.");
-    }
-
-    if (!this.stripeConfig?.configured) {
-      throw new Error(this.stripeConfig?.message || "Stripe is not fully configured.");
-    }
-
-    if (!this.stripeConfig?.publishableKey) {
-      throw new Error("Stripe publishable key is missing.");
-    }
+    if (this.stripeConfig?.active === false) throw new Error(this.stripeConfig?.message || "Stripe is currently inactive.");
+    if (!this.stripeConfig?.configured) throw new Error(this.stripeConfig?.message || "Stripe is not fully configured.");
+    if (!this.stripeConfig?.publishableKey) throw new Error("Stripe publishable key is missing.");
 
     const libraryUrl = this.stripeConfig.stripeJsUrl;
-    if (!libraryUrl) {
-      throw new Error("Stripe script URL is missing.");
-    }
+    if (!libraryUrl) throw new Error("Stripe script URL is missing.");
 
-    if (window.Stripe && this.stripeJsUrl === libraryUrl && this.stripeInstance) {
-      return this.stripeConfig;
-    }
+    if (window.Stripe && this.stripeJsUrl === libraryUrl && this.stripeInstance) return this.stripeConfig;
 
     if (!stripeJsPromise || this.stripeJsUrl !== libraryUrl) {
       this.stripeJsUrl = libraryUrl;
@@ -1145,11 +798,7 @@ export default class PaymentComponent extends LightningElement {
     await stripeJsPromise;
     await this.waitForStripeGlobal();
     this.stripeInstance = window.Stripe(this.stripeConfig.publishableKey);
-
-    if (!this.stripeInstance) {
-      throw new Error("Stripe did not initialize correctly.");
-    }
-
+    if (!this.stripeInstance) throw new Error("Stripe did not initialize correctly.");
     return this.stripeConfig;
   }
 
@@ -1160,31 +809,17 @@ export default class PaymentComponent extends LightningElement {
         throw error;
       });
     }
-
     return this.paypalReadyPromise;
   }
 
   async loadPayPalResources() {
-    if (!this.paypalConfig) {
-      this.paypalConfig = await getPayPalClientConfig();
-    }
-
-    if (this.paypalConfig?.active === false) {
-      throw new Error(this.paypalConfig?.message || "PayPal is currently inactive.");
-    }
-
-    if (!this.paypalConfig?.configured) {
-      throw new Error(this.paypalConfig?.message || "PayPal is not fully configured.");
-    }
+    if (!this.paypalConfig) this.paypalConfig = await getPayPalClientConfig();
+    if (this.paypalConfig?.active === false) throw new Error(this.paypalConfig?.message || "PayPal is currently inactive.");
+    if (!this.paypalConfig?.configured) throw new Error(this.paypalConfig?.message || "PayPal is not fully configured.");
 
     const libraryUrl = this.paypalConfig.payPalJsUrl;
-    if (!libraryUrl) {
-      throw new Error("PayPal script URL is missing.");
-    }
-
-    if (window.paypal && this.paypalJsUrl === libraryUrl) {
-      return this.paypalConfig;
-    }
+    if (!libraryUrl) throw new Error("PayPal script URL is missing.");
+    if (window.paypal && this.paypalJsUrl === libraryUrl) return this.paypalConfig;
 
     if (!paypalJsPromise || this.paypalJsUrl !== libraryUrl) {
       this.paypalJsUrl = libraryUrl;
@@ -1198,86 +833,49 @@ export default class PaymentComponent extends LightningElement {
 
   waitForAcceptGlobal(maxWaitMs = 3000, intervalMs = 50) {
     return new Promise((resolve, reject) => {
-      if (window.Accept && typeof window.Accept.dispatchData === "function") {
-        resolve();
-        return;
-      }
-
+      if (window.Accept && typeof window.Accept.dispatchData === "function") { resolve(); return; }
       let elapsed = 0;
       const timer = setInterval(() => {
         elapsed += intervalMs;
-        if (window.Accept && typeof window.Accept.dispatchData === "function") {
-          clearInterval(timer);
-          resolve();
-        } else if (elapsed >= maxWaitMs) {
-          clearInterval(timer);
-          reject(new Error("Authorize.Net library did not initialize correctly."));
-        }
+        if (window.Accept && typeof window.Accept.dispatchData === "function") { clearInterval(timer); resolve(); }
+        else if (elapsed >= maxWaitMs) { clearInterval(timer); reject(new Error("Authorize.Net library did not initialize correctly.")); }
       }, intervalMs);
     });
   }
 
   waitForStripeGlobal(maxWaitMs = 3000, intervalMs = 50) {
     return new Promise((resolve, reject) => {
-      if (window.Stripe && typeof window.Stripe === "function") {
-        resolve();
-        return;
-      }
-
+      if (window.Stripe && typeof window.Stripe === "function") { resolve(); return; }
       let elapsed = 0;
       const timer = setInterval(() => {
         elapsed += intervalMs;
-        if (window.Stripe && typeof window.Stripe === "function") {
-          clearInterval(timer);
-          resolve();
-        } else if (elapsed >= maxWaitMs) {
-          clearInterval(timer);
-          reject(new Error("Stripe library did not initialize correctly."));
-        }
+        if (window.Stripe && typeof window.Stripe === "function") { clearInterval(timer); resolve(); }
+        else if (elapsed >= maxWaitMs) { clearInterval(timer); reject(new Error("Stripe library did not initialize correctly.")); }
       }, intervalMs);
     });
   }
 
   waitForPayPalGlobal(maxWaitMs = 3000, intervalMs = 50) {
     return new Promise((resolve, reject) => {
-      if (window.paypal && typeof window.paypal.Buttons === "function") {
-        resolve();
-        return;
-      }
-
+      if (window.paypal && typeof window.paypal.Buttons === "function") { resolve(); return; }
       let elapsed = 0;
       const timer = setInterval(() => {
         elapsed += intervalMs;
-        if (window.paypal && typeof window.paypal.Buttons === "function") {
-          clearInterval(timer);
-          resolve();
-        } else if (elapsed >= maxWaitMs) {
-          clearInterval(timer);
-          reject(new Error("PayPal library did not initialize correctly."));
-        }
+        if (window.paypal && typeof window.paypal.Buttons === "function") { clearInterval(timer); resolve(); }
+        else if (elapsed >= maxWaitMs) { clearInterval(timer); reject(new Error("PayPal library did not initialize correctly.")); }
       }, intervalMs);
     });
   }
 
   loadExternalScript(url) {
     return new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(
-        `script[data-authorize-net-src="${url}"]`
-      );
+      const existingScript = document.querySelector(`script[data-authorize-net-src="${url}"]`);
       if (existingScript) {
-        if (window.Accept && typeof window.Accept.dispatchData === "function") {
-          resolve();
-          return;
-        }
+        if (window.Accept && typeof window.Accept.dispatchData === "function") { resolve(); return; }
         existingScript.addEventListener("load", () => resolve(), { once: true });
-        existingScript.addEventListener(
-          "error",
-          () => reject(new Error("Failed to load Authorize.Net library.")),
-          { once: true }
-        );
+        existingScript.addEventListener("error", () => reject(new Error("Failed to load Authorize.Net library.")), { once: true });
         return;
       }
-
       const script = document.createElement("script");
       script.src = url;
       script.async = true;
@@ -1293,15 +891,11 @@ export default class PaymentComponent extends LightningElement {
     return new Promise((resolve, reject) => {
       const existingScript = document.querySelector(`script[data-stripe-src="${url}"]`);
       if (existingScript) {
-        if (window.Stripe && typeof window.Stripe === "function") {
-          resolve();
-          return;
-        }
+        if (window.Stripe && typeof window.Stripe === "function") { resolve(); return; }
         existingScript.addEventListener("load", () => resolve(), { once: true });
         existingScript.addEventListener("error", () => reject(new Error("Failed to load Stripe library.")), { once: true });
         return;
       }
-
       const script = document.createElement("script");
       script.src = url;
       script.async = true;
@@ -1317,15 +911,11 @@ export default class PaymentComponent extends LightningElement {
     return new Promise((resolve, reject) => {
       const existingScript = document.querySelector(`script[data-paypal-src="${url}"]`);
       if (existingScript) {
-        if (window.paypal && typeof window.paypal.Buttons === "function") {
-          resolve();
-          return;
-        }
+        if (window.paypal && typeof window.paypal.Buttons === "function") { resolve(); return; }
         existingScript.addEventListener("load", () => resolve(), { once: true });
         existingScript.addEventListener("error", () => reject(new Error("Failed to load PayPal library.")), { once: true });
         return;
       }
-
       const script = document.createElement("script");
       script.src = url;
       script.async = true;
@@ -1339,9 +929,7 @@ export default class PaymentComponent extends LightningElement {
 
   async mountPayPalButtons() {
     const host = this.template.querySelector(".paypal-button-container");
-    if (!host || this.paypalButtonsMounted) {
-      return;
-    }
+    if (!host || this.paypalButtonsMounted) return;
 
     this.isPaypalInitializing = true;
     await this.ensurePayPalReady();
@@ -1366,10 +954,7 @@ export default class PaymentComponent extends LightningElement {
           },
         });
 
-        if (!response?.success || !response?.paypalOrderId) {
-          throw new Error(response?.message || "PayPal order creation failed.");
-        }
-
+        if (!response?.success || !response?.paypalOrderId) throw new Error(response?.message || "PayPal order creation failed.");
         return response.paypalOrderId;
       },
       onApprove: async (data) => {
@@ -1380,24 +965,16 @@ export default class PaymentComponent extends LightningElement {
               orderId: this.orderId || null,
             },
           });
-
           if (!response?.success || !response?.transId) {
             this.dispatchError(response?.message || "PayPal capture failed.");
             return;
           }
-
-          this.dispatchSuccess({
-            ...response,
-            message: response.message || "Transaction Successful",
-            resultCode: response.resultCode || "Ok",
-          });
+          this.dispatchSuccess({ ...response, message: response.message || "Transaction Successful", resultCode: response.resultCode || "Ok" });
         } finally {
           this.isSubmitting = false;
         }
       },
-      onCancel: () => {
-        this.isSubmitting = false;
-      },
+      onCancel: () => { this.isSubmitting = false; },
       onError: (error) => {
         this.isSubmitting = false;
         this.dispatchError(this.getErrorMessage(error, "PayPal checkout failed."));
@@ -1411,14 +988,8 @@ export default class PaymentComponent extends LightningElement {
 
   unmountPayPalButtons() {
     const host = this.template.querySelector(".paypal-button-container");
-    if (host) {
-      host.innerHTML = "";
-    }
-
-    if (this.paypalButtonsInstance && typeof this.paypalButtonsInstance.close === "function") {
-      this.paypalButtonsInstance.close();
-    }
-
+    if (host) host.innerHTML = "";
+    if (this.paypalButtonsInstance && typeof this.paypalButtonsInstance.close === "function") this.paypalButtonsInstance.close();
     this.paypalButtonsInstance = null;
     this.paypalButtonsMounted = false;
     this.isPaypalInitializing = false;
@@ -1426,25 +997,14 @@ export default class PaymentComponent extends LightningElement {
 
   mountStripeCardElement() {
     const host = this.template.querySelector(".stripe-card-element");
-    if (!host || !this.stripeInstance || this.stripeCardMounted) {
-      return;
-    }
+    if (!host || !this.stripeInstance || this.stripeCardMounted) return;
 
     const elements = this.stripeInstance.elements();
     this.stripeCardElement = elements.create("card", {
       hidePostalCode: true,
       style: {
-        base: {
-          color: "#1f2a44",
-          fontFamily: 'Arial, sans-serif',
-          fontSize: "16px",
-          "::placeholder": {
-            color: "#6b7280",
-          },
-        },
-        invalid: {
-          color: "#c23934",
-        },
+        base: { color: "#1f2a44", fontFamily: 'Arial, sans-serif', fontSize: "16px", "::placeholder": { color: "#6b7280" } },
+        invalid: { color: "#c23934" },
       },
     });
     this.stripeCardElement.mount(host);
@@ -1456,11 +1016,8 @@ export default class PaymentComponent extends LightningElement {
     this.stripeCardElement.on("change", (event) => {
       this.stripeCardComplete = !!event.complete;
       this.stripeCardError = event.error?.message || "";
-      if (event.error?.message) {
-        this.logStripeStep(`Stripe card error: ${event.error.message}`);
-      } else if (event.complete) {
-        this.logStripeStep("Stripe card details are complete");
-      }
+      if (event.error?.message) this.logStripeStep(`Stripe card error: ${event.error.message}`);
+      else if (event.complete) this.logStripeStep("Stripe card details are complete");
     });
   }
 
@@ -1469,7 +1026,6 @@ export default class PaymentComponent extends LightningElement {
       this.stripeCardElement.unmount();
       this.stripeCardElement = null;
     }
-
     this.stripeCardMounted = false;
     this.stripeCardComplete = false;
     this.stripeCardError = "";
@@ -1479,53 +1035,34 @@ export default class PaymentComponent extends LightningElement {
   tokenizePaymentData(config, paymentDetails) {
     return new Promise((resolve, reject) => {
       const secureData = {
-        authData: {
-          clientKey: config.publicClientKey,
-          apiLoginID: config.apiLoginId,
-        },
+        authData: { clientKey: config.publicClientKey, apiLoginID: config.apiLoginId },
         cardData: {
-          cardNumber: paymentDetails.cardNumber,
-          month: paymentDetails.cardMonth,
-          year: paymentDetails.cardYear,
-          cardCode: paymentDetails.securityCode,
-          zip: paymentDetails.cardZipCode,
-          fullName: paymentDetails.cardName,
+          cardNumber: paymentDetails.cardNumber, month: paymentDetails.cardMonth, year: paymentDetails.cardYear,
+          cardCode: paymentDetails.securityCode, zip: paymentDetails.cardZipCode, fullName: paymentDetails.cardName,
         },
       };
 
       window.Accept.dispatchData(secureData, (response) => {
         if (response?.messages?.resultCode === "Error") {
-          const errorMessages = (response.messages.message || [])
-            .map((item) => item.text)
-            .filter((item) => !!item)
-            .join(" ");
+          const errorMessages = (response.messages.message || []).map((item) => item.text).filter((item) => !!item).join(" ");
           reject(new Error(errorMessages || "Payment tokenization failed."));
           return;
         }
-
         if (!response?.opaqueData?.dataDescriptor || !response?.opaqueData?.dataValue) {
           reject(new Error("Payment tokenization failed."));
           return;
         }
-
         resolve(response.opaqueData);
       });
     });
   }
 
   clearSensitiveFields() {
-    this.paymentForm = {
-      ...this.paymentForm,
-      cardNumber: "",
-      securityCode: "",
-    };
+    this.paymentForm = { ...this.paymentForm, cardNumber: "", securityCode: "" };
   }
 
   clearStripeSensitiveFields() {
-    if (this.stripeCardElement) {
-      this.stripeCardElement.clear();
-    }
-
+    if (this.stripeCardElement) this.stripeCardElement.clear();
     this.stripeCardComplete = false;
     this.stripeCardError = "";
   }
@@ -1535,9 +1072,7 @@ export default class PaymentComponent extends LightningElement {
     this.dispatchEvent(new CustomEvent("successmodalclose"));
   }
 
-  closeErrorModal() {
-    this.showErrorModal = false;
-  }
+  closeErrorModal() { this.showErrorModal = false; }
 
   resetStripeDiagnostics() {
     this.stripeDebugMessages = [];
@@ -1547,100 +1082,74 @@ export default class PaymentComponent extends LightningElement {
   logStripeStep(message, payload) {
     this.stripeLastStep = message;
     this.stripeDebugMessages = [...this.stripeDebugMessages, message];
-
-    if (payload !== undefined) {
-      // eslint-disable-next-line no-console
-      console.info("[Stripe Debug]", message, payload);
-    } else {
-      // eslint-disable-next-line no-console
-      console.info("[Stripe Debug]", message);
-    }
   }
 
   dispatchSuccess(response) {
-    if (this.selectedProvider === "stripe") {
-      this.logStripeStep("Dispatching Stripe success event", response);
-    }
+    sessionStorage.removeItem(FORM_CACHE_KEY);
+    if (this.selectedProvider === "stripe") this.logStripeStep("Dispatching Stripe success event", response);
 
     this.successDetails = {
-      message: response.message || "Transaction Successful",
-      transId: response.transId || "",
-      authCode: response.authCode || "",
-      resultCode: response.resultCode || "Ok",
+      message: response.message || "Transaction Successful", transId: response.transId || "",
+      authCode: response.authCode || "", resultCode: response.resultCode || "Ok",
     };
     this.showSuccessModal = true;
 
-    this.dispatchEvent(
-      new CustomEvent("success", {
-        detail: {
-          resultCode: response.resultCode || "Ok",
-          message: response.message || "Transaction Successful",
-          transId: response.transId,
-          provider: this.selectedProvider,
-          authCode: response.authCode,
-        },
-      })
-    );
+    this.dispatchEvent(new CustomEvent("success", {
+      detail: {
+        resultCode: response.resultCode || "Ok", message: response.message || "Transaction Successful",
+        transId: response.transId, provider: this.selectedProvider, authCode: response.authCode,
+      },
+    }));
   }
 
   dispatchError(message) {
-    if (this.selectedProvider === "stripe") {
-      this.logStripeStep(`Dispatching Stripe error: ${message}`);
-    }
-
+    if (this.selectedProvider === "stripe") this.logStripeStep(`Dispatching Stripe error: ${message}`);
     this.errorDetails = {
-      message,
-      provider: this.selectedProvider,
+      message, provider: this.selectedProvider,
       step: this.selectedProvider === "stripe" ? this.stripeLastStep : "Payment failed",
     };
     this.showErrorModal = true;
 
-    this.dispatchEvent(
-      new CustomEvent("error", {
-        detail: {
-          message,
-          resultCode: "Error",
-        },
-      })
-    );
+    this.dispatchEvent(new CustomEvent("error", { detail: { message, resultCode: "Error" } }));
   }
 
   getErrorMessage(errorOrMessage, fallbackMessage = "Something went wrong. Please try again.") {
-    if (typeof errorOrMessage === "string") {
-      return errorOrMessage || fallbackMessage;
-    }
-
+    if (typeof errorOrMessage === "string") return errorOrMessage || fallbackMessage;
     const body = errorOrMessage?.body;
-    if (typeof body?.message === "string" && body.message) {
-      return body.message;
-    }
-
+    if (typeof body?.message === "string" && body.message) return body.message;
     if (Array.isArray(body) && body.length > 0) {
-      const bodyMessages = body
-        .map((item) => item?.message)
-        .filter((message) => typeof message === "string" && message);
-      if (bodyMessages.length > 0) {
-        return bodyMessages.join(" ");
-      }
+      const bodyMessages = body.map((item) => item?.message).filter((message) => typeof message === "string" && message);
+      if (bodyMessages.length > 0) return bodyMessages.join(" ");
     }
-
     if (Array.isArray(body?.pageErrors) && body.pageErrors.length > 0) {
-      const pageErrorMessages = body.pageErrors
-        .map((item) => item?.message)
-        .filter((message) => typeof message === "string" && message);
-      if (pageErrorMessages.length > 0) {
-        return pageErrorMessages.join(" ");
-      }
+      const pageErrorMessages = body.pageErrors.map((item) => item?.message).filter((message) => typeof message === "string" && message);
+      if (pageErrorMessages.length > 0) return pageErrorMessages.join(" ");
     }
-
-    if (typeof body?.exceptionType === "string" && typeof body?.message === "string" && body.message) {
-      return `${body.exceptionType}: ${body.message}`;
-    }
-
-    if (typeof errorOrMessage?.message === "string" && errorOrMessage.message) {
-      return errorOrMessage.message;
-    }
-
+    if (typeof body?.exceptionType === "string" && typeof body?.message === "string" && body.message) return `${body.exceptionType}: ${body.message}`;
+    if (typeof errorOrMessage?.message === "string" && errorOrMessage.message) return errorOrMessage.message;
     return fallbackMessage;
+  }
+
+  getProviderFromEvent(event) {
+    let el = event?.currentTarget || event?.target;
+    while (el && !(el.dataset && el.dataset.provider)) el = el.parentElement;
+    return el?.dataset?.provider || null;
+  }
+
+  clearPaymentBillingFields() {
+    this.paymentForm = {
+      ...this.paymentForm, cardName: '', cardNumber: '', securityCode: '', cardMonth: '', cardYear: '',
+      cardAddressOne: '', cardCity: '', cardState: '', cardZipCode: '', cardCountry: ''
+    };
+  }
+
+  handleCancelClick() { this.showCancelWarningModal = true; }
+
+  closeWarningModal() { this.showCancelWarningModal = false; }
+
+  confirmCancel() {
+    this.showCancelWarningModal = false;
+    sessionStorage.removeItem(FORM_CACHE_KEY);
+    this.dispatchEvent(new CustomEvent("cancelpayment"));
   }
 }

@@ -1,0 +1,314 @@
+/* General Box Styles */
+.custom-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+
+.full-width-box {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.box-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 1rem;
+}
+
+.usage-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+}
+
+.usage-card-limit {
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+
+.usage-label {
+    margin: 0;
+    color: #1e293b;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.usage-message {
+    margin: 0.2rem 0 0;
+    color: #64748b;
+    font-size: 0.8rem;
+}
+
+.usage-card-limit .usage-message {
+    color: #991b1b;
+}
+
+.usage-count {
+    min-width: 4.5rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #1d4ed8;
+    font-size: 0.95rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.usage-card-limit .usage-count {
+    color: #b91c1c;
+}
+
+.border-bottom {
+    border-bottom: 1px solid #e2e8f0;
+}
+
+/* Logo Circle */
+.qbo-logo-circle {
+    background: #2ca01c;
+    color: white;
+    font-family: serif;
+    font-weight: bold;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0.9rem;
+}
+
+/* Job List Styles (Left Pane) */
+.job-item {
+    padding: 1rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+}
+.job-item:last-child { border-bottom: none; }
+.active-job { background-color: #f8fafc; border-left: 3px solid #2563eb; padding-left: 10px; border-radius: 4px; }
+.job-name { font-weight: 600; color: #334155; }
+.job-meta { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+
+/* Badges */
+.badge-active { color: #16a34a; font-size: 0.7rem; font-weight: 700; }
+.badge-paused { color: #d97706; font-size: 0.7rem; font-weight: 700; }
+
+/* Details Pane (Right Pane) */
+.action-buttons { display: flex; gap: 8px; }
+.btn-outline {
+    background: white;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+.btn-outline:hover { background: #f8fafc; }
+.active-status { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+.btn-danger { color: #ef4444; border-color: #fecaca; }
+.btn-danger:hover { background: #fef2f2; }
+
+.detail-row { display: flex; margin-bottom: 0.8rem; }
+.detail-label { width: 130px; color: #64748b; font-size: 0.85rem; font-weight: 500; }
+.detail-value { color: #1e293b; font-size: 0.85rem; font-weight: 600; }
+.text-green { color: #16a34a; }
+
+/* IMAGE 2: New Schedule Styles */
+.obj-btn {
+    width: 100%;
+    padding: 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+}
+
+.obj-btn.selected {
+    background: #2563eb;
+    color: white;
+    border-color: #2563eb;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+}
+.obj-btn.selected .btn-icon { --sds-c-icon-color-foreground-default: white; }
+
+.action-btn-full {
+    width: 100%;
+    padding: 0.8rem;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    border: none;
+}
+.primary-btn { background: #2563eb; color: white; }
+.primary-btn:hover { background: #1d4ed8; }
+.primary-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
+.status-alert {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+    padding: 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+}
+
+/* Image 2 Specific Additions */
+.qbo-logo-large {
+    background: #2ca01c;
+    color: white;
+    font-family: serif;
+    font-weight: bold;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+
+.badge-inactive { 
+    color: #ef4444; 
+    font-size: 0.7rem; 
+    font-weight: 700; 
+    background: #fef2f2;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.run-item span {
+    font-size: 0.85rem;
+    color: #475569;
+    font-weight: 500;
+}
+
+.detail-label { 
+    width: 140px; 
+    color: #64748b; 
+    font-size: 0.85rem; 
+    font-weight: 500; 
+    flex-shrink: 0;
+}
+
+.obj-btn {
+    width: 100%;
+    padding: 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    /* Transition ko fast kiya hai taake foran react kare */
+    transition: all 0.1s ease-in-out; 
+    background: #ffffff; /* Unselected ko white rakha hai */
+    border: 2px solid #cbd5e1; /* Thora dark border taake wazeh ho */
+    color: #475569;
+}
+
+/* Jab mouse upar aaye toh thora upar uthay */
+.obj-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    background: #f8fafc;
+}
+
+/* Jab click ho toh button neeche dab jaye (Physical feel) */
+.obj-btn:active {
+    transform: translateY(1px);
+    box-shadow: none;
+}
+
+.obj-btn.selected {
+    background: #2563eb;
+    color: white;
+    border: 2px solid #2563eb;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+}
+
+.obj-btn.selected:hover {
+    background: #1d4ed8;
+}
+
+.obj-btn.selected .btn-icon { 
+    --sds-c-icon-color-foreground-default: white; 
+}
+
+@media (max-width: 768px) {
+    .slds-grid {
+        flex-wrap: wrap !important;
+    }
+    .slds-col {
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 0 0 100% !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        margin-bottom: 1rem !important;
+    }
+    .header-action-bar {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 15px !important;
+    }
+    .action-buttons {
+        flex-wrap: wrap !important;
+        margin-top: 15px !important;
+        gap: 10px !important;
+    }
+    .detail-row {
+        flex-direction: column !important;
+        margin-bottom: 1rem !important;
+    }
+    .detail-label {
+        width: 100% !important;
+        margin-bottom: 4px !important;
+    }
+    .custom-box {
+        padding: 1rem !important;
+    }
+    .slds-gutters {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+    h2 {
+        font-size: 1.25rem !important;
+    }
+    .qbo-logo-large {
+        width: 36px !important;
+        height: 36px !important;
+        font-size: 1.2rem !important;
+    }
+    .slds-grid_align-spread {
+        justify-content: flex-start !important;
+    }
+}

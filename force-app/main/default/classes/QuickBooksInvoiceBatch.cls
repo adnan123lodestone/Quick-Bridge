@@ -1,354 +1,511 @@
 public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Database.AllowsCallouts {
-    
-    private Set<Id> orderIds;
+
+    private Set<Id> recordIds;
     private Boolean isInitialSync;
-    private Map<Id, OrderItem> triggerOrderItems; // Store the original trigger data
-    
-    public QuickBooksInvoiceBatch(Set<Id> orderIds, Boolean isInitialSync) {
-        this.orderIds = orderIds;
+    private Map<Id, SObject> triggerItemsMap;
+
+    public QuickBooksInvoiceBatch(Set<Id> recordIds, Boolean isInitialSync) {
+        this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
-        this.triggerOrderItems = new Map<Id, OrderItem>();
+        this.triggerItemsMap = new Map<Id, SObject>();
     }
-    
-    // New constructor to pass trigger data
-    public QuickBooksInvoiceBatch(Set<Id> orderIds, Boolean isInitialSync, List<OrderItem> triggerItems) {
-        this.orderIds = orderIds;
+
+    public QuickBooksInvoiceBatch(Set<Id> recordIds, Boolean isInitialSync, List<SObject> triggerItems) {
+        this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
-        this.triggerOrderItems = new Map<Id, OrderItem>();
-        
-        // Store trigger items by their ID for quick lookup
+        this.triggerItemsMap = new Map<Id, SObject>();
         if (triggerItems != null) {
-            for (OrderItem item : triggerItems) {
-                this.triggerOrderItems.put(item.Id, item);
+            for (SObject item : triggerItems) {
+                this.triggerItemsMap.put(item.Id, item);
             }
         }
     }
-    
+
     public Database.QueryLocator start(Database.BatchableContext bc) {
-        return Database.getQueryLocator([
-            SELECT Id, Account.QuickbookID__c, EffectiveDate, TotalAmount, QuickbookID__c
-            FROM Order 
-            WHERE Id IN :orderIds
-        ]);
+        // String mappedObject = QBObjectMappings.getInvoiceSourceObject();
+        String query = 'SELECT Id FROM QuickBridgeTLG__Invoice__c WHERE Id IN :recordIds';
+        return Database.getQueryLocator(query);
     }
-    
-    public void execute(Database.BatchableContext bc, List<Order> scope) {
+
+    public void execute(Database.BatchableContext bc, List<SObject> scope) {
+        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         QuickBooksInvoiceHandler.setBatchContext(true);
-        
+
         try {
-            List<Order> ordersToUpdate = new List<Order>();
-            List<OrderItem> itemsToUpdate = new List<OrderItem>();
-            
-            // Query current OrderItems but merge with trigger data for accuracy
-            Map<Id, Order> ordersWithItems = new Map<Id, Order>([
-                SELECT Id, Account.QuickbookID__c, EffectiveDate, TotalAmount, QuickbookID__c,
-                       (SELECT Id, Product2.QuickbookID__c, Product2.Name, ListPrice, Quantity, 
-                               QB_LineItemID__c, OrderId, UnitPrice
-                        FROM OrderItems)
-                FROM Order
-                WHERE Id IN :orderIds
-            ]);
+            List<SObject> recordsToUpdate = new List<SObject>();
+            List<SObject> itemsToUpdate = new List<SObject>();
 
-            for (Order ord : scope) {
-                Order currentOrd = ordersWithItems.get(ord.Id);
+            // String mappedObject = QBObjectMappings.getInvoiceSourceObject();
+            // String mappedLineObject = QBObjectMappings.getInvoiceLineItemObject(mappedObject);
+            String mappedObject = 'QuickBridgeTLG__Invoice__c';
+            String mappedLineObject = 'QuickBridgeTLG__Invoice_Line__c';
+            Map<String, String> fieldMap = QBObjectMappings.getSmartInvoiceMapping();
+            Set<String> fieldsToQuery = new Set<String>{'Id', 'QuickBridgeTLG__External_Id__c', 'QuickBridgeTLG__Related_Account__c'};
 
-                if (currentOrd == null || currentOrd.OrderItems == null || currentOrd.OrderItems.isEmpty()) {
-                    continue;
-                }
-                
-                // Merge trigger data with current data to ensure we have the latest values
-                List<OrderItem> mergedItems = mergeOrderItemData(currentOrd.OrderItems);
-                
-                if (currentOrd.QuickbookID__c == null && isInitialSync) {
-                    // Initial sync - create new invoice
-                    Map<String, Object> result = createInvoice(currentOrd, mergedItems);
+            fieldsToQuery.add('QuickBridgeTLG__Related_Account__r.QuickBridgeTLG__QuickbookID__c');
+
+            for(String f : fieldMap.keySet()){
+                if(!fieldsToQuery.contains(f)) fieldsToQuery.add(f);
+            }
+
+            List<String> queryFields = new List<String>(fieldsToQuery);
+            String childRelationship = 'QuickBridgeTLG__Invoice_Lines__r'; // Custom Object child relation
+
+            String query = 'SELECT ' + String.join(queryFields, ', ') +
+               ', (SELECT Id, QuickBridgeTLG__Product__r.QuickBridgeTLG__QuickbookID__c, QuickBridgeTLG__Product__r.Name, QuickBridgeTLG__Quantity__c, QuickBridgeTLG__Unit_Price__c, QuickBridgeTLG__Product_Description__c ' +
+               'FROM ' + childRelationship + ') ' +
+               'FROM ' + mappedObject + ' WHERE Id IN :recordIds';
+
+            Map<Id, SObject> recordsWithItems = new Map<Id, SObject>((List<SObject>)Database.query(query));
+
+            for (SObject obj : scope) {
+                SObject currentRecord = recordsWithItems.get(obj.Id);
+                if (currentRecord == null) continue;
+
+                List<SObject> childItems = currentRecord.getSObjects(childRelationship);
+                if (childItems == null || childItems.isEmpty()) continue;
+
+                String qbId = (String)currentRecord.get('QuickBridgeTLG__External_Id__c');
+
+                if (qbId == null) {
+                    Map<String, Object> result = createInvoice(currentRecord, childItems, fieldMap);
                     if (result != null) {
-                        currentOrd.QuickbookID__c = (String)result.get('invoiceId');
-                        ordersToUpdate.add(currentOrd);
-                        
-                        // Update OrderItems with composite QB Line IDs
-                        List<OrderItem> updatedItems = updateOrderItemsWithCompositeLineIds(mergedItems, result, currentOrd.QuickbookID__c);
-                        itemsToUpdate.addAll(updatedItems);
+                        currentRecord.put('QuickBridgeTLG__External_Id__c', (String)result.get('invoiceId'));
+                        recordsToUpdate.add(currentRecord);
                     }
-                } else if (currentOrd.QuickbookID__c != null) {
-                    // Update existing invoice
-                    Map<String, Object> result = updateInvoice(currentOrd, mergedItems);
-                    if (result != null) {
-                        // Update OrderItems with composite QB Line IDs (including new items)
-                        List<OrderItem> updatedItems = updateOrderItemsWithCompositeLineIds(mergedItems, result, currentOrd.QuickbookID__c);
-                        itemsToUpdate.addAll(updatedItems);
-                    }
+                } else if (qbId != null && !isInitialSync) {
+                    Map<String, Object> result = updateInvoice(currentRecord, childItems, fieldMap);
                 }
             }
-            
-            // Update records with recursion prevention
-            if (!ordersToUpdate.isEmpty()) {
-                update ordersToUpdate;
+
+            if (!recordsToUpdate.isEmpty()) {
+                update recordsToUpdate;
+                IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', recordsToUpdate.size());
             }
-            if (!itemsToUpdate.isEmpty()) {
-                update itemsToUpdate;
-            }
+            if (!itemsToUpdate.isEmpty()) update itemsToUpdate;
+
+        } catch(Exception e) {
+            System.debug('Error in Invoice Batch: ' + e.getMessage());
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QuickBooksInvoiceBatch.execute',
+                e,
+                'Invoice__c',
+                scope == null || scope.isEmpty() ? null : scope[0].Id
+            );
         } finally {
             QuickBooksInvoiceHandler.setBatchContext(false);
         }
     }
-    
-    // New method to merge trigger data with current data
-    private List<OrderItem> mergeOrderItemData(List<OrderItem> currentItems) {
-        List<OrderItem> mergedItems = new List<OrderItem>();
-        
-        for (OrderItem currentItem : currentItems) {
-            OrderItem itemToUse = currentItem;
-            
-            // If we have trigger data for this item, use the trigger values for key fields
-            if (triggerOrderItems.containsKey(currentItem.Id)) {
-                OrderItem triggerItem = triggerOrderItems.get(currentItem.Id);
-                
-                // Use trigger values for the fields that were actually updated
-                itemToUse = currentItem.clone(true, true, true, true);
-                itemToUse.Quantity = triggerItem.Quantity;
-                itemToUse.UnitPrice = triggerItem.UnitPrice;
-                
-                System.debug('Merged OrderItem ' + currentItem.Id + ' with trigger data - UnitPrice: ' + triggerItem.UnitPrice + ', Quantity: ' + triggerItem.Quantity);
-            }
-            
-            mergedItems.add(itemToUse);
-        }
-        
-        return mergedItems;
-    }
-    
-    public void finish(Database.BatchableContext bc) {
-        // Optional: Send notification or log completion
-    }
-    
-    // Updated helper method to create composite Line IDs like QB to SF sync
-    private List<OrderItem> updateOrderItemsWithCompositeLineIds(List<OrderItem> orderItems, Map<String, Object> qbResult, String invoiceId) {
-        List<OrderItem> itemsToUpdate = new List<OrderItem>();
-        
-        // Get the lines from QB response
-        List<Object> linesObj = (List<Object>)qbResult.get('lines');
-        if (linesObj == null) return itemsToUpdate;
-        
-        // Convert to proper format
-        List<Map<String, Object>> lines = new List<Map<String, Object>>();
-        for (Object lineObj : linesObj) {
-            lines.add((Map<String, Object>)lineObj);
-        }
-        
-        // Create a map of existing OrderItem composite IDs for comparison
-        Map<String, OrderItem> existingCompositeIds = new Map<String, OrderItem>();
-        for (OrderItem item : orderItems) {
-            if (String.isNotBlank(item.QB_LineItemID__c)) {
-                existingCompositeIds.put(item.QB_LineItemID__c, item);
-            }
-        }
-        
-        // Match OrderItems with QB lines by product and sequence
-        Set<String> matchedQbLineIds = new Set<String>();
 
-        for (OrderItem item : orderItems) {
-            String productQBId = item.Product2.QuickbookID__c;
-            Boolean foundMatch = false;
-            
-            for (Map<String, Object> line : lines) {
-                String qbLineId = (String)line.get('Id');
-                if (qbLineId == null || matchedQbLineIds.contains(qbLineId)) {
-                    continue;
-                }
+    public void finish(Database.BatchableContext bc) {}
 
-                if (line.get('DetailType') == 'SubTotalLineDetail') {
-                    continue;
-                }
-                
-                Map<String, Object> salesDetail = (Map<String, Object>)line.get('SalesItemLineDetail');
-                if (salesDetail != null) {
-                    Map<String, Object> itemRef = (Map<String, Object>)salesDetail.get('ItemRef');
-                    String lineProductId = (String)itemRef.get('value');
-                    
-                    // Match by product ID
-                    if (productQBId == lineProductId) {
-                        String compositeLineId = invoiceId + ':' + qbLineId;
-                        
-                        if (item.QB_LineItemID__c != compositeLineId) {
-                            item.QB_LineItemID__c = compositeLineId;
-                            itemsToUpdate.add(item);
-                            System.debug('Updated OrderItem ' + item.Id + ' with composite ID: ' + compositeLineId);
-                        }
-                        matchedQbLineIds.add(qbLineId);
-                        foundMatch = true;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        return itemsToUpdate;
-    }
-    
-    // Create new invoice in QuickBooks
-    private Map<String, Object> createInvoice(Order ord, List<OrderItem> orderItems) {
-        // Build request body
+    private Map<String, Object> createInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
         Map<String, Object> requestBody = new Map<String, Object>();
-        requestBody.put('CustomerRef', new Map<String, String>{
-            'value' => ord.Account.QuickbookID__c
-        });
-        requestBody.put('TxnDate', formatDate(ord.EffectiveDate));
-        
-        // Build line items
-        List<Map<String, Object>> lineItems = new List<Map<String, Object>>();
-        Decimal totalAmount = 0;
-        
-        for (OrderItem item : orderItems) {
-            Decimal lineAmount = item.UnitPrice * item.Quantity;
-            totalAmount += lineAmount;
-            
-            Map<String, Object> lineItem = new Map<String, Object>{
-                'DetailType' => 'SalesItemLineDetail',
-                'Amount' => lineAmount,
-                'SalesItemLineDetail' => new Map<String, Object>{
-                    'ItemRef' => new Map<String, String>{
-                        'value' => item.Product2.QuickbookID__c,
-                        'name' => item.Product2.Name
-                    },
-                    'Qty' => item.Quantity,
-                    'UnitPrice' => item.UnitPrice
-                }
-            };
-            
-            lineItems.add(lineItem);
+
+        String customerRefId = getCustomerRefId(record);
+        if(String.isNotBlank(customerRefId)) {
+            requestBody.put('CustomerRef', new Map<String, String>{ 'value' => customerRefId });
         }
-        
-        // Add subtotal line
-        lineItems.add(new Map<String, Object>{
-            'DetailType' => 'SubTotalLineDetail',
-            'Amount' => totalAmount
-        });
-        
-        requestBody.put('Line', lineItems);
-        
-        // Make API call
+
+        applyDynamicMappings(requestBody, record, fieldMap);
+        requestBody.put('Line', buildLineItems(lineItems));
+
         String requestJson = JSON.serialize(requestBody);
         HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
-        
-        if (res.getStatusCode() == 200) {
-            // Parse response
-            Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
-            Map<String, Object> invoiceMap = (Map<String, Object>)responseMap.get('Invoice');
-            
-            System.debug('Create Invoice Response: ' + responseMap);
-            
-            return new Map<String, Object>{
-                'invoiceId' => invoiceMap.get('Id'),
-                'lines' => invoiceMap.get('Line')
-            };
-        } else {
-            System.debug('Error creating invoice: ' + res.getBody());
-            return null;
+
+        if (res != null && res.getStatusCode() == 200) {
+            Map<String, Object> invoiceMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('Invoice');
+            return new Map<String, Object>{ 'invoiceId' => invoiceMap.get('Id'), 'lines' => invoiceMap.get('Line') };
         }
+        ErrorLogUtility.logCalloutFailure(
+            'QuickBooks',
+            'QuickBooksInvoiceBatch.createInvoice',
+            'QuickBooks invoice create failed: ' + (res == null ? 'Null Response' : res.getBody()),
+            res == null ? null : res.getStatusCode(),
+            'Invoice__c',
+            record == null ? null : record.Id
+        );
+        return null;
     }
-    
-    // Update existing invoice in QuickBooks
-    private Map<String, Object> updateInvoice(Order ord, List<OrderItem> orderItems) {
-        System.debug('Starting updateInvoice for Order: ' + ord.Id);
-        System.debug('Order Items Count: ' + orderItems.size());
-        
-        for (OrderItem item : orderItems) {
-            System.debug('OrderItem ID: ' + item.Id + 
-                       ' UnitPrice: ' + item.UnitPrice + 
-                       ' Quantity: ' + item.Quantity + 
-                       ' QB_LineItemID__c: ' + item.QB_LineItemID__c);
-        }
-        
-        // First get the invoice to obtain SyncToken
-        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + ord.QuickbookID__c + '?minorversion=65', null);
-        
-        if (getRes.getStatusCode() != 200) {
-            System.debug('Error getting invoice: ' + getRes.getBody());
+
+    private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
+        String qbId = (String)record.get('QuickBridgeTLG__External_Id__c');
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId + '?minorversion=65', null);
+        if (getRes == null || getRes.getStatusCode() != 200) {
+            ErrorLogUtility.logCalloutFailure(
+                'QuickBooks',
+                'QuickBooksInvoiceBatch.updateInvoice.getInvoice',
+                'QuickBooks invoice query failed: ' + (getRes == null ? 'Null Response' : getRes.getBody()),
+                getRes == null ? null : getRes.getStatusCode(),
+                'Invoice__c',
+                record == null ? null : record.Id
+            );
             return null;
         }
-        
-        Map<String, Object> getResponseMap = (Map<String, Object>)JSON.deserializeUntyped(getRes.getBody());
-        Map<String, Object> existingInvoice = (Map<String, Object>)getResponseMap.get('Invoice');
-        
-        // Build update request
+
+        Map<String, Object> existingInvoice = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('Invoice');
+
         Map<String, Object> requestBody = new Map<String, Object>();
-        requestBody.put('Id', ord.QuickbookID__c);
+        requestBody.put('Id', qbId);
         requestBody.put('SyncToken', existingInvoice.get('SyncToken'));
         requestBody.put('sparse', true);
-        requestBody.put('TxnDate', formatDate(ord.EffectiveDate));
-        
-        // Build line items with existing QB Line IDs where available
-        List<Map<String, Object>> lineItems = new List<Map<String, Object>>();
-        Decimal totalAmount = 0;
-        
-        for (OrderItem item : ord.OrderItems) {
-            Decimal lineAmount = item.UnitPrice * item.Quantity;
-            totalAmount += lineAmount;
-            
-            Map<String, Object> lineItem = new Map<String, Object>{
-                'DetailType' => 'SalesItemLineDetail',
-                'Amount' => lineAmount,
-                'SalesItemLineDetail' => new Map<String, Object>{
-                    'ItemRef' => new Map<String, String>{
-                        'value' => item.Product2.QuickbookID__c,
-                        'name' => item.Product2.Name
-                    },
-                    'Qty' => item.Quantity,
-                    'UnitPrice' => item.UnitPrice,
-                    'TaxCodeRef' => new Map<String, String>{
-                        'value' => 'TAX' 
-                    }
+
+        applyDynamicMappings(requestBody, record, fieldMap);
+        requestBody.put('Line', buildLineItems(lineItems));
+
+        String requestJson = JSON.serialize(requestBody);
+        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
+
+        if (updateRes != null && updateRes.getStatusCode() == 200) {
+            Map<String, Object> invoiceMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(updateRes.getBody())).get('Invoice');
+            return new Map<String, Object>{ 'invoiceId' => invoiceMap.get('Id'), 'lines' => invoiceMap.get('Line') };
+        }
+        ErrorLogUtility.logCalloutFailure(
+            'QuickBooks',
+            'QuickBooksInvoiceBatch.updateInvoice',
+            'QuickBooks invoice update failed: ' + (updateRes == null ? 'Null Response' : updateRes.getBody()),
+            updateRes == null ? null : updateRes.getStatusCode(),
+            'Invoice__c',
+            record == null ? null : record.Id
+        );
+        return null;
+    }
+
+    private void applyDynamicMappings(Map<String, Object> requestBody, SObject record, Map<String, String> fieldMap) {
+        for (String sfField : fieldMap.keySet()) {
+            String qbField = fieldMap.get(sfField);
+            Object value = getFieldValue(record, sfField);
+
+            if (value != null) {
+                if (value instanceof Date) {
+                    value = DateTime.newInstance((Date)value, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
                 }
-            };
-            
-            // Extract QB Line ID from composite field if available
-            if (String.isNotBlank(item.QB_LineItemID__c)) {
-                String[] parts = item.QB_LineItemID__c.split(':');
-                if (parts.size() == 2 && parts[0] == ord.QuickbookID__c) {
-                    String qbLineId = parts[1];
-                    lineItem.put('Id', qbLineId);
-                    System.debug('Using existing QB Line ID: ' + qbLineId + ' for OrderItem: ' + item.Id);
+
+                if (qbField.contains('.')) {
+                    List<String> path = qbField.split('\\.');
+                    Map<String, Object> currentMap = requestBody;
+                    for (Integer i = 0; i < path.size() - 1; i++) {
+                        String part = path[i];
+                        if (!currentMap.containsKey(part)) currentMap.put(part, new Map<String, Object>());
+                        currentMap = (Map<String, Object>)currentMap.get(part);
+                    }
+                    currentMap.put(path[path.size() - 1], value);
+                } else {
+                    requestBody.put(qbField, value);
                 }
             }
-            
-            lineItems.add(lineItem);
-        }
-        
-        // Add subtotal line
-        lineItems.add(new Map<String, Object>{
-            'DetailType' => 'SubTotalLineDetail',
-            'Amount' => totalAmount
-        });
-        
-        requestBody.put('Line', lineItems);
-        
-        // Make API call
-        String requestJson = JSON.serialize(requestBody);
-        System.debug('Update Invoice Request: ' + requestJson);
-        
-        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
-        
-        if (updateRes.getStatusCode() == 200) {
-            // Parse response
-            Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(updateRes.getBody());
-            Map<String, Object> invoiceMap = (Map<String, Object>)responseMap.get('Invoice');
-            
-            System.debug('Update Invoice Response: ' + responseMap);
-            
-            return new Map<String, Object>{
-                'invoiceId' => invoiceMap.get('Id'),
-                'lines' => invoiceMap.get('Line')
-            };
-        } else {
-            System.debug('Error updating invoice: ' + updateRes.getBody());
-            return null;
         }
     }
-    
-    // Helper method to format date for QuickBooks
-    private static String formatDate(Date d) {
-        if (d == null) return null;
-        return DateTime.newInstance(d, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
+
+    private List<Map<String, Object>> buildLineItems(List<SObject> lineItems) {
+        List<Map<String, Object>> qbLines = new List<Map<String, Object>>();
+        Decimal totalAmount = 0;
+
+        for (SObject item : lineItems) {
+            // Updated to custom fields
+            Decimal quantity = 0;
+            Decimal unitPrice = 0;
+            try { quantity = (Decimal)item.get('QuickBridgeTLG__Quantity__c'); } catch(Exception e){}
+            try { unitPrice = (Decimal)item.get('QuickBridgeTLG__Unit_Price__c'); } catch(Exception e){}
+
+            if(quantity == null) quantity = 0;
+            if(unitPrice == null) unitPrice = 0;
+
+            Decimal lineAmount = quantity * unitPrice;
+            totalAmount += lineAmount;
+
+            SObject product = null;
+            try { product = item.getSObject('QuickBridgeTLG__Product__r'); } catch(Exception e){}
+
+            String productQbId = null;
+            String productName = null;
+
+            if(product != null) {
+                try { productQbId = (String)product.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){}
+                try { productName = (String)product.get('Name'); } catch(Exception e){}
+            }
+
+            if(productQbId != null) {
+                Map<String, Object> lineDetail = new Map<String, Object>{
+                    'DetailType' => 'SalesItemLineDetail',
+                    'Amount' => lineAmount,
+                    'SalesItemLineDetail' => new Map<String, Object>{
+                        'Qty' => quantity,
+                        'UnitPrice' => unitPrice,
+                        'ItemRef' => new Map<String, String>{
+                            'value' => productQbId,
+                            'name' => productName
+                        }
+                    }
+                };
+                qbLines.add(lineDetail);
+            }
+        }
+        qbLines.add(new Map<String, Object>{ 'DetailType' => 'SubTotalLineDetail', 'Amount' => totalAmount });
+        return qbLines;
+    }
+
+    private static String getCustomerRefId(SObject record) {
+    try {
+        SObject accountRecord = record.getSObject('QuickBridgeTLG__Related_Account__r');
+        if(accountRecord != null) return (String)accountRecord.get('QuickBridgeTLG__QuickbookID__c');
+    } catch(Exception e) {}
+    return null;
+}
+
+    private static Object getFieldValue(SObject obj, String fieldPath) {
+        if(!fieldPath.contains('.')) {
+            try { return obj.get(fieldPath); } catch(Exception e) { return null; }
+        }
+        List<String> fields = fieldPath.split('\\.');
+        SObject currentObj = obj;
+        for (Integer i = 0; i < fields.size() - 1; i++) {
+            currentObj = currentObj.getSObject(fields[i]);
+            if (currentObj == null) return null;
+        }
+        return currentObj.get(fields[fields.size() - 1]);
     }
 }
+// public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Database.AllowsCallouts {
+
+//     private Set<Id> recordIds;
+//     private Boolean isInitialSync;
+//     private Map<Id, SObject> triggerItemsMap;
+
+//     public QuickBooksInvoiceBatch(Set<Id> recordIds, Boolean isInitialSync) {
+//         this.recordIds = recordIds;
+//         this.isInitialSync = isInitialSync;
+//         this.triggerItemsMap = new Map<Id, SObject>();
+//     }
+
+//     public QuickBooksInvoiceBatch(Set<Id> recordIds, Boolean isInitialSync, List<SObject> triggerItems) {
+//         this.recordIds = recordIds;
+//         this.isInitialSync = isInitialSync;
+//         this.triggerItemsMap = new Map<Id, SObject>();
+//         if (triggerItems != null) {
+//             for (SObject item : triggerItems) {
+//                 this.triggerItemsMap.put(item.Id, item);
+//             }
+//         }
+//     }
+
+//     public Database.QueryLocator start(Database.BatchableContext bc) {
+//         String mappedObject = QBObjectMappings.getInvoiceSourceObject();
+//         String query = 'SELECT Id FROM ' + mappedObject + ' WHERE Id IN :recordIds';
+//         return Database.getQueryLocator(query);
+//     }
+
+//     public void execute(Database.BatchableContext bc, List<SObject> scope) {
+//         QuickBooksInvoiceHandler.setBatchContext(true);
+
+//         try {
+//             List<SObject> recordsToUpdate = new List<SObject>();
+//             List<SObject> itemsToUpdate = new List<SObject>();
+
+//             String mappedObject = QBObjectMappings.getInvoiceSourceObject();
+//             String mappedLineObject = QBObjectMappings.getInvoiceLineItemObject(mappedObject);
+
+//             Map<String, String> fieldMap = QBObjectMappings.getSmartInvoiceMapping();
+//             Set<String> fieldsToQuery = new Set<String>{'Id', 'QuickbookID__c'};
+
+//             if(mappedObject == 'Order') {
+//                 fieldsToQuery.add('Account.QuickbookID__c');
+//             }
+//             fieldsToQuery.addAll(fieldMap.keySet());
+
+//             List<String> queryFields = new List<String>(fieldsToQuery);
+//             String childRelationship = 'OrderItems'; // Default for Order
+//             if (mappedObject != 'Order') {
+//                 Schema.DescribeSObjectResult describeResult = Schema.getGlobalDescribe().get(mappedObject).getDescribe();
+//                 for (Schema.ChildRelationship cr : describeResult.getChildRelationships()) {
+//                     if (String.valueOf(cr.getChildSObject()) == mappedLineObject) {
+//                         childRelationship = cr.getRelationshipName();
+//                         break;
+//                     }
+//                 }
+//             }
+
+//             String query = 'SELECT ' + String.join(queryFields, ', ') +
+//                            ', (SELECT Id, Product2.QuickbookID__c, Product2.Name, Quantity, UnitPrice, QB_LineItemID__c ' +
+//                            'FROM ' + childRelationship + ') ' +
+//                            'FROM ' + mappedObject + ' WHERE Id IN :recordIds';
+
+//             Map<Id, SObject> recordsWithItems = new Map<Id, SObject>((List<SObject>)Database.query(query));
+
+//             for (SObject obj : scope) {
+//                 SObject currentRecord = recordsWithItems.get(obj.Id);
+
+//                 List<SObject> childItems = currentRecord.getSObjects(childRelationship);
+//                 if (currentRecord == null || childItems == null || childItems.isEmpty()) continue;
+
+//                 String qbId = (String)currentRecord.get('QuickbookID__c');
+
+//                 if (qbId == null && isInitialSync) {
+//                     Map<String, Object> result = createInvoice(currentRecord, childItems, fieldMap);
+//                     if (result != null) {
+//                         currentRecord.put('QuickbookID__c', (String)result.get('invoiceId'));
+//                         recordsToUpdate.add(currentRecord);
+//                         itemsToUpdate.addAll(updateLineItemsWithCompositeIds(childItems, result, (String)result.get('invoiceId')));
+//                     }
+//                 } else if (qbId != null) {
+//                     Map<String, Object> result = updateInvoice(currentRecord, childItems, fieldMap);
+//                     if (result != null) {
+//                         itemsToUpdate.addAll(updateLineItemsWithCompositeIds(childItems, result, qbId));
+//                     }
+//                 }
+//             }
+
+//             if (!recordsToUpdate.isEmpty()) update recordsToUpdate;
+//             if (!itemsToUpdate.isEmpty()) update itemsToUpdate;
+
+//         } catch(Exception e) {
+//             System.debug('Error in Invoice Batch: ' + e.getMessage());
+//         } finally {
+//             QuickBooksInvoiceHandler.setBatchContext(false);
+//         }
+//     }
+
+//     public void finish(Database.BatchableContext bc) {}
+
+//     private Map<String, Object> createInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
+//         Map<String, Object> requestBody = new Map<String, Object>();
+
+//         String customerRefId = getCustomerRefId(record);
+//         if(String.isNotBlank(customerRefId)) {
+//             requestBody.put('CustomerRef', new Map<String, String>{ 'value' => customerRefId });
+//         }
+
+//         applyDynamicMappings(requestBody, record, fieldMap);
+
+//         requestBody.put('Line', buildLineItems(lineItems));
+
+//         String requestJson = JSON.serialize(requestBody);
+//         HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
+
+//         if (res.getStatusCode() == 200) {
+//             Map<String, Object> invoiceMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('Invoice');
+//             return new Map<String, Object>{ 'invoiceId' => invoiceMap.get('Id'), 'lines' => invoiceMap.get('Line') };
+//         }
+//         return null;
+//     }
+
+//     private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
+//         String qbId = (String)record.get('QuickbookID__c');
+//         HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId + '?minorversion=65', null);
+//         if (getRes.getStatusCode() != 200) return null;
+
+//         Map<String, Object> existingInvoice = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('Invoice');
+
+//         Map<String, Object> requestBody = new Map<String, Object>();
+//         requestBody.put('Id', qbId);
+//         requestBody.put('SyncToken', existingInvoice.get('SyncToken'));
+//         requestBody.put('sparse', true);
+
+//         applyDynamicMappings(requestBody, record, fieldMap);
+//         requestBody.put('Line', buildLineItems(lineItems));
+
+//         String requestJson = JSON.serialize(requestBody);
+//         HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
+
+//         if (updateRes.getStatusCode() == 200) {
+//             Map<String, Object> invoiceMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(updateRes.getBody())).get('Invoice');
+//             return new Map<String, Object>{ 'invoiceId' => invoiceMap.get('Id'), 'lines' => invoiceMap.get('Line') };
+//         }
+//         return null;
+//     }
+
+//     private void applyDynamicMappings(Map<String, Object> requestBody, SObject record, Map<String, String> fieldMap) {
+//         for (String sfField : fieldMap.keySet()) {
+//             String qbField = fieldMap.get(sfField);
+//             Object value = getFieldValue(record, sfField);
+
+//             if (value != null) {
+//                 if (value instanceof Date) {
+//                     value = DateTime.newInstance((Date)value, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
+//                 }
+
+//                 if (qbField.contains('.')) {
+//                     List<String> path = qbField.split('\\.');
+//                     Map<String, Object> currentMap = requestBody;
+//                     for (Integer i = 0; i < path.size() - 1; i++) {
+//                         String part = path[i];
+//                         if (!currentMap.containsKey(part)) currentMap.put(part, new Map<String, Object>());
+//                         currentMap = (Map<String, Object>)currentMap.get(part);
+//                     }
+//                     currentMap.put(path[path.size() - 1], value);
+//                 } else {
+//                     requestBody.put(qbField, value);
+//                 }
+//             }
+//         }
+//     }
+
+//     private List<Map<String, Object>> buildLineItems(List<SObject> lineItems) {
+//         List<Map<String, Object>> qbLines = new List<Map<String, Object>>();
+//         Decimal totalAmount = 0;
+
+//         for (SObject item : lineItems) {
+//             Decimal quantity = (Decimal)item.get('Quantity');
+//             Decimal unitPrice = (Decimal)item.get('UnitPrice');
+//             Decimal lineAmount = quantity * unitPrice;
+//             totalAmount += lineAmount;
+
+//             SObject product = item.getSObject('Product2');
+//             String productQbId = product != null ? (String)product.get('QuickbookID__c') : null;
+//             String productName = product != null ? (String)product.get('Name') : null;
+
+//             Map<String, Object> lineDetail = new Map<String, Object>{
+//                 'DetailType' => 'SalesItemLineDetail',
+//                 'Amount' => lineAmount,
+//                 'SalesItemLineDetail' => new Map<String, Object>{
+//                     'Qty' => quantity,
+//                     'UnitPrice' => unitPrice
+//                 }
+//             };
+
+//             if(productQbId != null) {
+//                 ((Map<String, Object>)lineDetail.get('SalesItemLineDetail')).put('ItemRef', new Map<String, String>{
+//                     'value' => productQbId,
+//                     'name' => productName
+//                 });
+//             }
+
+//             String qbLineId = (String)item.get('QB_LineItemID__c');
+//             if (String.isNotBlank(qbLineId) && qbLineId.contains(':')) {
+//                 lineDetail.put('Id', qbLineId.split(':')[1]);
+//             }
+
+//             qbLines.add(lineDetail);
+//         }
+//         qbLines.add(new Map<String, Object>{ 'DetailType' => 'SubTotalLineDetail', 'Amount' => totalAmount });
+//         return qbLines;
+//     }
+
+//     private List<SObject> updateLineItemsWithCompositeIds(List<SObject> lineItems, Map<String, Object> qbResult, String invoiceId) {
+//         List<SObject> itemsToUpdate = new List<SObject>();
+//         List<Object> linesObj = (List<Object>)qbResult.get('lines');
+//         if (linesObj == null) return itemsToUpdate;
+
+//         return itemsToUpdate;
+//     }
+
+//     private static String getCustomerRefId(SObject record) {
+//         try {
+//             SObject accountRecord = record.getSObject('Account');
+//             if(accountRecord != null) return (String)accountRecord.get('QuickbookID__c');
+//         } catch(Exception e) {}
+//         return null;
+//     }
+
+//     private static Object getFieldValue(SObject obj, String fieldPath) {
+//         if(!fieldPath.contains('.')) return obj.get(fieldPath);
+//         List<String> fields = fieldPath.split('\\.');
+//         SObject currentObj = obj;
+//         for (Integer i = 0; i < fields.size() - 1; i++) {
+//             currentObj = currentObj.getSObject(fields[i]);
+//             if (currentObj == null) return null;
+//         }
+//         return currentObj.get(fields[fields.size() - 1]);
+//     }
+// }

@@ -1,0 +1,137 @@
+<template>
+    <lightning-card icon-name="standard:service_report" class="slds-card_boundary">
+        
+        <h3 slot="title" class="slds-text-heading_small slds-truncate slds-p-left_small">
+            <b>{gatewayName} Error Logs</b>
+            <span class="slds-badge slds-m-left_small slds-theme_error">{totalRecords} Total</span>
+        </h3>
+        
+        <div slot="actions">
+            <lightning-button-icon 
+                icon-name="utility:refresh" 
+                alternative-text="Refresh Logs" 
+                title="Refresh Logs" 
+                onclick={handleRefresh} 
+                disabled={isRefreshing}>
+            </lightning-button-icon>
+        </div>
+
+        <div class="slds-p-horizontal_small relative-container">
+            
+            <template if:true={isRefreshing}>
+                <lightning-spinner alternative-text="Loading" size="small"></lightning-spinner>
+            </template>
+
+            <template if:true={hasRecords}>
+                
+                <div class="desktop-view slds-box slds-p-around_none slds-m-bottom_small">
+                    <lightning-datatable 
+                        key-field="Id" 
+                        data={paginatedLogs} 
+                        columns={columns} 
+                        hide-checkbox-column="true" 
+                        resize-column-disabled="true">
+                    </lightning-datatable>
+                </div>
+
+                <div class="mobile-view">
+                    <template for:each={paginatedLogs} for:item="log">
+                        <div key={log.Id} class="mobile-card slds-box slds-m-bottom_small slds-theme_shade">
+                            
+                            <div class="slds-grid slds-grid_align-spread slds-m-bottom_small slds-border_bottom slds-p-bottom_x-small">
+                                <div class="slds-col slds-text-title_caps">
+                                    <a href={log.recordUrl} target="_blank" class="slds-text-link"><b>{log.Name}</b></a>
+                                </div>
+                            </div>
+
+                            <template for:each={log.mobileFields} for:item="field">
+                                <div key={field.label} class="slds-grid slds-m-bottom_xx-small">
+                                    <div class="slds-col slds-size_1-of-3 card-label slds-text-color_weak">{field.label}:</div>
+                                    <div class="slds-col slds-size_2-of-3 card-value slds-text-align_right">
+                                        <template if:true={field.isDate}>
+                                            <lightning-formatted-date-time value={field.value} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time>
+                                        </template>
+                                        <template if:true={field.isUrl}>
+                                            <template if:true={field.urlLink}>
+                                                <a href={field.urlLink} target="_blank"><b>{field.urlLabel}</b></a>
+                                            </template>
+                                            <template if:false={field.urlLink}>-</template>
+                                        </template>
+                                        <template if:false={field.isDate}>
+                                            <template if:false={field.isUrl}>
+                                                <span class="slds-truncate" title={field.value}>{field.value}</span>
+                                            </template>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="slds-grid slds-grid_align-spread slds-p-top_small slds-border_top">
+                    <div class="slds-col">
+                        <lightning-button-icon icon-name="utility:chevronleft" variant="border-filled" disabled={isFirstPage} onclick={handlePrevious} title="Previous"></lightning-button-icon>
+                    </div>
+                    <div class="slds-col slds-align-middle slds-text-color_weak">
+                        <b>Page {currentPage} of {totalPages}</b>
+                    </div>
+                    <div class="slds-col">
+                        <lightning-button-icon icon-name="utility:chevronright" variant="border-filled" disabled={isLastPage} onclick={handleNext} title="Next"></lightning-button-icon>
+                    </div>
+                </div>
+
+            </template>
+
+            <template if:false={hasRecords}>
+                <div class="slds-illustration slds-illustration_small slds-p-around_large slds-text-align_center">
+                    <lightning-icon icon-name="utility:search" size="large" class="slds-m-bottom_small" variant="warning"></lightning-icon>
+                    <h3 class="slds-text-heading_medium">No recent errors found</h3>
+                    <p class="slds-text-body_regular slds-text-color_weak">Everything is running smoothly for {gatewayName}.</p>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>
+<!-- <template>
+    <div class="slds-box slds-theme_default main-container">
+        <div class="header-padding">
+            <h3 class="slds-text-heading_small header-title">
+                {gatewayName} Error Logs
+            </h3>
+        </div>
+
+        <template if:true={errorLogs}>
+            <div class="desktop-view">
+                <lightning-datatable key-field="Id" data={errorLogs} columns={columns} hide-checkbox-column="true" resize-column-disabled="true"></lightning-datatable>
+            </div>
+
+            <div class="mobile-view slds-p-around_small">
+                <template for:each={errorLogs} for:item="log">
+                    <div key={log.Id} class="mobile-card slds-box slds-m-bottom_small">
+                        <div class="card-row">
+                            <span class="card-label">Date:</span>
+                            <span class="card-value">
+                                <lightning-formatted-date-time value={log.CreatedDate} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time>
+                            </span>
+                        </div>
+                        <div class="card-row">
+                            <span class="card-label">Method:</span>
+                            <span class="card-value slds-text-title_bold">{log.Class_Method_Name__c}</span>
+                        </div>
+                        <div class="card-row">
+                            <span class="card-label">Error:</span>
+                            <span class="card-value error-text">{log.Error_Message__c}</span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <template if:false={errorLogs}>
+            <p class="empty-state">
+                No recent errors found.
+            </p>
+        </template>
+    </div>
+</template> -->

@@ -1,0 +1,59 @@
+<template>
+    <div class="login-container">
+        <div class="login-card">
+            
+            <!-- Card Logo -->
+            <div class="logo-section">
+                <svg class="logo-icon" viewBox="0 0 100 100" fill="currentColor">
+                    <path d="M30 30 C10 30, 10 70, 30 70 C50 70, 50 30, 30 30 Z M70 30 C50 30, 50 70, 70 70 C90 70, 90 30, 70 30 Z" fill="none" stroke="currentColor" stroke-width="8"/>
+                    <path d="M40 50 L60 50 M45 40 L45 60 M55 40 L55 60" stroke="currentColor" stroke-width="4"/>
+                    <rect x="25" y="45" width="50" height="10" fill="currentColor"/>
+                </svg>
+                <div class="logo-text">
+                    <span class="logo-title">QuickBridge</span>
+                    <span class="logo-subtitle">The Lodestone Group</span>
+                </div>
+            </div>
+
+            <h1 class="login-header">Secure Login</h1>
+
+            <form onsubmit={handleLogin}>
+                <!-- User ID Input -->
+                <div class="form-group">
+                    <label for="userId" class="form-label">User ID</label>
+                    <input 
+                        type="text" 
+                        id="userId" 
+                        class="custom-input" 
+                        placeholder="Enter your user ID" 
+                        onchange={handleUserIdChange} 
+                        required 
+                    />
+                </div>
+
+                <!-- 4-Digit PIN Input -->
+                <div class="form-group pin-group-container">
+                    <label class="form-label">4-Digit PIN</label>
+                    <div class="pin-grid">
+                        <input type="text" inputmode="numeric" pattern="\d*" maxlength="1" class="pin-input" data-index="0" oninput={handlePinInput} onkeydown={handlePinKeydown} />
+                        <input type="text" inputmode="numeric" pattern="\d*" maxlength="1" class="pin-input" data-index="1" oninput={handlePinInput} onkeydown={handlePinKeydown} disabled />
+                        <input type="text" inputmode="numeric" pattern="\d*" maxlength="1" class="pin-input" data-index="2" oninput={handlePinInput} onkeydown={handlePinKeydown} disabled />
+                        <input type="text" inputmode="numeric" pattern="\d*" maxlength="1" class="pin-input" data-index="3" oninput={handlePinInput} onkeydown={handlePinKeydown} disabled />
+                    </div>
+                </div>
+
+                <!-- Sign In Button -->
+                <button type="submit" class="btn-primary">
+                    Sign In
+                </button>
+
+                <!-- Forgot PIN -->
+                <div class="forgot-pin">
+                    <a href="#" onclick={handleForgotPin}>
+                        Forgot PIN?
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</template>

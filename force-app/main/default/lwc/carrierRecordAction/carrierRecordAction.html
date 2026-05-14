@@ -1,0 +1,148 @@
+<template>
+    <div class="carrier-panel">
+
+        <template if:true={isPanelLoading}>
+            <div class="carrier-loading">
+                <lightning-spinner size="x-small" alternative-text="Loading..."></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:false={isPanelLoading}>
+            <div class="carrier-bar">
+
+                <template if:false={hasActiveCarriers}>
+                    <span class="carrier-no-actions">No active carrier integrations. Enable FedEx or UPS in Quickbridge settings.</span>
+                </template>
+
+                <template if:true={hasActiveCarriers}>
+
+                    <!-- Carrier type pill -->
+                    <div class="carrier-selector-wrap">
+                        <span class="carrier-label">Carrier</span>
+                        <div class="carrier-select-box">
+                            <lightning-combobox
+                                label=""
+                                value={carrierType}
+                                options={carrierOptions}
+                                placeholder="Select…"
+                                disabled={isLoading}
+                                onchange={handleCarrierChange}
+                                variant="label-hidden"
+                            ></lightning-combobox>
+                        </div>
+                    </div>
+
+                    <!-- Divider -->
+                    <template if:true={hasActions}>
+                        <div class="carrier-divider"></div>
+                    </template>
+
+                    <!-- Action buttons -->
+                    <div class="carrier-actions">
+                        <template if:true={hasActions}>
+                            <template for:each={actions} for:item="action">
+                                <button
+                                    key={action.actionName}
+                                    type="button"
+                                    class="carrier-action-btn"
+                                    data-action={action.actionName}
+                                    onclick={handleActionClick}
+                                    disabled={isLoading}
+                                >
+                                    <template if:true={isLoading}>
+                                        <lightning-spinner size="x-small" alternative-text="Running..."></lightning-spinner>
+                                    </template>
+                                    <template if:false={isLoading}>
+                                        {action.label}
+                                    </template>
+                                </button>
+                            </template>
+                        </template>
+
+                        <template if:false={hasActions}>
+                            <span class="carrier-no-actions">{noActionsMessage}</span>
+                        </template>
+                    </div>
+
+                </template>
+
+            </div>
+        </template>
+
+        <!-- Address confirm modal -->
+        <template if:true={showConfirmModal}>
+            <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open confirm-modal">
+                <div class="slds-modal__container">
+                    <header class="slds-modal__header">
+                        <h2 class="slds-modal__title">Address Validation Result</h2>
+                        <p class="slds-m-top_x-small slds-text-body_small">Review the validated address below. Click Apply to write it back to the record, or Discard to keep the original.</p>
+                    </header>
+                    <div class="slds-modal__content slds-p-around_medium">
+                        <template for:each={confirmedAddressLines} for:item="line">
+                            <div key={line.key} class="slds-grid slds-gutters_small slds-m-bottom_x-small">
+                                <div class="slds-col slds-size_1-of-3 slds-text-title_caps">{line.key}</div>
+                                <div class="slds-col slds-size_2-of-3">{line.value}</div>
+                            </div>
+                        </template>
+                    </div>
+                    <footer class="slds-modal__footer">
+                        <button class="slds-button slds-button_neutral" onclick={handleCancelConfirmModal}>Discard</button>
+                        <button class="slds-button slds-button_brand" onclick={handleConfirmAddress} disabled={isLoading}>
+                            <template if:true={isLoading}>Applying...</template>
+                            <template if:false={isLoading}>Apply Validated Address</template>
+                        </button>
+                    </footer>
+                </div>
+            </section>
+            <div class="slds-backdrop slds-backdrop_open"></div>
+        </template>
+
+        <!-- Rate quote modal -->
+        <template if:true={showRateModal}>
+            <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open rate-modal">
+                <div class="slds-modal__container">
+                    <header class="slds-modal__header">
+                        <h2 class="slds-modal__title">Select Rate Option</h2>
+                    </header>
+                    <div class="slds-modal__content rate-modal-content">
+                        <template if:true={hasRateQuotes}>
+                            <template for:each={rateQuotes} for:item="quote">
+                                <div
+                                    key={quote.rateQuoteId}
+                                    class="rate-option"
+                                    data-quote-id={quote.rateQuoteId}
+                                    onclick={handleRateQuoteSelect}
+                                >
+                                    <div class="rate-select-indicator">
+                                        <template if:true={quote.selected}>
+                                            <lightning-icon icon-name="utility:check" size="x-small"></lightning-icon>
+                                        </template>
+                                    </div>
+                                    <div class="rate-details">
+                                        <p class="rate-service-name">{quote.serviceName}</p>
+                                        <p class="rate-charge">{quote.totalNetCharge} {quote.currencyCode}</p>
+                                        <template if:true={quote.transitTime}>
+                                            <p class="rate-transit">Transit: {quote.transitTime}</p>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </template>
+                        <template if:false={hasRateQuotes}>
+                            <p>No rate options returned.</p>
+                        </template>
+                    </div>
+                    <footer class="slds-modal__footer">
+                        <button class="slds-button slds-button_neutral" onclick={handleCancelRateModal}>Cancel</button>
+                        <button class="slds-button slds-button_brand" onclick={handleConfirmRateQuote} disabled={isLoading}>
+                            <template if:true={isLoading}>Applying...</template>
+                            <template if:false={isLoading}>Apply Selected Rate</template>
+                        </button>
+                    </footer>
+                </div>
+            </section>
+            <div class="slds-backdrop slds-backdrop_open"></div>
+        </template>
+
+    </div>
+</template>

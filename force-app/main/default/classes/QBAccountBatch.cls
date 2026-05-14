@@ -12,7 +12,18 @@ public class QBAccountBatch implements Database.Batchable<sObject>, Database.All
     }
     
     public void execute(Database.BatchableContext bc, List<Account> scope) {
-        QBAccountService.syncAccountsToQuickBooks(scope, isInsert);
+        try {
+            QBAccountService.syncAccountsToQuickBooks(scope, isInsert);
+        } catch (Exception e) {
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QBAccountBatch.execute',
+                e,
+                'Account',
+                scope == null || scope.isEmpty() ? null : scope[0].Id
+            );
+            throw e;
+        }
     }
     
     public void finish(Database.BatchableContext bc) {

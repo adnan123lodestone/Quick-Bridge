@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <customSettingsType>List</customSettingsType>
+    <description>Stores self-auth configuration for Quickbridge metadata API updates.</description>
+    <enableFeeds>false</enableFeeds>
+    <label>Metadata API Config</label>
+    <visibility>Public</visibility>
+</CustomObject>

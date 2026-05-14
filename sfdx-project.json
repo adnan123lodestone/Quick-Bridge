@@ -2,11 +2,12 @@
   "packageDirectories": [
     {
       "path": "force-app",
-      "default": true
+      "default": true,
+      "package": "MyPackage",
+      "versionName": "Version 1.0",
+      "versionNumber": "1.0.0.NEXT"
     }
   ],
-  "name": "Quick Bridge",
   "namespace": "",
-  "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "66.0"
+  "sourceApiVersion": "61.0"
 }

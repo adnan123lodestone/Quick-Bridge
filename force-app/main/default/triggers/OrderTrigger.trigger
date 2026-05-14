@@ -4,12 +4,12 @@ trigger OrderTrigger on Order (after update) {
                 ', isOrderProcessing: ' + QBTriggerHandler.isOrderProcessing + 
                 ', QBInvoiceToOrderSyncBatch.isProcessing: ' + QBInvoiceToOrderSyncBatch.isProcessing);
     
-    if (Trigger.isAfter && Trigger.isUpdate && !QuickBooksInvoiceHandler.isProcessing 
-        && !QBTriggerHandler.isOrderProcessing && !QBInvoiceToOrderSyncBatch.isProcessing) {
+    // if (Trigger.isAfter && Trigger.isUpdate && !QuickBooksInvoiceHandler.isProcessing 
+    //     && !QBTriggerHandler.isOrderProcessing && !QBInvoiceToOrderSyncBatch.isProcessing) {
         
-        System.debug('Calling handleOrderEvents for UPDATE');
-        QuickBooksInvoiceHandler.handleOrderEvents(Trigger.new, Trigger.oldMap, true);
-    } else {
-        System.debug('Order Trigger skipped due to conditions');
-    }
+    //     System.debug('Calling handleOrderEvents for UPDATE');
+    //     QuickBooksInvoiceHandler.handleOrderEvents(Trigger.new, Trigger.oldMap, true);
+    // } else {
+    //     System.debug('Order Trigger skipped due to conditions');
+    // }
 }

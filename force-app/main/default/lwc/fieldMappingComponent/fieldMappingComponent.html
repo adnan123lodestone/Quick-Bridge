@@ -1,178 +1,120 @@
 <template>
-    <div class="container">
-        <!-- Header Section -->
-        <div class="header-section">
-            <h1>Field Mapping Configuration</h1>
-        </div>
-
-        <!-- Error Message -->
-        <template if:true={errorMessage}>
-            <div class="slds-box slds-theme_alert-texture slds-theme_error slds-m-bottom_large">
-                <p class="slds-text-body">
-                    <strong>Error:</strong> {errorMessage}
-                </p>
-            </div>
-        </template>
-
-        <!-- Loading Spinner -->
+    <div class="mapping-container">
         <template if:true={isLoading}>
-            <div style="text-align: center; padding: 2rem;">
-                Promise.all([
-                    this.loadSalesforceObjects(),
-                    this.loadQuickBooksFields()  // ← This calls getQuickBooksFields()
-                ])                <lightning-spinner alternative-text="Loading configuration..." size="medium"></lightning-spinner>
+            <div class="loading-spinner">
+                <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
             </div>
         </template>
 
-        <!-- Main Content (Show when not loading) -->
         <template if:false={isLoading}>
-            <!-- Configuration Section -->
-            <div class="configuration-section slds-box slds-m-bottom_large">
-                <div class="slds-grid slds-wrap slds-gutters">
-                    <!-- Salesforce Object Selection -->
-                    <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-2 slds-large-size_1-of-3">
-                        <lightning-combobox
-                            name="sfObject"
-                            label="Salesforce Object"
-                            value={selectedSFObject}
-                            options={sfObjectOptions}
-                            onchange={handleSalesforceObjectChange}
-                            required
-                        ></lightning-combobox>
-                    </div>
-
-                    <!-- Integration Selection -->
-                    <div class="slds-col slds-size_1-of-2 slds-medium-size_1-of-2 slds-large-size_2-of-3">
-                        <fieldset class="slds-form-element">
-                            <legend class="slds-form-element__legend slds-form-element__label">
-                                Select Integration
-                            </legend>
-                            <div class="slds-form-element__control">
-                                <span class="slds-radio slds-m-right_large">
-                                    <input
-                                        type="radio"
-                                        name="integration"
-                                        value="qbonline"
-                                        checked={isQBOnlineSelected}
-                                        onchange={handleIntegrationChange}
-                                        id="qbonline"
-                                    />
-                                    <label for="qbonline" class="slds-radio__label">
-                                        <span class="slds-radio_faux"></span>
-                                        <span class="slds-form-element__label">QuickBooks Online</span>
-                                    </label>
-                                </span>
-                                <span class="slds-radio">
-                                    <input
-                                        type="radio"
-                                        name="integration"
-                                        value="klaviyo"
-                                        checked={isKlaviyoSelected}
-                                        onchange={handleIntegrationChange}
-                                        id="klaviyo"
-                                    />
-                                    <label for="klaviyo" class="slds-radio__label">
-                                        <span class="slds-radio_faux"></span>
-                                        <span class="slds-form-element__label">Klaviyo</span>
-                                    </label>
-                                </span>
-                            </div>
-                        </fieldset>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Field Mapping Section -->
-            <div class="mapping-section slds-box">
-                <h2 class="slds-text-heading_medium slds-m-bottom_medium">
-                    Field Mappings
-                </h2>
-
-                <!-- Mapping Rows -->
-                <div class="slds-scrollable">
-                    <table class="slds-table slds-table_bordered slds-table_striped">
-                        <thead>
-                            <tr class="slds-line-height_reset">
-                                <th scope="col" class="slds-cell slds-text-heading_small">
-                                    <div class="slds-truncate">{selectedSFObject} Field</div>
-                                </th>
-                                <th scope="col" class="slds-cell slds-text-heading_small">
-                                    <div class="slds-truncate">
-                                        {selectedIntegration === 'qbonline' ? 'QuickBooks Field' : 'Klaviyo Field'}
-                                    </div>
-                                </th>
-                                <th scope="col" class="slds-cell slds-text-heading_small" style="width: 60px;">
-                                    <div class="slds-truncate">Action</div>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template for:each={mappingRows} for:item="row">
-                                <tr key={row.id}>
-                                    <td class="slds-cell">
-                                        <lightning-combobox
-                                            name="sfField"
-                                            label="Salesforce Field"
-                                            value={row.sfField}
-                                            options={sfFieldOptions}
-                                            onchange={handleSFFieldChange}
-                                            data-row-id={row.id}
-                                            class="combobox-cell"
-                                        ></lightning-combobox>
-                                    </td>
-                                    <td class="slds-cell">
-                                        <lightning-combobox
-                                            name="externalField"
-                                            label="External Field"
-                                            value={row.externalField}
-                                            options={externalFieldOptions}
-                                            onchange={handleExternalFieldChange}
-                                            data-row-id={row.id}
-                                            class="combobox-cell"
-                                        ></lightning-combobox>
-                                    </td>
-                                    <td class="slds-cell" style="text-align: center;">
-                                        <template if:false={row.isLastRow}>
-                                            <lightning-button
-                                                icon-name="utility:delete"
-                                                variant="bare"
-                                                size="small"
-                                                onclick={handleRemoveRow}
-                                                data-row-id={row.id}
-                                                title="Remove row"
-                                            ></lightning-button>
-                                        </template>
-                                    </td>
-                                </tr>
+            <div class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large">
+                <div class="slds-grid slds-grid_vertical-align-center slds-gutters">
+                    <div class="slds-col slds-size_2-of-5">
+                        <label class="custom-label">Salesforce Object</label>
+                        <select class="custom-select" name="sfObject" value={selectedSFObject} onchange={handleSalesforceObjectChange}>
+                            <template for:each={sfObjectOptions} for:item="option">
+                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
                             </template>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Add Row Button -->
-                <div class="slds-m-top_large">
-                    <lightning-button
-                        label="+ Add Row"
-                        variant="neutral"
-                        onclick={handleAddRow}
-                        icon-name="utility:add"
-                    ></lightning-button>
+                        </select>
+                    </div>
+                    <div class="slds-col icon-col slds-text-align_center">
+                        <lightning-icon icon-name="utility:right" size="x-small" class="swap-icon"></lightning-icon>
+                    </div>
+                    <div class="slds-col slds-size_2-of-5">
+                        <label class="custom-label">3rd Party Application (QuickBooks)</label>
+                        <select class="custom-select" name="qbObject" value={selectedQBObject} onchange={handleQBObjectChange}>
+                            <template for:each={qbObjectOptions} for:item="option">
+                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="slds-col action-btn-col">
+                        <button class="btn-primary" onclick={handleAddRow} disabled={isMappingBlocked}>Add Field</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Action Buttons -->
-            <div class="action-section slds-m-top_large">
-                <lightning-button
-                    label="Save"
-                    variant="brand"
-                    onclick={handleSave}
-                    class="slds-m-right_medium"
-                ></lightning-button>
-                <lightning-button
-                    label="Reset"
-                    variant="neutral"
-                    onclick={handleReset}
-                ></lightning-button>
+            <div class="ui-card table-card slds-p-around_large">
+                <h3 class="box-title">Sync Settings - Field Mappings</h3>
+                <p class="slds-m-bottom_medium slds-text-color_weak font-size-sm">Choose fields from Salesforce and QuickBooks to sync between.</p>
+                <template if:true={directionConflictMessage}>
+                    <div class="slds-notify slds-notify_alert slds-alert_warning slds-m-bottom_medium" role="alert">
+                        <span>{directionConflictMessage}</span>
+                    </div>
+                </template>
+
+                <table class="new-mapping-table">
+                    <thead>
+                        <tr>
+                            <th>Target Fields (QuickBooks Online)</th>
+                            <th style="text-align: center;">Sync Direction</th>
+                            <th>Salesforce Fields</th>
+                            <th style="text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template for:each={mappingRows} for:item="row">
+                            <tr key={row.id}>
+                                <td class="input-cell">
+                                    <div style="display: flex; align-items: center;">
+                                        <select class="custom-select-table" name="externalField" value={row.externalField} onchange={handleExternalFieldChange} data-row-id={row.id} disabled={row.isMandatory}>
+                                            <option value="">-- None --</option>
+                                            <template for:each={row.externalFieldOptions} for:item="option">
+                                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                            </template>
+                                        </select>
+                                        <template if:true={row.isMandatory}>
+                                            <span style="color: #ef4444; font-size: 1.2rem; font-weight: bold; margin-left: 6px; line-height: 1;" title="Required QuickBooks Field">*</span>
+                                        </template>
+                                    </div>
+                                </td>
+
+                                <td style="text-align: center; padding: 0.5rem;">
+                                    <div class="slds-grid slds-grid_vertical-align-center slds-grid_align-center">
+                                        <select class="custom-select-table" style="text-align: center; font-size:0.85rem;" name="syncDirection" value={row.syncDirection} onchange={handleSyncDirectionChange} data-row-id={row.id} disabled={isMappingBlocked}>
+                                            <template for:each={row.syncDirectionOptions} for:item="option">
+                                                <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                            </template>
+                                        </select>
+                                        <lightning-icon icon-name="utility:back" size="x-small" class="dir-icon-green slds-m-left_x-small" style="transform: rotate(180deg); margin-left: 10px;"></lightning-icon>
+                                    </div>
+                                </td>
+
+                                <!-- <td style="text-align: center;">
+                                    <lightning-icon icon-name="utility:back" size="small" class="dir-icon-green"></lightning-icon>
+                                </td> -->
+
+                                <td class="input-cell">
+                                    <select class="custom-select-table" name="sfField" value={row.sfField} onchange={handleSFFieldChange} data-row-id={row.id} disabled={row.isSFFieldDisabled}>
+                                        <option value="">-- None --</option>
+                                        <template for:each={row.sfFieldOptions} for:item="option">
+                                            <option key={option.value} value={option.value} selected={option.selected}>{option.label}</option>
+                                        </template>
+                                    </select>
+                                </td>
+
+                                <td class="action-cell">
+                                    <template if:false={row.isMandatory}>
+                                        <button class="slds-button slds-button_icon trash-btn" title="Delete" onclick={handleRemoveRow} data-row-id={row.id}>
+                                            <lightning-icon icon-name="utility:delete" size="x-small"></lightning-icon>
+                                        </button>
+                                    </template>
+                                    <template if:true={row.isMandatory}>
+                                        <lightning-icon icon-name="utility:lock" size="x-small" title="Locked" style="--sds-c-icon-color-foreground-default: #94a3b8;"></lightning-icon>
+                                    </template>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="slds-m-top_large slds-grid slds-grid_align-spread">
+                <div><p class="slds-text-color_weak font-size-sm">Map every required QuickBooks field before saving.</p></div>
+                <div class="slds-grid slds-gutters">
+                    <div class="slds-col"><button class="btn-secondary" onclick={handleReset}>Reset</button></div>
+                    <div class="slds-col"><button class="btn-primary" onclick={handleSave} disabled={isMappingBlocked}>Save Mappings</button></div>
+                </div>
             </div>
         </template>
     </div>

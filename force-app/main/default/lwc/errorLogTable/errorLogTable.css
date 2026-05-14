@@ -1,0 +1,79 @@
+.main-container {
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    padding: 0;
+}
+
+.header-padding {
+    padding: 1.5rem 1.5rem 0.5rem 1.5rem;
+}
+
+.header-title {
+    font-weight: bold;
+    color: #1e293b;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 1rem;
+    color: #64748b;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100px;
+}
+
+/* --- MOBILE RESPONSIVE LOGIC --- */
+
+/* Default (Desktop Screens) */
+.mobile-view {
+    display: none;
+}
+.desktop-view {
+    display: block;
+}
+
+/* Mobile Screens (768px and below) */
+@media (max-width: 768px) {
+    .desktop-view {
+        display: none; 
+    }
+    .mobile-view {
+        display: block; 
+    }
+    
+    .mobile-card {
+        background-color: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+
+    .card-row {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 0.75rem;
+    }
+
+    .card-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .card-label {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: bold;
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+
+    .card-value {
+        font-size: 0.9rem;
+        color: #1e293b;
+        word-wrap: break-word; 
+    }
+
+    .error-text {
+        color: #ef4444; 
+    }
+}

@@ -39,36 +39,47 @@ public with sharing class PaymentMethodAdminService {
     };
 
     public static DeactivateResponse deactivatePaymentMethods(DeactivateRequest request) {
-        if (request == null || request.paymentMethodStates == null || request.paymentMethodStates.isEmpty()) {
-            throw new PaymentMethodAdminException('At least one payment method state must be provided.');
+        try {
+            if (request == null || request.paymentMethodStates == null || request.paymentMethodStates.isEmpty()) {
+                throw new PaymentMethodAdminException('At least one payment method state must be provided.');
+            }
+
+            List<String> unsupportedMethods = new List<String>();
+            Map<String, Boolean> normalizedStates = normalizeProviderStates(
+                request.paymentMethodStates,
+                unsupportedMethods
+            );
+
+            if (normalizedStates.isEmpty()) {
+                throw new PaymentMethodAdminException('No supported payment methods were provided.');
+            }
+
+            String deploymentId = getUpdater().upsertProviderStates(normalizedStates);
+
+            List<String> acceptedMethods = new List<String>(normalizedStates.keySet());
+            acceptedMethods.sort();
+            unsupportedMethods.sort();
+
+            DeactivateResponse response = new DeactivateResponse();
+            response.success = true;
+            response.message =
+                'Accepted payment method sync request for ' +
+                buildProviderStateList(acceptedMethods, normalizedStates) +
+                (String.isBlank(request.clientOrgName) ? '.' : ' in ' + request.clientOrgName + '.');
+            response.acceptedMethods = acceptedMethods;
+            response.unsupportedMethods = unsupportedMethods;
+            response.deploymentId = deploymentId;
+            return response;
+        } catch (Exception e) {
+            ErrorLogUtility.logException(
+                'QuickBridge',
+                'PaymentMethodAdminService.deactivatePaymentMethods',
+                e,
+                null,
+                null
+            );
+            throw e;
         }
-
-        List<String> unsupportedMethods = new List<String>();
-        Map<String, Boolean> normalizedStates = normalizeProviderStates(
-            request.paymentMethodStates,
-            unsupportedMethods
-        );
-
-        if (normalizedStates.isEmpty()) {
-            throw new PaymentMethodAdminException('No supported payment methods were provided.');
-        }
-
-        String deploymentId = getUpdater().upsertProviderStates(normalizedStates);
-
-        List<String> acceptedMethods = new List<String>(normalizedStates.keySet());
-        acceptedMethods.sort();
-        unsupportedMethods.sort();
-
-        DeactivateResponse response = new DeactivateResponse();
-        response.success = true;
-        response.message =
-            'Accepted payment method sync request for ' +
-            buildProviderStateList(acceptedMethods, normalizedStates) +
-            (String.isBlank(request.clientOrgName) ? '.' : ' in ' + request.clientOrgName + '.');
-        response.acceptedMethods = acceptedMethods;
-        response.unsupportedMethods = unsupportedMethods;
-        response.deploymentId = deploymentId;
-        return response;
     }
 
     private static MetadataUpdater getUpdater() {
@@ -117,26 +128,37 @@ public with sharing class PaymentMethodAdminService {
 
     private class MetadataApiUpdater implements MetadataUpdater {
         public String upsertProviderStates(Map<String, Boolean> providerStates) {
-            Metadata.DeployContainer container = new Metadata.DeployContainer();
+            try {
+                Metadata.DeployContainer container = new Metadata.DeployContainer();
 
-            for (String providerKey : providerStates.keySet()) {
-                Metadata.CustomMetadata record = new Metadata.CustomMetadata();
-                record.fullName = PROVIDER_TO_METADATA_RECORD.get(providerKey);
-                record.label = 'Default';
+                for (String providerKey : providerStates.keySet()) {
+                    Metadata.CustomMetadata record = new Metadata.CustomMetadata();
+                    record.fullName = PROVIDER_TO_METADATA_RECORD.get(providerKey);
+                    record.label = 'Default';
 
-                Metadata.CustomMetadataValue activeValue = new Metadata.CustomMetadataValue();
-                activeValue.field = 'Active__c';
-                activeValue.value = providerStates.get(providerKey);
-                record.values.add(activeValue);
+                    Metadata.CustomMetadataValue activeValue = new Metadata.CustomMetadataValue();
+                    activeValue.field = 'Active__c';
+                    activeValue.value = providerStates.get(providerKey);
+                    record.values.add(activeValue);
 
-                container.addMetadata(record);
+                    container.addMetadata(record);
+                }
+
+                Id deploymentId = Metadata.Operations.enqueueDeployment(
+                    container,
+                    new PaymentMethodAdminDeployCallback()
+                );
+                return deploymentId == null ? null : String.valueOf(deploymentId);
+            } catch (Exception e) {
+                ErrorLogUtility.logException(
+                    'QuickBridge',
+                    'PaymentMethodAdminService.MetadataApiUpdater.upsertProviderStates',
+                    e,
+                    null,
+                    null
+                );
+                throw e;
             }
-
-            Id deploymentId = Metadata.Operations.enqueueDeployment(
-                container,
-                new PaymentMethodAdminDeployCallback()
-            );
-            return deploymentId == null ? null : String.valueOf(deploymentId);
         }
     }
 }

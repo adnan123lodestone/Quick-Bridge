@@ -1,0 +1,105 @@
+<template>
+    <div class="mapping-container">
+
+        <template if:true={isLoading}>
+            <lightning-spinner alternative-text="Loading" size="medium"></lightning-spinner>
+        </template>
+
+        <div class="slds-box slds-m-bottom_large"
+            style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 1.5rem; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="font-weight: bold; font-size: 1rem; color: #1e293b; margin: 0;">Invoice Object Mode</h3>
+                    <p style="color: #64748b; font-size: 0.85rem; margin: 0; margin-top: 4px;">Do you want to use the
+                        Packaged Invoice or your own custom object?</p>
+                </div>
+                <div>
+                    <lightning-input type="toggle" label="Use Custom Invoice Object?" variant="label-hidden"
+                        message-toggle-active="Yes, Use My Own" message-toggle-inactive="No, Use Standard"
+                        onchange={handleToggleMode} checked={useCustomInvoice}>
+                    </lightning-input>
+                </div>
+            </div>
+        </div>
+
+        <template if:true={useCustomInvoice}>
+
+            <div class="header-section slds-m-bottom_large">
+                <h3 class="section-title">Choose Your Custom Invoice Object</h3>
+                <p class="section-subtitle">Select the object where you want to automatically create records.</p>
+                <div class="object-selector slds-m-top_small" style="max-width: 400px;">
+                    <lightning-combobox name="targetObject" label="Target Object" value={selectedObject}
+                        placeholder="Select an Object..." options={objectOptions} onchange={handleObjectChange}
+                        required>
+                    </lightning-combobox>
+                </div>
+            </div>
+
+            <template if:true={selectedObject}>
+                <div class="mapping-section slds-m-top_large">
+                    <h3 class="section-title">Map Fields</h3>
+                    <p class="section-subtitle">Connect Invoice fields to your Custom Object's fields. <span
+                            style="color: #ef4444; font-weight: bold;">(Locked fields are required)</span></p>
+
+                    <div class="mapping-grid slds-m-top_medium">
+                        <div class="grid-row header-row">
+                            <div class="grid-col"><strong>Invoice Field</strong> (Source)</div>
+                            <div class="grid-col icon-col"></div>
+                            <div class="grid-col"><strong>Your Custom Field</strong> (Target)</div>
+                            <div class="grid-col action-col"></div>
+                        </div>
+
+                        <template for:each={mappingRows} for:item="row" for:index="index">
+                            <div key={row.id} class="grid-row data-row slds-m-top_small">
+
+                                <div class="grid-col">
+                                    <lightning-combobox name="sourceField" data-id={row.id} variant="label-hidden"
+                                        value={row.sourceField} placeholder="Select Source Field..."
+                                        options={sourceFieldOptions} onchange={handleRowChange}
+                                        disabled={row.isRequired}>
+                                    </lightning-combobox>
+                                </div>
+
+                                <div class="grid-col icon-col"
+                                    style="text-align: center; color: #94a3b8; font-size: 1.2rem;">
+                                    ➜
+                                </div>
+
+                                <div class="grid-col">
+                                    <lightning-combobox name="targetField" data-id={row.id} variant="label-hidden"
+                                        value={row.targetField} placeholder="Select Target Field..."
+                                        options={targetFieldOptions} onchange={handleRowChange}>
+                                    </lightning-combobox>
+                                </div>
+
+                                <div class="grid-col action-col" style="text-align: right;">
+                                    <lightning-button-icon icon-name="utility:delete" variant="bare"
+                                        alternative-text="Remove Row" data-id={row.id} onclick={handleRemoveRow}
+                                        class="delete-icon" disabled={row.isRequired}>
+                                    </lightning-button-icon>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="action-buttons slds-m-top_large" style="display: flex; gap: 10px; margin-top: 1.5rem;">
+                        <lightning-button label="+ Add Mapping Row" onclick={handleAddRow}
+                            variant="neutral"></lightning-button>
+                        <lightning-button label="Save Mappings" onclick={handleSave} variant="brand"
+                            disabled={isSaveDisabled}></lightning-button>
+                    </div>
+                </div>
+            </template>
+        </template>
+
+        <template if:false={useCustomInvoice}>
+            <div class="slds-text-align_center slds-p-around_large"
+                style="color: #64748b; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; padding: 2rem;">
+                <lightning-icon icon-name="utility:info" size="small" class="slds-m-bottom_small"></lightning-icon>
+                <p style="margin-top: 10px;">Packaged QuickBridge Invoice object will be used. No custom mapping is
+                    required.</p>
+            </div>
+        </template>
+
+    </div>
+</template>

@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomLabels xmlns="http://soap.sforce.com/2006/04/metadata">
+    <labels>
+        <fullName>Attendee_QR_Base_Url</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Base URL for attendee QR check-in links</shortDescription>
+        <value>https://membertitan.my.site.com/mamportal/s</value>
+    </labels>
+    <labels>
+        <fullName>CardPayment_labels</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>CardPayment_labels</shortDescription>
+        <value>Name On Card|Card Number|Security Code|Month|Year|Address|City|State|Zip/Postal Code|Country</value>
+    </labels>
+    <labels>
+        <fullName>CardPayment_lables</fullName>
+        <categories>Payment</categories>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Payment component field labels</shortDescription>
+        <value>Card Name|Card Number|Security Number|Month|Year|Billing Address|City|State|ZIP / Postal Code|Country</value>
+    </labels>
+    <labels>
+        <fullName>Default_Event_Locale</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Default_Event_Locale</shortDescription>
+        <value>en-US</value>
+    </labels>
+    <labels>
+        <fullName>Default_Event_Timezone</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Default_Event_Timezone</shortDescription>
+        <value>America/Mexico_City</value>
+    </labels>
+    <labels>
+        <fullName>EmailReminderInfo</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>EmailReminderInfo</shortDescription>
+        <value>Enter your email address and &quot;check&quot; the box for each event that interests you will automatically receive an email reminder before the event!</value>
+    </labels>
+    <labels>
+        <fullName>IndSupFormHeader</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>IndSupFormHeader</shortDescription>
+        <value>Thank you for your interest in joining the Missouri Association of Manufacturers (MAM) as an Industry Supplier. Please fill out the information below for your company and MAM will review the application and contact you regarding the next steps. If you have any questions, please contact us at 417-863-7262.</value>
+    </labels>
+    <labels>
+        <fullName>MAM_Member_Success_Message</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>MAM_Member_Success_Message</shortDescription>
+        <value>Thank you for joining the Missouri Association of Manufacturers (MAM). We have received your application for Member and someone will be contacting you soon regarding onboarding and set up. If you have any questions, please call us at 417-863-7262 or email us at info@mamstrong.org. We are excited you have chosen to become a part of MAM.</value>
+    </labels>
+    <labels>
+        <fullName>MAM_Supplier_Success_Message</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>MAM_Supplier_Success_Message</shortDescription>
+        <value>Thank you for joining the Missouri Association of Manufacturers (MAM). We have received your application for Industry Supplier and someone will be contacting you soon regarding onboarding and set up. If you have any questions, please call us at 417-863-7262 or email us at info@mamstrong.org. We are excited you have chosen to become a part of MAM.</value>
+    </labels>
+    <labels>
+        <fullName>Mam_Join_Now_Label</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Mam Join Now Label</shortDescription>
+        <value>Thank you for your interest in joining the Missouri Association of Manufacturers (MAM).  Please fill out the information below for your company and a MAM representative will review the application and contact you regarding the next steps in the Membership process.  If you have any questions, please contact MAM at 417-863-7262 and someone will assist you.</value>
+    </labels>
+    <labels>
+        <fullName>MemberFormHeader</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>MemberFormHeader</shortDescription>
+        <value>Thank you for your interest in joining the Missouri Association of Manufacturers</value>
+    </labels>
+    <labels>
+        <fullName>Print_Agent_Token</fullName>
+        <language>en_US</language>
+        <protected>true</protected>
+        <shortDescription>Badge print agent auth token</shortDescription>
+        <value>CHANGE_ME</value>
+    </labels>
+    <labels>
+        <fullName>Print_Agent_Url</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription>Badge print agent endpoint URL</shortDescription>
+        <value>https://localhost:8789</value>
+    </labels>
+</CustomLabels>

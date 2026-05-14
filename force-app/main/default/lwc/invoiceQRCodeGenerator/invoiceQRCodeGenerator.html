@@ -1,0 +1,38 @@
+<template>
+    <lightning-quick-action-panel title="Generate Payment QR Code">
+        
+        <template if:true={isLoading}>
+            <lightning-spinner alternative-text="Generating QR..." size="medium"></lightning-spinner>
+        </template>
+
+        <template if:true={errorMessage}>
+            <div class="slds-notify slds-notify_alert slds-theme_error slds-m-bottom_medium slds-border_radius" role="alert">
+                <h2>{errorMessage}</h2>
+            </div>
+        </template>
+
+        <div class="slds-text-align_center slds-p-around_medium">
+            <template if:true={qrData.isSuccess}>
+                <p class="slds-m-bottom_medium slds-text-heading_small slds-text-color_success">
+                    <lightning-icon icon-name="utility:success" size="small" variant="success" class="slds-m-right_x-small"></lightning-icon>
+                    {qrData.message}
+                </p>
+                
+                <div style="border: 2px solid #e5e7eb; padding: 10px; display: inline-block; border-radius: 8px; background: white;">
+                    <img src={qrData.qrImageUrl} alt="Payment QR Code" width="200" height="200" />
+                </div>
+                
+                <p class="slds-m-top_medium slds-text-color_weak">This QR Code is now saved in the <b>Payment QR Code</b> field and is ready to be emailed to the customer!</p>
+            </template>
+            
+            <template if:false={qrData.isSuccess}>
+                <p>Click the button below to generate a mobile payment link via <b>Stripe/PayPal/Authorize.Net</b> and save it as a QR code to this Invoice.</p>
+            </template>
+        </div>
+
+        <div slot="footer">
+            <lightning-button variant="neutral" label="Cancel" onclick={handleClose}></lightning-button>
+            <lightning-button variant="brand" label="Generate & Save QR" onclick={generateQR} class="slds-m-left_small" disabled={isLoading}></lightning-button>
+        </div>
+    </lightning-quick-action-panel>
+</template>

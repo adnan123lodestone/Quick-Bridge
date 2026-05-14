@@ -80,6 +80,7 @@ global without sharing class PaymentWebhookRestResource {
 
         if (!SUPPORTED_PAYMENT_TYPES.contains(paymentType)) {
             trace('Rejected webhook because payment type path is unsupported.');
+            logWebhookFailure(paymentType, 'Unsupported payment type path.', null, null, null);
             response.statusCode = 400;
             result.success = false;
             result.recordCreated = false;
@@ -93,6 +94,7 @@ global without sharing class PaymentWebhookRestResource {
 
         if (String.isBlank(requestBody)) {
             trace('Rejected webhook because request body is blank.');
+            logWebhookFailure(paymentType, 'Webhook payload is missing.', null, null, null);
             response.statusCode = 400;
             result.success = false;
             result.recordCreated = false;
@@ -106,6 +108,7 @@ global without sharing class PaymentWebhookRestResource {
                 ', statusCode=' + String.valueOf(verification.statusCode) +
                 ', message=' + safeValue(verification.message)
             );
+            logWebhookFailure(paymentType, verification.message, verification.statusCode, null, null);
             response.statusCode = verification.statusCode;
             result.success = false;
             result.recordCreated = false;
@@ -120,6 +123,7 @@ global without sharing class PaymentWebhookRestResource {
             payload = (Map<String, Object>) JSON.deserializeUntyped(requestBody);
         } catch (Exception e) {
             trace('Rejected webhook because payload JSON parsing failed: ' + e.getTypeName() + ': ' + e.getMessage());
+            logWebhookException(paymentType, e, null);
             response.statusCode = 400;
             result.success = false;
             result.recordCreated = false;
@@ -138,8 +142,18 @@ global without sharing class PaymentWebhookRestResource {
             return result;
         }
 
-        Portal_Payment_Transaction__c logRecord = buildLogRecord(paymentType, payload, requestBody);
-        insert logRecord;
+        Portal_Payment_Transaction__c logRecord;
+        try {
+            logRecord = buildLogRecord(paymentType, payload, requestBody);
+            insert logRecord;
+        } catch (Exception e) {
+            logWebhookException(paymentType, e, logRecord == null ? null : logRecord.Order__c);
+            response.statusCode = 500;
+            result.success = false;
+            result.recordCreated = false;
+            result.message = 'Webhook payload could not be stored.';
+            return result;
+        }
 
         trace('Stored webhook log record id=' + String.valueOf(logRecord.Id) +
             ', paymentType=' + safeValue(paymentType) +
@@ -679,25 +693,34 @@ global without sharing class PaymentWebhookRestResource {
     }
 
     private static String getStripeWebhookSigningSecret() {
-        Stripe_Config__mdt config = Stripe_Config__mdt.getInstance('Default');
-        if (Test.isRunningTest()) {
-            return config == null || String.isBlank(config.WebhookSigningSecret__c)
-                ? TEST_STRIPE_WEBHOOK_SIGNING_SECRET
-                : config.WebhookSigningSecret__c;
-        }
+        Quickbridge_Config__mdt config;
+        try {
+            config = Quickbridge_Config__mdt.getInstance('Stripe');
+        } catch (Exception e) {}
 
-        return config == null ? null : config.WebhookSigningSecret__c;
+        // if (Test.isRunningTest()) {
+        //     return config == null || String.isBlank(config.Stripe_Webhook_Signing_Secret__c)
+        //         ? TEST_STRIPE_WEBHOOK_SIGNING_SECRET
+        //         : config.Stripe_Webhook_Signing_Secret__c;
+        // }
+        
+        if (Test.isRunningTest()) {
+            return TEST_STRIPE_WEBHOOK_SIGNING_SECRET; 
+        }
+        return config == null ? null : config.Stripe_Webhook_Signing_Secret__c;
     }
 
     private static String getAuthorizeNetWebhookSigningKey() {
-        AuthorizeNet_Config__mdt config = AuthorizeNet_Config__mdt.getInstance('Default');
+        Quickbridge_Config__mdt config;
+        try {
+            config = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
+        } catch (Exception e) {}
+
         if (Test.isRunningTest()) {
-            return config == null || String.isBlank(config.WebhookSigningKey__c)
-                ? TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY
-                : config.WebhookSigningKey__c;
+            return TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY;
         }
 
-        return config == null ? null : config.WebhookSigningKey__c;
+        return config == null ? null : config.AuthorizeNet_Webhook_Signing_Key__c;
     }
 
     private static String getHeaderValue(RestRequest request, String headerName) {
@@ -724,5 +747,39 @@ global without sharing class PaymentWebhookRestResource {
         }
 
         return payload.substring(0, MAX_PAYLOAD_LENGTH);
+    }
+
+    private static void logWebhookFailure(String paymentType, String message, Integer statusCode, Id orderId, String externalReference) {
+        ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+        context.gatewayName = getGatewayLabel(paymentType);
+        context.classMethodName = 'PaymentWebhookRestResource.handlePost';
+        context.errorMessage = message;
+        context.httpStatusCode = statusCode;
+        context.errorCategory = 'Webhook Failure';
+        context.sourceObjectApiName = orderId == null ? null : 'Order';
+        context.sourceRecordId = orderId;
+        context.sourceRecordIdText = orderId == null ? null : String.valueOf(orderId);
+        context.externalReference = externalReference;
+        ErrorLogUtility.logError(context);
+    }
+
+    private static void logWebhookException(String paymentType, Exception exceptionRecord, Id orderId) {
+        ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+        context.gatewayName = getGatewayLabel(paymentType);
+        context.classMethodName = 'PaymentWebhookRestResource.handlePost';
+        context.errorMessage = exceptionRecord == null ? null : exceptionRecord.getTypeName() + ': ' + exceptionRecord.getMessage();
+        context.stackTrace = exceptionRecord == null ? null : exceptionRecord.getStackTraceString();
+        context.errorCategory = 'Webhook Failure';
+        context.sourceObjectApiName = orderId == null ? null : 'Order';
+        context.sourceRecordId = orderId;
+        context.sourceRecordIdText = orderId == null ? null : String.valueOf(orderId);
+        ErrorLogUtility.logError(context);
+    }
+
+    private static String getGatewayLabel(String paymentType) {
+        if (String.isBlank(paymentType)) {
+            return 'Payment Webhook';
+        }
+        return PAYMENT_TYPE_LABELS.containsKey(paymentType) ? PAYMENT_TYPE_LABELS.get(paymentType) : paymentType;
     }
 }

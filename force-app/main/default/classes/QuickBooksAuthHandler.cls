@@ -1,6 +1,6 @@
-public class QuickBooksAuthHandler {
+public without sharing class QuickBooksAuthHandler {
     private static final String xvy;
-    private static final String NAMED_CREDENTIAL = 'QuickBookSandbox';
+    private static final String NAMED_CREDENTIAL = 'QuickBridgeTLG__QuickBookSandbox';
     private static final String QB_API_PATH = '/v3/company/';
     private static final String MINOR_VERSION = '?minorversion=65';
     
@@ -8,6 +8,7 @@ public class QuickBooksAuthHandler {
         QuickBooks_Config__mdt config = [
             SELECT Realm_ID__c
             FROM QuickBooks_Config__mdt
+            WHERE Realm_ID__c != null
             LIMIT 1
         ];
         return config.Realm_ID__c;
@@ -17,6 +18,7 @@ public class QuickBooksAuthHandler {
         QuickBooks_Config__mdt config = [
             SELECT Realm_ID__c
             FROM QuickBooks_Config__mdt
+            WHERE Realm_ID__c != null
             LIMIT 1
         ];
         xvy = config.Realm_ID__c;
@@ -50,8 +52,25 @@ public class QuickBooksAuthHandler {
             res = http.send(req);
             System.debug('Response Status Code: ' + res.getStatusCode());
             System.debug('Response Body: ' + res.getBody());
+            if (res.getStatusCode() < 200 || res.getStatusCode() >= 300) {
+                ErrorLogUtility.logCalloutFailure(
+                    'QuickBooks',
+                    'QuickBooksAuthHandler.makeApiCall',
+                    method + ' ' + resource + ' failed with HTTP ' + res.getStatusCode() + ': ' + res.getBody(),
+                    res.getStatusCode(),
+                    null,
+                    null
+                );
+            }
         } catch (Exception e) {
             System.debug('Exception occurred during HTTP callout: ' + e.getMessage());
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QuickBooksAuthHandler.makeApiCall',
+                e,
+                null,
+                null
+            );
             throw e;
         }
 

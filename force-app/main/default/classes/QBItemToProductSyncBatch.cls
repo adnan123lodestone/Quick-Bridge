@@ -2,69 +2,75 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     
     private String lastSyncDate;
     
-public QBItemToProductSyncBatch() {
-    // Set lastSyncDate to yesterday's date in 'YYYY-MM-DD' format
-    Datetime yesterday = Datetime.now().addDays(-1);
-    this.lastSyncDate = yesterday.format('YYYY-MM-dd');
-}
+    public QBItemToProductSyncBatch() {
+        Datetime yesterday = Datetime.now().addDays(-1);
+        this.lastSyncDate = yesterday.format('YYYY-MM-dd');
+    }
     
-public QBItemToProductSyncBatch(String syncDate) {
-    this.lastSyncDate = syncDate;
-}
+    public QBItemToProductSyncBatch(String syncDate) {
+        this.lastSyncDate = syncDate;
+    }
     
-public Iterable<String> start(Database.BatchableContext bc) {
-    List<String> itemIdsList = new List<String>();
-    
-    try {
-        // Construct the query
-        String query = 'select * from Item Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
+    public Iterable<String> start(Database.BatchableContext bc) {
+        List<String> itemIdsList = new List<String>();
         
-        // URL encode the query and construct the full resource path
-        String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
-        String resourcePath = '/query?query=' + encodedQuery + '&minorversion=65';
-        
-        // Make the API call
-        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
-        // Process the response
-        if (response != null && response.getStatusCode() == 200) {
-            Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+        try {
+            String query = 'select * from Item Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
+            String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
+            String resourcePath = '/query?query=' + encodedQuery + '&minorversion=65';
             
-            if (responseMap != null && responseMap.containsKey('QueryResponse')) {
-                Map<String, Object> queryResponse = (Map<String, Object>)responseMap.get('QueryResponse');
+            HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
+            if (response != null && response.getStatusCode() == 200) {
+                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
                 
-                if (queryResponse != null && queryResponse.containsKey('Item')) {
-                    List<Object> items = (List<Object>)queryResponse.get('Item');
+                if (responseMap != null && responseMap.containsKey('QueryResponse')) {
+                    Map<String, Object> queryResponse = (Map<String, Object>)responseMap.get('QueryResponse');
                     
-                    if (items != null) {
-                        for (Object itemObj : items) {
-                            if (itemObj != null) {
-                                Map<String, Object> item = (Map<String, Object>)itemObj;
-                                if (item.containsKey('Id')) {
-                                    itemIdsList.add((String)item.get('Id'));
+                    if (queryResponse != null && queryResponse.containsKey('Item')) {
+                        List<Object> items = (List<Object>)queryResponse.get('Item');
+                        if (items != null) {
+                            for (Object itemObj : items) {
+                                if (itemObj != null) {
+                                    Map<String, Object> item = (Map<String, Object>)itemObj;
+                                    if (item.containsKey('Id')) {
+                                        itemIdsList.add((String)item.get('Id'));
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            } else if (response != null) {
+                System.debug('QuickBooks API returned status code: ' + response.getStatusCode());
+                ErrorLogUtility.logCalloutFailure(
+                    'QuickBooks',
+                    'QBItemToProductSyncBatch.start',
+                    'QuickBooks item query returned HTTP ' + response.getStatusCode() + ': ' + response.getBody(),
+                    response.getStatusCode(),
+                    null,
+                    null
+                );
             }
-        } else if (response != null) {
-            System.debug('QuickBooks API returned status code: ' + response.getStatusCode());
-            System.debug('Response body: ' + response.getBody());
+        } catch (Exception e) {
+            System.debug('Error querying QuickBooks items: ' + e.getMessage());
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QBItemToProductSyncBatch.start',
+                e,
+                null,
+                null
+            );
         }
-    } catch (Exception e) {
-        System.debug('Error querying QuickBooks items: ' + e.getMessage());
-        System.debug('Stack trace: ' + e.getStackTraceString());
+        
+        return itemIdsList;
     }
     
-    return itemIdsList;
-}
-    
     public void execute(Database.BatchableContext bc, List<String> scope) {
+        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         QBTriggerHandler.isProductProcessing = true;
-        
+
         try {
-              List<Product2> productsToUpsert = new List<Product2>();
-        List<PricebookEntry> pricebookEntriesToUpsert = new List<PricebookEntry>();
+            List<Product2> productsToUpsert = new List<Product2>();
             
             for (String itemId : scope) {
                 try {
@@ -83,69 +89,99 @@ public Iterable<String> start(Database.BatchableContext bc) {
                     }
                 } catch (Exception e) {
                     System.debug('Error processing item ' + itemId + ': ' + e.getMessage());
+                    ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+                    context.gatewayName = 'QuickBooks';
+                    context.classMethodName = 'QBItemToProductSyncBatch.execute.processItem';
+                    context.errorMessage = e.getTypeName() + ': ' + e.getMessage();
+                    context.stackTrace = e.getStackTraceString();
+                    context.sourceObjectApiName = 'Product2';
+                    context.sourceRecordIdText = itemId;
+                    context.errorCategory = 'Code Exception';
+                    context.externalReference = itemId;
+                    ErrorLogUtility.logError(context);
                 }
             }
             
             if (!productsToUpsert.isEmpty()) {
                 Database.UpsertResult[] results = Database.upsert(productsToUpsert, Product2.QuickbookID__c, false);
+                ErrorLogUtility.logUpsertResults(
+                    'QuickBooks',
+                    'QBItemToProductSyncBatch.execute.upsertProducts',
+                    'upsert',
+                    productsToUpsert,
+                    results,
+                    null,
+                    null
+                );
                 
-               Id standardPricebookId;
-            try {
-                standardPricebookId = Test.isRunningTest() ? Test.getStandardPricebookId() : 
-                    [SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1].Id;
-            } catch (Exception e) {
-                System.debug('Error getting standard pricebook: ' + e.getMessage());
-                return;
-            }
-
-            // First query existing pricebook entries to avoid duplicates
-            Set<Id> productIds = new Set<Id>();
-            for (Database.UpsertResult result : results) {
-                if (result.isSuccess()) {
-                    productIds.add(result.getId());
-                }
-            }
-            
-            Map<Id, PricebookEntry> existingEntries = new Map<Id, PricebookEntry>();
-            for (PricebookEntry pbe : [
-                SELECT Id, Product2Id, UnitPrice 
-                FROM PricebookEntry 
-                WHERE Product2Id IN :productIds 
-                AND Pricebook2Id = :standardPricebookId
-            ]) {
-                existingEntries.put(pbe.Product2Id, pbe);
-            }
-
-            // Prepare pricebook entries for upsert
-            List<PricebookEntry> pricebookEntries = new List<PricebookEntry>();
-            for (Integer i = 0; i < results.size(); i++) {
-                if (results[i].isSuccess()) {
-                    Product2 product = productsToUpsert[i];
-                    Id productId = results[i].getId();
-                    
-                    // Skip if no price or product already has an entry
-                    if (product.Unit_Price__c == null || existingEntries.containsKey(productId)) {
-                        continue;
-                    }
-                    
-                    PricebookEntry pbe = new PricebookEntry();
-                    pbe.Product2Id = productId;
-                    pbe.Pricebook2Id = standardPricebookId;
-                    pbe.UnitPrice = product.Unit_Price__c;
-                    pbe.IsActive = true;
-                    pricebookEntries.add(pbe);
-                }
-            }
-            
-            // Insert new pricebook entries
-            if (!pricebookEntries.isEmpty()) {
+                Id standardPricebookId;
                 try {
-                    insert pricebookEntries;
+                    standardPricebookId = Test.isRunningTest() ? Test.getStandardPricebookId() : 
+                        [SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1].Id;
                 } catch (Exception e) {
-                    System.debug('Error inserting pricebook entries: ' + e.getMessage());
+                    System.debug('Error getting standard pricebook: ' + e.getMessage());
+                    ErrorLogUtility.logException(
+                        'QuickBooks',
+                        'QBItemToProductSyncBatch.execute.getStandardPricebook',
+                        e,
+                        null,
+                        null
+                    );
+                    return;
+                }
+
+                Set<Id> productIds = new Set<Id>();
+                for (Database.UpsertResult result : results) {
+                    if (result.isSuccess()) {
+                        productIds.add(result.getId());
+                    }
+                }
+                IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', productIds.size());
+                
+                Map<Id, PricebookEntry> existingEntries = new Map<Id, PricebookEntry>();
+                for (PricebookEntry pbe : [
+                    SELECT Id, Product2Id, UnitPrice 
+                    FROM PricebookEntry 
+                    WHERE Product2Id IN :productIds 
+                    AND Pricebook2Id = :standardPricebookId
+                ]) {
+                    existingEntries.put(pbe.Product2Id, pbe);
+                }
+
+                List<PricebookEntry> pricebookEntries = new List<PricebookEntry>();
+                for (Integer i = 0; i < results.size(); i++) {
+                    if (results[i].isSuccess()) {
+                        Product2 product = productsToUpsert[i];
+                        Id productId = results[i].getId();
+                        
+                        if (product.Sale_Price__c == null || existingEntries.containsKey(productId)) {
+                            continue;
+                        }
+                        
+                        PricebookEntry pbe = new PricebookEntry();
+                        pbe.Product2Id = productId;
+                        pbe.Pricebook2Id = standardPricebookId;
+                        pbe.UnitPrice = product.Sale_Price__c;
+                        pbe.IsActive = true;
+                        pricebookEntries.add(pbe);
+                    }
+                }
+                
+                if (!pricebookEntries.isEmpty()) {
+                    try {
+                        insert pricebookEntries;
+                    } catch (Exception e) {
+                        System.debug('Error inserting pricebook entries: ' + e.getMessage());
+                        ErrorLogUtility.logException(
+                            'QuickBooks',
+                            'QBItemToProductSyncBatch.execute.insertPricebookEntries',
+                            e,
+                            null,
+                            null
+                        );
+                    }
                 }
             }
-        }
             
         } finally {
             QBTriggerHandler.isProductProcessing = false;
@@ -156,10 +192,10 @@ public Iterable<String> start(Database.BatchableContext bc) {
         System.debug('QBItemToProductSyncBatch completed');
     }
     
- private Product2 processItemData(Map<String, Object> itemData) {
+    private Product2 processItemData(Map<String, Object> itemData) {
         String qbId = (String)itemData.get('Id');
         
-        List<Product2> existingProducts = [SELECT Id, QuickbookID__c, Unit_Price__c 
+        List<Product2> existingProducts = [SELECT Id, QuickbookID__c, Sale_Price__c 
                                           FROM Product2 
                                           WHERE QuickbookID__c = :qbId LIMIT 1];
         
@@ -168,46 +204,95 @@ public Iterable<String> start(Database.BatchableContext bc) {
             product = existingProducts[0];
         } else {
             product = new Product2();
-            product.QuickbookID__c = qbId;
+            product.Is_Synced__c = true;
         }
         
-        // Handle standard fields
-        product.Name = (String)itemData.get('Name');
-        product.Description = (String)itemData.get('Description');
-        product.ProductCode = (String)itemData.get('Sku');
-        product.IsActive = (Boolean)itemData.get('Active');
-        
-        // Explicitly handle UnitPrice
-        if (itemData.containsKey('UnitPrice')) {
-            try {
-                product.Unit_Price__c = Decimal.valueOf(String.valueOf(itemData.get('UnitPrice')));
-            } catch (Exception e) {
-                System.debug('Error parsing UnitPrice: ' + e.getMessage());
+        Map<String, String> mapping = QBObjectMappings.getItemToProductMapping();
+        for (String qbField : mapping.keySet()) {
+            Object qbValue = getNestedValue(itemData, qbField);
+            if (qbValue != null) {
+                try {
+                    putFieldValue(product, mapping.get(qbField), qbValue);
+                } catch (Exception e) {}
             }
         }
-        
-        // Handle quantity fields if needed
-        if (itemData.containsKey('QtyOnHand')) {
-            try {
-                product.QtyOnHand__c = Decimal.valueOf(String.valueOf(itemData.get('QtyOnHand')));
-            } catch (Exception e) {
-                System.debug('Error parsing QtyOnHand: ' + e.getMessage());
-            }
-        }
+
+        product.QuickbookID__c = qbId;
         
         return product;
     }
-    private Object getNestedValue(Map<String, Object> data, String fieldPath) {
-    String[] fields = fieldPath.split('\\.');
-    Object current = data;
-    
-    for (String field : fields) {
-        if (current instanceof Map<String, Object>) {
-            current = ((Map<String, Object>)current).get(field);
-        } else {
+
+    private Object getNestedValue(Map<String, Object> data, String path) {
+        String[] pathParts = path.split('\\.');
+        Object current = data;
+
+        for (String part : pathParts) {
+            if (current instanceof Map<String, Object>) {
+                current = ((Map<String, Object>)current).get(part);
+            } else {
+                return null;
+            }
+        }
+        return current;
+    }
+
+    private void putFieldValue(SObject record, String fieldName, Object value) {
+        if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) {
+            return;
+        }
+
+        Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
+        if (!fields.containsKey(fieldName)) {
+            return;
+        }
+
+        Schema.DescribeFieldResult fieldDescribe = fields.get(fieldName).getDescribe();
+        if (!fieldDescribe.isCreateable() && !fieldDescribe.isUpdateable()) {
+            return;
+        }
+
+        Schema.DisplayType displayType = fieldDescribe.getType();
+        record.put(fieldName, coerceValue(value, displayType));
+    }
+
+    private Object coerceValue(Object value, Schema.DisplayType displayType) {
+        if (value == null) {
             return null;
         }
+
+        try {
+            if (
+                displayType == Schema.DisplayType.Currency ||
+                displayType == Schema.DisplayType.Double ||
+                displayType == Schema.DisplayType.Percent
+            ) {
+                return Decimal.valueOf(String.valueOf(value));
+            }
+            if (displayType == Schema.DisplayType.Integer) {
+                return Integer.valueOf(String.valueOf(value));
+            }
+            if (displayType == Schema.DisplayType.Boolean) {
+                if (value instanceof Boolean) {
+                    return value;
+                }
+                return String.valueOf(value).toLowerCase() == 'true';
+            }
+            if (displayType == Schema.DisplayType.Date) {
+                if (value instanceof Date) {
+                    return value;
+                }
+                return Date.valueOf(String.valueOf(value));
+            }
+            if (displayType == Schema.DisplayType.DateTime) {
+                if (value instanceof Datetime) {
+                    return value;
+                }
+                return Datetime.valueOf(String.valueOf(value));
+            }
+        } catch (Exception e) {
+            return value;
+        }
+
+        return value;
     }
-    return current;
-}
 }

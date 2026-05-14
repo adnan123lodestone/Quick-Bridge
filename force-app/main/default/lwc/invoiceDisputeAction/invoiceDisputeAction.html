@@ -1,0 +1,47 @@
+<template>
+    <lightning-quick-action-panel title="Payment Dispute Status">
+        
+        <template if:true={isLoading}>
+            <lightning-spinner alternative-text="Loading dispute details..." size="medium"></lightning-spinner>
+        </template>
+
+        <template if:true={errorDetails}>
+            <div class="slds-notify slds-notify_alert slds-theme_error slds-m-bottom_medium slds-border_radius" role="alert">
+                <h2>{errorDetails}</h2>
+            </div>
+        </template>
+
+        <template if:true={disputeData}>
+            
+            <template if:true={disputeData.hasDispute}>
+                <div class="slds-box slds-theme_warning slds-m-bottom_medium">
+                    <div class="slds-text-heading_small slds-m-bottom_small">
+                        <lightning-icon icon-name="utility:warning" size="small" class="slds-m-right_small"></lightning-icon>
+                        <strong>Active Dispute Found!</strong>
+                    </div>
+                    <div class="slds-p-left_large">
+                        <p class="slds-m-bottom_xx-small"><strong>Status:</strong> {disputeData.status}</p>
+                        <p class="slds-m-bottom_xx-small"><strong>Reason:</strong> {disputeData.reason}</p>
+                        <p class="slds-m-bottom_xx-small"><strong>Disputed Amount:</strong> {disputeData.currencyCode} {disputeData.amount}</p>
+                        <p class="slds-m-top_small"><em>{disputeData.message}</em></p>
+                    </div>
+                </div>
+            </template>
+
+            <template if:false={disputeData.hasDispute}>
+                <div class="slds-box slds-theme_success slds-theme_alert-texture slds-m-bottom_medium">
+                    <div class="slds-text-heading_small slds-m-bottom_small">
+                        <lightning-icon icon-name="utility:success" size="small" class="slds-m-right_small" variant="inverse"></lightning-icon>
+                        <strong>Clear! No Active Disputes</strong>
+                    </div>
+                    <p class="slds-p-left_large">{disputeData.message}</p>
+                </div>
+            </template>
+        </template>
+
+        <div slot="footer">
+            <lightning-button variant="neutral" label="Close" onclick={handleClose}></lightning-button>
+            <lightning-button variant="brand" label="Refresh Live Status" onclick={checkDisputeStatus} class="slds-m-left_small" disabled={isLoading}></lightning-button>
+        </div>
+    </lightning-quick-action-panel>
+</template>

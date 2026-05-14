@@ -356,10 +356,10 @@ private class PaymentWebhookRestResourceTest {
     private static String buildStripeSignatureHeader(String payload) {
         String timestamp = String.valueOf(Datetime.now().getTime() / 1000);
         String signedPayload = timestamp + '.' + payload;
-        Stripe_Config__mdt stripeConfig = Stripe_Config__mdt.getInstance('Default');
-        String signingSecret = stripeConfig == null || String.isBlank(stripeConfig.WebhookSigningSecret__c)
-            ? PaymentWebhookRestResource.TEST_STRIPE_WEBHOOK_SIGNING_SECRET
-            : stripeConfig.WebhookSigningSecret__c;
+        
+        // Force test secret regardless of org data
+        String signingSecret = PaymentWebhookRestResource.TEST_STRIPE_WEBHOOK_SIGNING_SECRET;
+        
         String signature = EncodingUtil.convertToHex(
             Crypto.generateMac(
                 'HmacSHA256',
@@ -375,10 +375,8 @@ private class PaymentWebhookRestResourceTest {
     }
 
     private static String buildAuthorizeNetSignatureDigest(String payload) {
-        AuthorizeNet_Config__mdt authorizeNetConfig = AuthorizeNet_Config__mdt.getInstance('Default');
-        String signingKey = authorizeNetConfig == null || String.isBlank(authorizeNetConfig.WebhookSigningKey__c)
-            ? PaymentWebhookRestResource.TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY
-            : authorizeNetConfig.WebhookSigningKey__c;
+        String signingKey = PaymentWebhookRestResource.TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY;
+        
         return EncodingUtil.convertToHex(
             Crypto.generateMac(
                 'HmacSHA512',

@@ -1,0 +1,146 @@
+<template>
+    <section class="reporting-shell">
+        <div class="reporting-header">
+            <div>
+                <h2>Reporting</h2>
+                <p>Integer-only usage counters by product.</p>
+            </div>
+            <lightning-button-icon
+                icon-name="utility:refresh"
+                alternative-text="Refresh"
+                title="Refresh"
+                onclick={loadSummary}
+                disabled={isLoading}>
+            </lightning-button-icon>
+        </div>
+
+        <template if:true={isLoading}>
+            <div class="loading-state">
+                <lightning-spinner alternative-text="Loading reporting metrics" size="small"></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:true={hasError}>
+            <div class="error-state">{errorMessage}</div>
+        </template>
+
+        <template if:false={isLoading}>
+            <template if:true={selectedProduct}>
+                <section class="product-report-panel focused-product">
+                    <div class="product-report-header">
+                        <div>
+                            <h3>{selectedProduct.product}</h3>
+                            <div class="status-strip">
+                                <span class={selectedProduct.statusClass}>{selectedProduct.subscriptionStatus}</span>
+                                <span>{selectedProduct.daysText}</span>
+                                <span>{selectedProduct.lastUpdatedText}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="metric-grid">
+                        <template for:each={selectedProduct.metricCards} for:item="metric">
+                            <article key={metric.label} class="metric-card">
+                                <div class="metric-topline">
+                                    <span>{metric.label}</span>
+                                    <lightning-icon icon-name={metric.icon} size="x-small"></lightning-icon>
+                                </div>
+                                <div class="metric-value">{metric.value}</div>
+                                <template if:true={metric.hasLimit}>
+                                    <div class="usage-bar" aria-label={metric.ariaLabel}>
+                                        <span style={metric.barStyle}></span>
+                                    </div>
+                                    <div class="metric-limit">{metric.limitText}</div>
+                                </template>
+                            </article>
+                        </template>
+                    </div>
+                </section>
+            </template>
+
+            <template if:true={emptySelectedProduct}>
+                <div class="empty-state">No reporting data was found for the selected product.</div>
+            </template>
+
+            <template if:true={showAllProductGroups}>
+                <div class="reporting-group">
+                    <div class="reporting-group-header">
+                        <h3>Subscribed Products</h3>
+                        <p>Active, current product subscriptions.</p>
+                    </div>
+                    <template for:each={subscribedProducts} for:item="product">
+                        <section key={product.productKey} class="product-report-panel">
+                            <div class="product-report-header">
+                                <div>
+                                    <h4>{product.product}</h4>
+                                    <div class="status-strip">
+                                        <span class={product.statusClass}>{product.subscriptionStatus}</span>
+                                        <span>{product.daysText}</span>
+                                        <span>{product.lastUpdatedText}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="metric-grid">
+                                <template for:each={product.metricCards} for:item="metric">
+                                    <article key={metric.label} class="metric-card">
+                                        <div class="metric-topline">
+                                            <span>{metric.label}</span>
+                                            <lightning-icon icon-name={metric.icon} size="x-small"></lightning-icon>
+                                        </div>
+                                        <div class="metric-value">{metric.value}</div>
+                                        <template if:true={metric.hasLimit}>
+                                            <div class="usage-bar" aria-label={metric.ariaLabel}>
+                                                <span style={metric.barStyle}></span>
+                                            </div>
+                                            <div class="metric-limit">{metric.limitText}</div>
+                                        </template>
+                                    </article>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+                </div>
+
+                <div class="reporting-group">
+                    <div class="reporting-group-header">
+                        <h3>Available Products</h3>
+                        <p>Inactive, expired, or not yet configured products.</p>
+                    </div>
+                    <template for:each={availableProducts} for:item="product">
+                        <section key={product.productKey} class="product-report-panel">
+                            <div class="product-report-header">
+                                <div>
+                                    <h4>{product.product}</h4>
+                                    <div class="status-strip">
+                                        <span class={product.statusClass}>{product.subscriptionStatus}</span>
+                                        <span>{product.daysText}</span>
+                                        <span>{product.lastUpdatedText}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="metric-grid">
+                                <template for:each={product.metricCards} for:item="metric">
+                                    <article key={metric.label} class="metric-card">
+                                        <div class="metric-topline">
+                                            <span>{metric.label}</span>
+                                            <lightning-icon icon-name={metric.icon} size="x-small"></lightning-icon>
+                                        </div>
+                                        <div class="metric-value">{metric.value}</div>
+                                        <template if:true={metric.hasLimit}>
+                                            <div class="usage-bar" aria-label={metric.ariaLabel}>
+                                                <span style={metric.barStyle}></span>
+                                            </div>
+                                            <div class="metric-limit">{metric.limitText}</div>
+                                        </template>
+                                    </article>
+                                </template>
+                            </div>
+                        </section>
+                    </template>
+                </div>
+            </template>
+        </template>
+    </section>
+</template>

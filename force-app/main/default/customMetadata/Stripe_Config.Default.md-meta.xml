@@ -8,7 +8,7 @@
     </values>
     <values>
         <field>EndDate__c</field>
-        <value xsi:type="xsd:date">2027-03-22</value>
+        <value xsi:type="xsd:date">2026-05-29</value>
     </values>
     <values>
         <field>PublishableKey__c</field>
@@ -16,10 +16,14 @@
     </values>
     <values>
         <field>StartDate__c</field>
-        <value xsi:type="xsd:date">2026-04-03</value>
+        <value xsi:type="xsd:date">2026-05-07</value>
     </values>
     <values>
         <field>UseSandbox__c</field>
         <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>WebhookSigningSecret__c</field>
+        <value xsi:type="xsd:string"></value>
     </values>
 </CustomMetadata>

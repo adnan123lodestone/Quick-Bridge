@@ -1,0 +1,152 @@
+<template>
+    <div class="payment-frame">
+        <lightning-card class="payment-card">
+            <div class="payment-shell">
+                <div class="payment-header">
+                    <div>
+                        <p class="payment-eyebrow">Secure Checkout</p>
+                        <div class="provider-title">Choose Payment Method</div>
+                        <p class="payment-subtitle">Select a gateway and complete the order using encrypted payment
+                            details.</p>
+                    </div>
+                    <div class="payment-trust-badge">Protected payment flow</div>
+                </div>
+
+                <div class="provider-section">
+                    <div class="provider-section-header">
+                        <div>
+                            <p class="provider-section-eyebrow">Available Gateways</p>
+                            <p class="provider-section-copy">Choose the best available gateway for this order.</p>
+                        </div>
+                        <div class="provider-section-badge">{selectedProviderLabel}</div>
+                    </div>
+                    <div class="provider-grid">
+                        <div class="provider-tile-wrap">
+                            <button type="button" class={authorizeNetTileClass} data-provider="authorizenet"
+                                onclick={handleProviderSelection}>
+                                <span class="tile-logo tile-logo-authorize">AN</span>
+                                <span class="tile-name">Authorize.Net</span>
+                            </button>
+                        </div>
+                        <div class="provider-tile-wrap">
+                            <button type="button" class={stripeTileClass} data-provider="stripe"
+                                onclick={handleProviderSelection}>
+                                <span class="tile-logo tile-logo-stripe">S</span>
+                                <span class="tile-name">Stripe</span>
+                            </button>
+                        </div>
+                        <div class="provider-tile-wrap">
+                            <button type="button" class={paypalTileClass} data-provider="paypal"
+                                onclick={handleProviderSelection}>
+                                <span class="tile-logo tile-logo-paypal">P</span>
+                                <span class="tile-name">PayPal</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metadata-settings-section slds-m-top_medium">
+                    <template for:each={paymentMetadataConfigs} for:item="config">
+                        <template if:true={config.isSelected}>
+                            <div key={config.provider} class="metadata-config-card slds-box">
+                                <div class="metadata-config-header slds-grid slds-grid_spread slds-m-bottom_small">
+                                    <div class="metadata-config-title">
+                                        <h4 class="slds-text-heading_small">{config.label}</h4>
+                                        <span class="metadata-config-status">
+                                            <template if:true={config.active}>
+                                                <span class="slds-badge slds-theme_success">Active</span>
+                                            </template>
+                                            <template if:false={config.active}>
+                                                <span class="slds-badge slds-theme_inactive">Not Configured</span>
+                                            </template>
+                                        </span>
+                                    </div>
+                                    <template if:true={config.active}>
+                                        <div class="slds-grid">
+                                            <button type="button" class="slds-button slds-button_neutral"
+                                                data-provider={config.provider} onclick={toggleMetadataEditMode}>
+                                                <template if:true={config.isEditing}>Cancel</template>
+                                                <template if:false={config.isEditing}>Edit</template>
+                                            </button>
+
+                                            <button type="button"
+                                                class="slds-button slds-button_destructive slds-m-left_small"
+                                                data-provider={config.provider} onclick={handleMetadataDelete}>
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <template if:false={config.active}>
+                                    <template if:false={config.isEditing}>
+                                        <p class="metadata-info-text slds-m-bottom_small">Click "Configure" to set up
+                                            this payment gateway.</p>
+                                        <button type="button" class="slds-button slds-button_neutral"
+                                            data-provider={config.provider} onclick={handleAddMetadataProvider}>
+                                            Configure
+                                        </button>
+                                    </template>
+                                </template>
+
+                                <template if:true={config.active}>
+                                    <template if:false={config.isEditing}>
+                                        <div class="metadata-fields-display">
+                                            <template for:each={config.editableFieldsData} for:item="field">
+                                                <div key={field.name}
+                                                    class="metadata-field-row slds-grid slds-m-bottom_small">
+                                                    <div class="slds-col slds-size_4-of-12">
+                                                        <span
+                                                            class="metadata-field-label slds-text-label_bold">{field.label}:</span>
+                                                    </div>
+                                                    <div class="slds-col slds-size_8-of-12">
+                                                        <span class="metadata-field-value">{field.displayValue}</span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </template>
+
+                                <template if:true={config.isEditing}>
+                                    <div class="metadata-fields-edit">
+                                        <template for:each={config.editableFieldsData} for:item="field">
+                                            <template if:true={field.isCheckbox}>
+                                                <div key={field.name} class="slds-form-element slds-m-bottom_small">
+                                                    <label class="slds-form-element__label">
+                                                        <lightning-input type="checkbox" label={field.label}
+                                                            data-field={field.name} data-provider={config.provider}
+                                                            checked={field.currentValue}
+                                                            onchange={handleMetadataFieldChange}></lightning-input>
+                                                    </label>
+                                                </div>
+                                            </template>
+                                            <template if:false={field.isCheckbox}>
+                                                <div key={field.name} class="slds-m-bottom_small">
+                                                    <lightning-input type="text" label={field.label}
+                                                        data-field={field.name} data-provider={config.provider}
+                                                        value={field.currentValue}
+                                                        onchange={handleMetadataFieldChange}></lightning-input>
+                                                </div>
+                                            </template>
+                                        </template>
+                                        <div class="metadata-action-buttons slds-grid slds-gap_small slds-m-top_medium">
+                                            <lightning-button variant="brand" label="Save"
+                                                data-provider={config.provider} onclick={handleMetadataSave}
+                                                disabled={isMetadataSaving}></lightning-button>
+                                            <template if:false={config.active}>
+                                                <lightning-button variant="neutral" label="Cancel"
+                                                    data-provider={config.provider}
+                                                    onclick={handleAddMetadataCancel}></lightning-button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+            </div>
+        </lightning-card>
+    </div>
+</template>

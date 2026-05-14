@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>IntegrationUsageService</members>
+        <members>QBSchedulerController</members>
+        <members>SchedulerTrackingService</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>integrationReportingDashboard</members>
+        <members>qbSchedulerComponent</members>
+        <members>shopifySchedulerComponent</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <types>
+        <members>Integration_Usage_Limit.AuthorizeNet</members>
+        <members>Integration_Usage_Limit.FedEx</members>
+        <members>Integration_Usage_Limit.PayPal</members>
+        <members>Integration_Usage_Limit.QuickBooks</members>
+        <members>Integration_Usage_Limit.Shopify</members>
+        <members>Integration_Usage_Limit.Stripe</members>
+        <members>Integration_Usage_Limit.UPS</members>
+        <name>CustomMetadata</name>
+    </types>
+    <version>61.0</version>
+</Package>

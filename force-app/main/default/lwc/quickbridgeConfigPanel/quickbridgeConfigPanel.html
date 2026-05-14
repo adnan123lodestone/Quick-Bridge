@@ -1,0 +1,557 @@
+<template>
+    <div class="quickbridge-window">
+       <!-- <div class="window-title-bar">
+            <div class="window-title-left">
+                <span class="window-title-icon">qb</span>
+                <span>Quick Bridge</span>
+                <span class="window-menu-item">File</span>
+                <span class="window-menu-item">Edit</span>
+                <span class="window-menu-item">View</span>
+                <span class="window-menu-item">Window</span>
+                <span class="window-menu-item">Help</span>
+            </div>
+            <div class="window-controls" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div> -->
+
+        <div class="app-layout">
+
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <img src={quickBridgeLogo} alt="QuickBridge" class="sidebar-logo-image" />
+            </div>
+            <nav class="sidebar-nav">
+                <template if:true={isLoggedIn}>
+                    <button class={navHomeClass} onclick={navigateToHome}>
+                        <lightning-icon icon-name="utility:home" size="x-small" class="nav-icon"></lightning-icon>
+                        Integrations
+                    </button>
+                    <button class={navReportingClass} onclick={navigateToReporting}>
+                        <lightning-icon icon-name="utility:chart" size="x-small" class="nav-icon"></lightning-icon>
+                        Reporting
+                    </button>
+                    <button class={navDashboardClass} onclick={navigateToDashboard}>
+                        <lightning-icon icon-name="utility:error" size="x-small" class="nav-icon"></lightning-icon>
+                        Error Log
+                    </button>
+                    <button class={navMappingClass} onclick={navigateToMapping}>
+                        <lightning-icon icon-name="utility:setup" size="x-small" class="nav-icon"></lightning-icon>
+                        Field Mapping
+                    </button>
+                    <template if:true={isQboOrShopify}>
+                        <button class={navSchedulerClass} onclick={navigateToScheduler}>
+                            <lightning-icon icon-name="utility:clock" size="x-small" class="nav-icon"></lightning-icon>
+                            Scheduler
+                        </button>
+                    </template>
+
+                    <button class="nav-button" onclick={handleSidebarBack}>
+                        <lightning-icon icon-name="utility:back" size="x-small" class="nav-icon"></lightning-icon> Back
+                    </button>
+
+                    <button class="nav-button logout" onclick={handleLogout}>
+                        <lightning-icon icon-name="utility:logout" size="x-small" class="nav-icon"></lightning-icon>
+                        Logout
+                    </button>
+                </template>
+                <template if:false={isLoggedIn}>
+                    <button class="nav-button active" onclick={handleBackToLogin}>
+                        <lightning-icon icon-name="utility:user" size="x-small" class="nav-icon"></lightning-icon> Login
+                    </button>
+                </template>
+            </nav>
+            <div class="sidebar-footer">
+                <p>Product of The Lodestone Group</p>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <template if:true={isLoginScreen}>
+                <div class="view-screen">
+                    <div class="top-bar login-top-bar">
+                        <div class="lodestone-lockup">
+                            <div class="lodestone-mark"></div>
+                            <div class="lodestone-text">
+                                <span>The</span>
+                                <span>Lodestone</span>
+                                <span>Group</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="login-container">
+                        <div class="login-card">
+                            <div class="logo-section">
+                                <svg class="logo-icon" viewBox="0 0 100 100" fill="currentColor">
+                                    <path
+                                        d="M30 30 C10 30, 10 70, 30 70 C50 70, 50 30, 30 30 Z M70 30 C50 30, 50 70, 70 70 C90 70, 90 30, 70 30 Z"
+                                        fill="none" stroke="currentColor" stroke-width="8" />
+                                    <path d="M40 50 L60 50 M45 40 L45 60 M55 40 L55 60" stroke="currentColor"
+                                        stroke-width="4" />
+                                    <rect x="25" y="45" width="50" height="10" fill="currentColor" />
+                                </svg>
+                                <div class="logo-text">
+                                    <span class="logo-title">QuickBridge</span>
+                                    <span class="logo-subtitle">The Lodestone Group</span>
+                                </div>
+                            </div>
+
+                            <h1 class="login-header">Secure Login</h1>
+
+                            <form onsubmit={handleLogin}>
+                                <div class="form-group">
+                                    <label for="userId" class="form-label">User ID</label>
+                                    <input type="text" id="userId" class="custom-input" placeholder="Enter your user ID"
+                                        value={userId} oninput={handleUserIdChange} required />
+                                </div>
+
+                                <div class="form-group pin-group-container">
+                                    <label class="form-label">4-Digit PIN</label>
+                                    <div class="pin-grid">
+                                        <input type="password" inputmode="numeric" pattern="\d*" maxlength="1"
+                                            class="pin-input" data-index="0" oninput={handlePinInput}
+                                            onkeydown={handlePinKeyDown} />
+                                        <input type="password" inputmode="numeric" pattern="\d*" maxlength="1"
+                                            class="pin-input" data-index="1" oninput={handlePinInput}
+                                            onkeydown={handlePinKeyDown} disabled />
+                                        <input type="password" inputmode="numeric" pattern="\d*" maxlength="1"
+                                            class="pin-input" data-index="2" oninput={handlePinInput}
+                                            onkeydown={handlePinKeyDown} disabled />
+                                        <input type="password" inputmode="numeric" pattern="\d*" maxlength="1"
+                                            class="pin-input" data-index="3" oninput={handlePinInput}
+                                            onkeydown={handlePinKeyDown} disabled />
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn-primary" disabled={isLoggingIn}>
+                                    <template if:false={isLoggingIn}>Sign In</template>
+                                    <template if:true={isLoggingIn}>Verifying...</template>
+                                </button>
+
+                                <div class="forgot-pin">
+                                    <a href="javascript:void(0);" onclick={goToForgotPinScreen}>Forgot PIN?</a>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template if:true={isForgotPinScreen}>
+                <div class="view-screen">
+                    <div class="top-bar login-top-bar">
+                        <div class="lodestone-lockup">
+                            <div class="lodestone-mark"></div>
+                            <div class="lodestone-text">
+                                <span>The</span>
+                                <span>Lodestone</span>
+                                <span>Group</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="login-container">
+                        <div class="login-card">
+                            <div class="logo-section">
+                                <svg class="logo-icon" viewBox="0 0 100 100" fill="currentColor">
+                                    <path
+                                        d="M30 30 C10 30, 10 70, 30 70 C50 70, 50 30, 30 30 Z M70 30 C50 30, 50 70, 70 70 C90 70, 90 30, 70 30 Z"
+                                        fill="none" stroke="currentColor" stroke-width="8" />
+                                    <path d="M40 50 L60 50 M45 40 L45 60 M55 40 L55 60" stroke="currentColor"
+                                        stroke-width="4" />
+                                    <rect x="25" y="45" width="50" height="10" fill="currentColor" />
+                                </svg>
+                                <div class="logo-text">
+                                    <span class="logo-title">QuickBridge</span>
+                                    <span class="logo-subtitle">PIN Recovery</span>
+                                </div>
+                            </div>
+
+                            <h1 class="login-header forgot-title">Forgot Your PIN?</h1>
+                            <p class="forgot-copy">
+                                To reset your PIN, enter your User ID below. We will send the 4-digit PIN to the email
+                                address associated with your account.
+                            </p>
+
+                            <div class="form-group full-width-field">
+                                <label class="form-label">User ID</label>
+                                <input type="text" class="custom-input" placeholder="Enter your user ID"
+                                    value={recoverUserId} oninput={handleRecoverUserIdChange} />
+                            </div>
+
+                            <button class="btn-primary" onclick={submitPinRecovery} disabled={isRecoveringPin}>
+                                <template if:false={isRecoveringPin}>Send Email</template>
+                                <template if:true={isRecoveringPin}>Sending...</template>
+                            </button>
+
+                            <div class="forgot-pin">
+                                <a href="javascript:void(0);" onclick={handleBackToLogin}>Back to Login</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template if:true={isTilesScreen}>
+                <div class="view-screen">
+                    <div class="top-bar">
+                        <h1 class="top-bar-title">Select Integration</h1>
+                    </div>
+
+                    <div class="dashboard-body dashboard-full-width integrations-body ">
+                        <p class="integration-intro">Select the platforms you want to integrate with your Salesforce environment. Click on any application to proceed to its configuration screen.</p>
+                    <template if:true={hasSubscribedTiles}>
+                        <div class="category-section slds-m-bottom_xx-large">
+                            <div class="category-header">
+                                <h3 class="category-title">Subscribed Products</h3>
+                                <p class="category-subtitle">These products are active and configured with your
+                                    credentials.</p>
+                            </div>
+                            <div class="tiles-grid">
+                                <template for:each={subscribedTiles} for:item="tile">
+                                    <div key={tile.id} class="tile-card subscribed-tile" data-id={tile.id}
+                                        onclick={handleTileClick}>
+                                        <div class="tile-status-badge">Active</div>
+                                        <div class="tile-logo-wrapper">
+                                            <img src={tile.logoUrl} alt={tile.label} class="tile-logo-img" />
+                                        </div>
+                                        <div class="tile-label">{tile.label}</div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div class="category-section">
+                        <div class="category-header category-header-with-action">
+                            <div>
+                                <h3 class="category-title">Available Products</h3>
+                                <p class="category-subtitle">Click to configure and activate these products for your
+                                    account.</p>
+                            </div>
+                            <button
+                                type="button"
+                                class="section-toggle-button"
+                                onclick={handleAvailableProductsToggle}
+                                disabled={isSavingAvailableProductsPreference}
+                                title={availableProductsToggleTitle}
+                            >
+                                <lightning-icon icon-name={availableProductsToggleIcon} size="xx-small"></lightning-icon>
+                                <span>{availableProductsToggleLabel}</span>
+                            </button>
+                        </div>
+                        <template if:true={availableProductsVisible}>
+                            <div class="tiles-grid">
+                                <template for:each={availableTiles} for:item="tile">
+                                    <div key={tile.id} class="tile-card" data-id={tile.id} onclick={handleTileClick}>
+                                        <div class="tile-logo-wrapper grayscale">
+                                            <img src={tile.logoUrl} alt={tile.label} class="tile-logo-img" />
+                                        </div>
+                                        <div class="tile-label">{tile.label}</div>
+                                        <div class="tile-action-text">Setup Now</div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <template if:false={availableProductsVisible}>
+                            <div class="collapsed-section-note">
+                                Available Products are hidden. Use Show to expand this section.
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                </div>
+            </template>
+
+            <template if:true={isConfigScreen}>
+                <div class="view-screen">
+                    <div class="top-bar">
+                        <h1 class="top-bar-title">Settings</h1>
+                    </div>
+
+                    <div class="dashboard-body dashboard-full-width settings-layout">
+                        <aside class="settings-side-card">
+                            <h2 class="settings-side-title">
+                                <lightning-icon icon-name="utility:settings" size="x-small" class="settings-side-icon"></lightning-icon>
+                                Settings
+                            </h2>
+                            <p class="settings-side-copy">Configure your application settings here.</p>
+                            <div class="settings-side-actions">
+                                <button type="button" class="settings-log-button" onclick={navigateToDashboard}>Error Log</button>
+                                <button type="button" class="settings-logout-button" onclick={handleLogout}>
+                                    <span>Logout</span>
+                                    <lightning-icon icon-name="utility:logout" size="xx-small" class="settings-logout-icon"></lightning-icon>
+                                </button>
+                            </div>
+                        </aside>
+
+                        <div class="settings-main-card config-panel slds-box">
+                        <template if:true={integrationExpiryAlert}>
+                            <div class={integrationExpiryAlert.bannerClass} role="alert">
+                                <lightning-icon icon-name="utility:warning" size="x-small" class="renewal-alert-icon"></lightning-icon>
+                                <div>
+                                    <p class="renewal-alert-title">{integrationExpiryAlert.title}</p>
+                                    <p class="renewal-alert-message">{integrationExpiryAlert.message}</p>
+                                </div>
+                            </div>
+                        </template>
+                        <template for:each={paymentMetadataConfigs} for:item="config">
+                            <template if:true={config.isSelected}>
+                                <div key={config.provider} class="config-content">
+                                    <div class="config-header-row slds-m-bottom_large">
+                                        <div>
+                                            <h2 class="config-title">{config.label} Settings</h2>
+                                            <p class="config-subtitle">Configure your API credentials for {config.label}
+                                            </p>
+                                        </div>
+                                        <div class="config-action-buttons">
+                                            <template if:true={config.isEditing}>
+                                                <button class="qb-action-btn btn-cancel slds-m-right_small"
+                                                    data-provider={config.provider}
+                                                    onclick={toggleEditMode}>Cancel</button>
+                                                <button class="qb-action-btn btn-save" data-provider={config.provider}
+                                                    onclick={handleSaveMetadata} disabled={isSaving}>Save
+                                                    Configuration</button>
+                                            </template>
+                                            <template if:false={config.isEditing}>
+                                                <button class="qb-action-btn btn-edit slds-m-right_small"
+                                                    data-provider={config.provider} onclick={toggleEditMode}>Edit
+                                                    Settings</button>
+                                                <template if:true={config.active}>
+                                                    <button class="qb-action-btn btn-delete"
+                                                        data-provider={config.provider}
+                                                        onclick={handleMetadataDelete}>Delete</button>
+                                                </template>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <div class="config-form-grid">
+                                        <template for:each={config.editableFieldsData} for:item="field">
+                                            <div key={field.name} class="config-field-wrapper slds-m-bottom_medium">
+                                                <template if:true={config.isEditing}>
+                                                    <template if:true={field.isCheckbox}>
+                                                        <lightning-input type="checkbox" label={field.label}
+                                                            data-field={field.name} data-provider={config.provider}
+                                                            checked={field.currentValue}
+                                                            onchange={handleFieldChange}></lightning-input>
+                                                    </template>
+                                                    <template if:false={field.isCheckbox}>
+                                                        <lightning-input type="text" label={field.label}
+                                                            data-field={field.name} data-provider={config.provider}
+                                                            value={field.currentValue}
+                                                            disabled={field.isReadOnly}
+                                                            onchange={handleFieldChange}></lightning-input>
+                                                    </template>
+                                                </template>
+                                                <template if:false={config.isEditing}>
+                                                    <p class="field-label-display">{field.label}</p>
+                                                    <div class="field-value-display">
+                                                        <template if:true={field.isCheckbox}>
+                                                            <lightning-input type="checkbox" checked={field.isTrue}
+                                                                disabled></lightning-input>
+                                                        </template>
+                                                        <template if:false={field.isCheckbox}>
+                                                            <template if:true={field.displayValue}>
+                                                                {field.displayValue}
+                                                            </template>
+                                                            <template if:false={field.displayValue}>
+                                                                &nbsp;
+                                                            </template>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </template>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template if:true={isDashboardScreen}>
+                <div class="view-screen">
+                    <div class="top-bar">
+                        <h1 class="top-bar-title">Error Log</h1>
+                    </div>
+                    <div class="dashboard-body dashboard-full-width dashboard-content">
+                    <!-- <div class="dashboard-body dashboard-full-width dashboard-content"> -->
+                    <div class="slds-grid slds-gutters slds-m-bottom_large">
+                        <div class="slds-col slds-size_1-of-1">
+                            <p style="color: #64748b; font-weight: 600; margin-bottom: 10px;">RECENT SYSTEM ACTIVITY</p>
+                        </div>
+                    </div>
+
+                    <div class="slds-grid slds-gutters">
+                        <div class="slds-col slds-size_1-of-1">
+                            <template if:true={selectedTile}>
+                                <template if:true={currentGatewayProperName}>
+                                    <c-error-log-table gateway-name={currentGatewayProperName}></c-error-log-table>
+                                </template>
+                            </template>
+
+                            <template if:false={selectedTile}>
+                                <div class="slds-text-align_center slds-p-around_medium"
+                                    style="color: #64748b; background: white; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 1rem;">
+                                    <h3 style="font-size: 1.5rem; color: #334155; font-weight: bold; margin-bottom:
+                                        1rem;">No
+                                        Gateway Selected</h3>
+                                    Please select a gateway from the Integrations screen to view logs.
+                                    <br>
+                                    <div>
+                                        <button class="qb-login-button slds-m-top_medium" style="width: auto;"
+                                            onclick={navigateToHomeResetContext}>Go to Integrations</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </template>
+
+            <template if:true={isReportingScreen}>
+                <div class="view-screen">
+                    <div class="top-bar">
+                        <h1 class="top-bar-title">Reporting</h1>
+                    </div>
+                    <div class="dashboard-body dashboard-full-width dashboard-content">
+                        <c-integration-reporting-dashboard
+                            selected-product-key={selectedReportingProductKey}
+                            subscribed-product-keys={subscribedReportingProductKeys}
+                            available-product-keys={availableReportingProductKeys}>
+                        </c-integration-reporting-dashboard>
+                    </div>
+                </div>
+            </template>
+
+            <template if:true={isMappingScreen}>
+                <div class="view-screen">
+                    <div class="top-bar">
+                        <h1 class="top-bar-title">Salesforce Object Mapping</h1>
+                    </div>
+
+                    <!-- <div class="dashboard-body dashboard-full-width mapping-content"> -->
+                    <div class="dashboard-body dashboard-full-width mapping-content">
+                    <template if:true={selectedTile}>
+
+                        <template if:true={isQboSelected}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">QuickBooks Online
+                                    Mapping</h2>
+                                <p>
+                                    <c-field-mapping-component></c-field-mapping-component>
+                                </p>
+                            </div>
+                        </template>
+
+                        <template if:true={isStripeSelected}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">Stripe Mapping
+                                </h2>
+                                <p><c-invoice-mapping-tool></c-invoice-mapping-tool></p>
+                            </div>
+                        </template>
+
+                        <template if:true={isPayPalSelected}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">PayPal Mapping
+                                </h2>
+                                <p><c-invoice-mapping-tool></c-invoice-mapping-tool></p>
+                            </div>
+                        </template>
+
+                        <template if:true={isAuthNetSelected}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">PayPal Mapping
+                                </h2>
+                                <p><c-invoice-mapping-tool></c-invoice-mapping-tool></p>
+                            </div>
+                        </template>
+
+                        <template if:true={isShopify}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">Shopify Mapping
+                                </h2>
+                                <p><c-shopify-field-mapping-component></c-shopify-field-mapping-component></p>
+                            </div>
+                        </template>
+
+                        <template if:true={isFedExSelected}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">FedEx Mapping
+                                </h2>
+                                <c-fedex-field-mapping-component></c-fedex-field-mapping-component>
+                            </div>
+                        </template>
+
+                        <template if:true={isUPSSelected}>
+                            <div class="slds-box"
+                                style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">UPS Mapping
+                                </h2>
+                                <c-ups-field-mapping-component></c-ups-field-mapping-component>
+                            </div>
+                        </template>
+
+                    </template>
+
+                    <template if:false={selectedTile}>
+                        <div class="slds-box"
+                            style="background: white; text-align: center; padding: 4rem; border-radius: 12px; border: 1px solid #e2e8f0;">
+                            <h3 style="font-size: 1.5rem; color: #334155; font-weight: bold; margin-bottom: 1rem;">No
+                                Gateway Selected</h3>
+                            <p style="color: #64748b; font-size: 1rem;">Please go to the Integrations screen and select a
+                                product (e.g., QuickBooks or Stripe) to configure its specific mapping rules.</p>
+
+                            <div style="margin-top: 2rem;">
+                                <button class="qb-login-button" style="width: 200px;" onclick={navigateToHome}>Go to
+                                    Integrations</button>
+                            </div>
+                        </div>
+                    </template>
+
+                </div>
+                </div>
+            </template>
+
+            <template if:true={isSchedulerScreen}>
+                <div class="view-screen scheduler-view">
+                    <div class="top-bar">
+                        <h1 class="top-bar-title">Scheduler</h1>
+                    </div>
+
+                    <div class="dashboard-body dashboard-full-width scheduler-content">
+                    <template if:true={selectedTile}>
+                        <template if:true={isQboSelected}>
+                            <c-qb-scheduler-component></c-qb-scheduler-component>
+                        </template>
+                        <template if:true={isShopify}>
+                            <c-shopify-scheduler-component></c-shopify-scheduler-component>
+                        </template>
+                        <template if:true={isSchedulerUnavailable}>
+                            <div class="slds-box slds-m-bottom_large"
+                                style="background: white; text-align: center; padding: 4rem; border-radius: 12px; max-width: 1000px; margin: 0 auto; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                                <h3 style="font-size: 1.5rem; color: #334155; font-weight: bold; margin-bottom: 1rem;">
+                                    Scheduler not available</h3>
+                                <p style="color: #64748b;">Scheduler is only available for QuickBooks Online and Shopify currently.
+                                </p>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+                </div>
+            </template>
+        </main>
+        </div>
+    </div>
+</template>

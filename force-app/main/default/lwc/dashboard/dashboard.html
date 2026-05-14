@@ -1,0 +1,21 @@
+<template>
+    <div class="dashboard-container">
+        <div class="stats-grid">
+            <template for:each={dashboardStats} for:item="stat">
+                <div key={stat.id} class="stat-card">
+                    <div class="card-content">
+                        <div class={stat.colorClass}>
+                            <lightning-icon icon-name={stat.icon} size="small" variant="inverse"></lightning-icon>
+                        </div>
+                        
+                        <div class="text-content">
+                            <h3 class="stat-title">{stat.title}</h3>
+                            <p class="stat-subtitle">{stat.subtitle}</p>
+                            <div class="stat-value">{stat.value}</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</template>

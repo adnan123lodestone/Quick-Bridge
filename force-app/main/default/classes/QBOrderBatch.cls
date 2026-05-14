@@ -12,7 +12,18 @@ public class QBOrderBatch implements Database.Batchable<sObject>, Database.Allow
     }
     
     public void execute(Database.BatchableContext bc, List<Order> scope) {
-       
+        try {
+            System.debug('QBOrderBatch execute currently has no sync implementation.');
+        } catch (Exception e) {
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QBOrderBatch.execute',
+                e,
+                'Order',
+                scope == null || scope.isEmpty() ? null : scope[0].Id
+            );
+            throw e;
+        }
     }
     
     public void finish(Database.BatchableContext bc) {

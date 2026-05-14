@@ -1,0 +1,171 @@
+/* ── Main bar ─────────────────────────────────────────── */
+.carrier-panel {
+    padding: 0.25rem 0;
+}
+
+.carrier-loading {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+.carrier-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.45rem 0.75rem;
+    min-height: 44px;
+}
+
+/* ── Carrier selector ────────────────────────────────── */
+.carrier-selector-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+.carrier-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.carrier-select-box {
+    min-width: 130px;
+}
+
+/* Strip lightning-combobox down to just the trigger button */
+.carrier-select-box lightning-combobox {
+    --slds-c-input-color-border: #cbd5e1;
+    --slds-c-input-color-border-focus: #1877f2;
+}
+
+/* Remove bottom margin SLDS adds to form elements */
+.carrier-select-box .slds-form-element {
+    margin-bottom: 0 !important;
+}
+
+/* ── Divider ─────────────────────────────────────────── */
+.carrier-divider {
+    width: 1px;
+    height: 24px;
+    background: #cbd5e1;
+    flex-shrink: 0;
+    margin: 0 0.25rem;
+}
+
+/* ── Action buttons ──────────────────────────────────── */
+.carrier-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.carrier-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.9rem;
+    border: 1.5px solid transparent;
+    border-radius: 6px;
+    background: #1877f2;
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 30px;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+    box-shadow: 0 1px 2px rgba(24,119,242,0.18);
+}
+
+.carrier-action-btn:hover:not(:disabled) {
+    background: #1461c8;
+    box-shadow: 0 2px 6px rgba(24,119,242,0.28);
+}
+
+.carrier-action-btn:active:not(:disabled) {
+    background: #1050a8;
+    box-shadow: none;
+}
+
+.carrier-action-btn:disabled {
+    background: #bfdbfe;
+    color: #93c5fd;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.carrier-no-actions {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 0.1rem 0;
+}
+
+/* ── Rate modal ──────────────────────────────────────── */
+.rate-modal .slds-modal__container {
+    max-width: 560px;
+}
+
+.rate-modal-content {
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.rate-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 7px;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.rate-option:hover {
+    border-color: #1877f2;
+    background: #f0f7ff;
+}
+
+.rate-select-indicator {
+    width: 20px;
+    min-width: 20px;
+}
+
+.rate-details {
+    flex: 1;
+}
+
+.rate-service-name {
+    margin: 0 0 0.2rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #111827;
+}
+
+.rate-charge {
+    margin: 0 0 0.2rem;
+    font-size: 0.875rem;
+    color: #374151;
+}
+
+.rate-transit {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #6b7280;
+}

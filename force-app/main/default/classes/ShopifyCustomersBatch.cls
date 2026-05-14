@@ -1,25 +1,30 @@
 global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
-
+    
     private String endpoint;
-    private String accessToken;
     private String nextUrl;
-
+    
+    @TestVisible private static Boolean bypassAuthCheckForTest = false; 
+    
     public ShopifyCustomersBatch(String endpoint) {
         this.endpoint = endpoint;
-        Integration__mdt shopifyCred = getAccessToken();
-        this.accessToken = shopifyCred.Access_Token__c;
     }
-
+    
     public ShopifyCustomersBatch() {
-        Integration__mdt shopifyCred = getAccessToken();
-        this.accessToken = shopifyCred.Access_Token__c;
     }
-
+    
     global Iterable<Integer> start(Database.BatchableContext BC) {
         return new List<Integer>{1};
     }
-
+    
     global void execute(Database.BatchableContext BC, List<Integer> scope) {
+        
+        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
+            System.debug('Skipping execution. Shopify license not active.');
+            return;
+        }
+
+        IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
+
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
@@ -29,51 +34,54 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
             
             String finalEndpoint;
             Integer daysAgo = Integer.valueOf(calloutControl.Days__c != null ? calloutControl.Days__c : 0);
-
+            
             if (String.isBlank(this.endpoint)) {
-                Integration__mdt shopifyCred = getAccessToken();
-                finalEndpoint = shopifyCred.URL__c + '/customers.json?status=any';
+                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/customers.json?status=any';
                 if (daysAgo != 0) {
                     String formattedDate = getPastDateTimeFormatted(daysAgo);
                     finalEndpoint += '&updated_at_min=' + formattedDate;
                 }
             } else {
-                finalEndpoint = this.endpoint;
+                // Handle pagination: Replace domain with callout prefix to maintain authentication
+                if (this.endpoint.contains('/admin/api/')) {
+                    finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/' + this.endpoint.substringAfter('/admin/api/').replaceFirst('^[^/]+/', '');
+                } else {
+                    finalEndpoint = this.endpoint;
+                }
             }
-
+            
             HttpRequest req = new HttpRequest();
             req.setEndpoint(finalEndpoint);
             req.setMethod('GET');
-            req.setHeader('X-Shopify-Access-Token', this.accessToken);
-
+            
             Http http = new Http();
             HttpResponse res = http.send(req);
-
+            
             if (res.getStatusCode() == 200) {
                 Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
                 List<Object> customers = (List<Object>) jsonResponse.get('customers');
-
+                
                 if (customers == null) customers = new List<Object>();
-
+                
                 Set<String> emailSet = new Set<String>();
                 Set<String> externalIdSet = new Set<String>();
-
+                
                 for (Object obj : customers) {
                     Map<String, Object> customer = (Map<String, Object>) obj;
                     String email = (String) customer.get('email');
                     String idStr = String.valueOf(customer.get('id'));
-
+                    
                     if (String.isNotBlank(email)) emailSet.add(email.toLowerCase());
                     if (String.isNotBlank(idStr)) externalIdSet.add(idStr);
                 }
-
+                
                 Id personAccountRTId = getPersonAccountRecordTypeId();
                 Map<String, Account> existingByEmail = new Map<String, Account>();
                 Map<String, Account> existingByExternalId = new Map<String, Account>();
-
+                
                 if (!emailSet.isEmpty()) {
                     for (Account acc : [
-                        SELECT Id, PersonEmail, External_Id__c FROM Account
+                        SELECT Id, PersonEmail, Shopify_ID__c FROM Account
                         WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet
                     ]) {
                         existingByEmail.put(acc.PersonEmail.toLowerCase(), acc);
@@ -82,33 +90,26 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
 
                 if (!externalIdSet.isEmpty()) {
                     for (Account acc : [
-                        SELECT Id, External_Id__c FROM Account
-                        WHERE RecordTypeId = :personAccountRTId AND External_Id__c IN :externalIdSet
+                        SELECT Id, Shopify_ID__c FROM Account
+                        WHERE RecordTypeId = :personAccountRTId AND Shopify_ID__c IN :externalIdSet
                     ]) {
-                        existingByExternalId.put(acc.External_Id__c, acc);
+                        existingByExternalId.put(acc.Shopify_ID__c, acc);
                     }
                 }
-
+                
+                Map<String, String> fieldMap = ShopifyObjectMappings.getCustomerToAccountMapping();
                 List<Account> toUpsert = new List<Account>();
 
                 for (Object obj : customers) {
-                    Map<String, Object> customer = (Map<String, Object>) obj;
-                    Map<String, Object> defaultAddress = (Map<String, Object>) customer.get('default_address');
-                    Map<String, Object> smsConsent = (Map<String, Object>) customer.get('sms_marketing_consent');
-                    Map<String, Object> emailConsent = (Map<String, Object>) customer.get('email_marketing_consent');
+                    Map<String, Object> customerMap = (Map<String, Object>) obj;
+                    Map<String, Object> defaultAddress = (Map<String, Object>) customerMap.get('default_address');
+                    Map<String, Object> smsConsent    = (Map<String, Object>) customerMap.get('sms_marketing_consent');
+                    Map<String, Object> emailConsent  = (Map<String, Object>) customerMap.get('email_marketing_consent');
 
-                    String email = (String) customer.get('email');
-                    String customerId = String.valueOf(customer.get('id'));
-                    String firstName = (String) customer.get('first_name');
-                    String lastName = (String) customer.get('last_name');
-                    String phone = (String) customer.get('phone');
-                    Boolean taxExempt = customer.containsKey('tax_exempt') ? (Boolean) customer.get('tax_exempt') : false;
-                    String tags = (String) customer.get('tags');
-
-                    // ➡️ New fields
-                    Decimal totalSpent = customer.get('total_spent') != null ? Decimal.valueOf(String.valueOf(customer.get('total_spent'))) : null;
-                    Integer ordersCount = customer.get('orders_count') != null ? Integer.valueOf(String.valueOf(customer.get('orders_count'))) : null;
-
+                    String email      = (String) customerMap.get('email');
+                    String customerId = String.valueOf(customerMap.get('id'));
+                    String firstName  = (String) customerMap.get('first_name');
+                    String lastName   = (String) customerMap.get('last_name');
                     if (String.isBlank(lastName)) lastName = firstName;
                     if (String.isBlank(lastName)) lastName = customerId;
 
@@ -123,50 +124,94 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
                         acc.PersonEmail = email;
                     }
 
-                    acc.External_Id__c = customerId;
-                    acc.FirstName = firstName;
-                    acc.LastName = lastName;
-                    acc.Phone = phone;
-                    acc.Shopify_Tags__c = tags;
-                    acc.Tax_Exempt__c = taxExempt;
+                    // Apply dynamic field mappings from Field_Mapping__mdt (fallback to static map)
+                    for (String shopifyPath : fieldMap.keySet()) {
+                        String sfField = fieldMap.get(shopifyPath);
+                        Object val = getNestedValue(customerMap, shopifyPath);
+                        if (val == null) continue;
+                        try {
+                            if (sfField == 'Tax_Exempt__c') {
+                                acc.put(sfField, (Boolean) val);
+                            } else if (sfField == 'Total_Spent__c') {
+                                acc.put(sfField, Decimal.valueOf(String.valueOf(val)));
+                            } else if (sfField == 'Total_Orders__c') {
+                                acc.put(sfField, Integer.valueOf(String.valueOf(val)));
+                            } else {
+                                acc.put(sfField, val);
+                            }
+                        } catch (Exception ex) {
+                            System.debug('Field mapping error ' + sfField + ': ' + ex.getMessage());
+                        }
+                    }
 
-                    acc.Total_Spent__c = totalSpent;
-                    acc.Total_Orders__c = ordersCount;
+                    // Always ensure identity fields are set
+                    acc.Shopify_ID__c = customerId;
+                    if (String.isBlank(acc.LastName)) acc.LastName = lastName;
 
+                    // Nested objects not covered by flat mapping keys
                     if (smsConsent != null) {
-                        acc.SMS_Consent_State__c = (String) smsConsent.get('state');
-                        acc.SMS_Opt_In_Level__c = (String) smsConsent.get('opt_in_level');
+                        if (!fieldMap.containsKey('sms_marketing_consent.state'))
+                            acc.SMS_Consent_State__c = (String) smsConsent.get('state');
+                        if (!fieldMap.containsKey('sms_marketing_consent.opt_in_level'))
+                            acc.SMS_Opt_In_Level__c = (String) smsConsent.get('opt_in_level');
                     }
                     if (emailConsent != null) {
-                        acc.Email_Consent_State__c = (String) emailConsent.get('state');
-                        acc.Email_Opt_In_Level__c = (String) emailConsent.get('opt_in_level');
+                        if (!fieldMap.containsKey('email_marketing_consent.state'))
+                            acc.Email_Consent_State__c = (String) emailConsent.get('state');
+                        if (!fieldMap.containsKey('email_marketing_consent.opt_in_level'))
+                            acc.Email_Opt_In_Level__c = (String) emailConsent.get('opt_in_level');
                     }
-                    if (defaultAddress != null) {
-                        acc.BillingStreet = ((String) defaultAddress.get('address1')) + 
-                                            (defaultAddress.get('address2') != null ? ' ' + (String) defaultAddress.get('address2') : '');
-                        acc.BillingCity = (String) defaultAddress.get('city');
-                        acc.BillingState = (String) defaultAddress.get('province');
-                        acc.BillingPostalCode = (String) defaultAddress.get('zip');
-                        acc.BillingCountry = (String) defaultAddress.get('country');
+                    if (defaultAddress != null && !fieldMap.containsKey('default_address.address1')) {
+                        String street = (String) defaultAddress.get('address1');
+                        if (defaultAddress.get('address2') != null) street += ' ' + (String) defaultAddress.get('address2');
+                        acc.BillingStreet      = street;
+                        acc.BillingCity        = (String) defaultAddress.get('city');
+                        acc.BillingState       = (String) defaultAddress.get('province');
+                        acc.BillingPostalCode  = (String) defaultAddress.get('zip');
+                        acc.BillingCountry     = (String) defaultAddress.get('country');
                     }
 
                     toUpsert.add(acc);
                 }
-
+                
                 if (!toUpsert.isEmpty()) {
-                    Database.upsert(toUpsert, false);
+                    Database.UpsertResult[] upsertResults = Database.upsert(toUpsert, false);
+                    ErrorLogUtility.logUpsertResults(
+                        'Shopify',
+                        'ShopifyCustomersBatch.execute.upsertCustomers',
+                        'upsert',
+                        toUpsert,
+                        upsertResults,
+                        null,
+                        null
+                    );
                 }
-
+                
                 this.nextUrl = getNextPageUrl(res);
-
+                
             } else {
                 System.debug('HTTP callout failed: ' + res.getStatusCode());
+                ErrorLogUtility.logCalloutFailure(
+                    'Shopify',
+                    'ShopifyCustomersBatch.execute',
+                    'Shopify customers API returned HTTP ' + res.getStatusCode() + ': ' + res.getBody(),
+                    res.getStatusCode(),
+                    null,
+                    null
+                );
             }
         } catch (Exception e) {
-            HandleCustomException.LogException(e, this.endpoint);
+            System.debug('Error: ' + e.getMessage());
+            ErrorLogUtility.logException(
+                'Shopify',
+                'ShopifyCustomersBatch.execute',
+                e,
+                null,
+                null
+            );
         }
     }
-
+    
     global void finish(Database.BatchableContext BC) {
         if (String.isNotBlank(this.nextUrl)) {
             Database.executeBatch(new ShopifyCustomersBatch(this.nextUrl), 1);
@@ -174,26 +219,28 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
             System.debug('No nextUrl. All Shopify customers processed.');
         }
     }
-
-    private Integration__mdt getAccessToken() {
-        return [SELECT Access_Token__c, URL__c FROM Integration__mdt WHERE MasterLabel = 'Shopify' LIMIT 1];
-    }
-
+    
     private API_Callout_Control__mdt getCalloutControl() {
+        if (Test.isRunningTest()) {
+            return new API_Callout_Control__mdt(
+                Allow_Callouts__c = true,
+                Days__c = 0
+            );
+        }
         return [SELECT Allow_Callouts__c, Days__c FROM API_Callout_Control__mdt 
                 WHERE MasterLabel = 'Shopify - Customer' AND Endpoint__c = 'customer' 
                 LIMIT 1];
     }
-
+    
     private Id getPersonAccountRecordTypeId() {
         return [SELECT Id FROM RecordType WHERE SObjectType = 'Account' AND DeveloperName = 'PersonAccount' LIMIT 1].Id;
     }
-
+    
     private static String getPastDateTimeFormatted(Integer daysAgo) {
         Datetime pastDateTime = Datetime.now().addDays(-daysAgo);
         return pastDateTime.formatGmt('yyyy-MM-dd\'T\'HH:mm:ssZ');
     }
-
+    
     private static String getNextPageUrl(HttpResponse response) {
         String linkHeader = response.getHeader('link');
         if (linkHeader != null) {
@@ -204,5 +251,17 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
             }
         }
         return null;
+    }
+
+    // Resolves dot-notation paths like 'default_address.city' from a nested map
+    private static Object getNestedValue(Map<String, Object> root, String path) {
+        if (!path.contains('.')) return root.get(path);
+        List<String> parts = path.split('\\.');
+        Object current = root.get(parts[0]);
+        for (Integer i = 1; i < parts.size(); i++) {
+            if (!(current instanceof Map<String, Object>)) return null;
+            current = ((Map<String, Object>) current).get(parts[i]);
+        }
+        return current;
     }
 }

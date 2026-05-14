@@ -3,7 +3,15 @@
     <label>Default</label>
     <protected>false</protected>
     <values>
+        <field>QuickBooks_Is_Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
         <field>Realm_ID__c</field>
+<<<<<<< HEAD
+        <value xsi:type="xsd:string">9341456917896565</value>
+=======
         <value xsi:type="xsd:string"></value>
+>>>>>>> 8ea3226046e55925c045eda3a28d0589be72b1b5
     </values>
 </CustomMetadata>

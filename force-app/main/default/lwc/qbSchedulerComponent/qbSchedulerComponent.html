@@ -1,0 +1,265 @@
+<template>
+    <template if:false={isNewScheduleView}>
+        <div class="header-action-bar slds-m-bottom_large slds-grid slds-grid_align-spread">
+            <div>
+                <h2
+                    style="font-size: 1.5rem; font-weight: bold; color: #1e293b; display: flex; align-items: center; gap: 10px;">
+                    <span class="qbo-logo-circle">qb</span> Scheduler - QuickBooks Online
+                </h2>
+                <p style="color: #64748b; font-size: 0.9rem;">View and manage your scheduled sync jobs for QuickBooks
+                    Online.</p>
+            </div>
+            <div>
+                <lightning-button label="+ New Schedule" variant="brand" onclick={handleNewSchedule}
+                    disabled={isScheduleLimitReached}></lightning-button>
+            </div>
+        </div>
+
+        <div class={usageCardClass}>
+            <div>
+                <p class="usage-label">Active Schedules</p>
+                <p class="usage-message">{usageSummary.message}</p>
+            </div>
+            <div class="usage-count">{usageCounterText}</div>
+        </div>
+
+        <div class="slds-grid slds-gutters">
+            <div class="slds-col slds-size_1-of-3">
+                <div class="slds-box custom-box" style="padding: 1.5rem;">
+                    <h3 class="box-title">Scheduled Jobs</h3>
+                    <div class="slds-m-bottom_medium slds-grid slds-gutters">
+                        <div class="slds-col slds-size_2-of-3">
+                            <lightning-input type="search" placeholder="Search jobs..." variant="label-hidden"
+                                onchange={handleSearch}></lightning-input>
+                        </div>
+                        <div class="slds-col slds-size_1-of-3">
+                            <lightning-combobox options={statusOptions} value={statusFilter} variant="label-hidden"
+                                onchange={handleStatusChange}> </lightning-combobox>
+                        </div>
+                    </div>
+
+                    <template for:each={filteredJobs} for:item="job">
+                        <div key={job.id} class={job.cardClass} data-id={job.id} onclick={handleJobSelect}>
+                            <div class="slds-grid slds-grid_align-spread">
+                                <span class="job-name">{job.name}</span>
+                                <span class={job.badgeClass}>{job.displayStatus}</span>
+                            </div>
+                            <div class="job-meta">Next run: {job.nextRun}</div>
+                        </div>
+                    </template>
+
+                </div>
+            </div>
+            <div class="slds-col slds-size_2-of-3">
+                <template if:true={selectedJob}>
+                    <div class="slds-box custom-box" style="padding: 0;">
+                        <div class="slds-grid slds-grid_align-spread border-bottom slds-p-around_medium">
+                            <h3 class="box-title" style="margin:0;">Schedule Details</h3>
+                            <div class="action-buttons">
+                                <button class="btn-outline active-status">● {selectedJob.displayStatus}</button>
+
+                                <template if:false={isEditMode}>
+                                    <button class="btn-outline" onclick={handleEdit}>✎ Edit</button>
+                                    <button class="btn-outline btn-danger" onclick={handleDelete}>✖ Delete</button>
+                                </template>
+
+                                <template if:true={isEditMode}>
+                                    <button class="btn-outline" onclick={handleCancelEdit}>✖ Cancel</button>
+                                    <button class="btn-outline" style="background: #2563eb; color: white;"
+                                        onclick={handleSaveEdit}>✔ Save Changes</button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div class="slds-p-around_medium border-bottom">
+                            <div class="slds-grid slds-grid_vertical-align-center">
+                                <div class="qbo-logo-large slds-m-right_medium">qb</div>
+                                <div>
+                                    <h2 style="font-size: 1.25rem; font-weight: bold; color: #1e293b;">
+                                        {selectedJob.name}</h2>
+                                    <p style="color: #475569; font-size: 0.85rem; font-weight: bold; margin-top: 2px;">
+                                        QuickBooks Online Sync Job</p>
+                                    <p style="color: #64748b; font-size: 0.85rem;">This job syncs all data between
+                                        Salesforce and QuickBooks Online daily.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="slds-grid slds-gutters slds-p-around_medium border-bottom">
+                            <div class="slds-col slds-size_1-of-2">
+                                <div class="detail-row"><span class="detail-label">Status</span> <span
+                                        class="detail-value text-green">{selectedJob.displayStatus}</span></div>
+                                <template if:false={isEditMode}>
+                                    <div class="detail-row"><span class="detail-label">Schedule Type</span> <span
+                                            class="detail-value">Dynamic Schedule</span></div>
+                                    <div class="detail-row"><span class="detail-label">Time / Frequency</span> <span
+                                            class="detail-value">{selectedJob.frequencyText}</span></div>
+                                </template>
+
+                                <template if:true={isEditMode}>
+                                    <div class="detail-row slds-m-bottom_x-small" style="align-items: center;">
+                                        <span class="detail-label">Frequency Value</span>
+                                        <lightning-input type="number" value={editFreqValue} variant="label-hidden"
+                                            style="width: 100px;" onchange={handleEditValueChange}></lightning-input>
+                                    </div>
+                                    <div class="detail-row" style="align-items: center;">
+                                        <span class="detail-label">Frequency Type</span>
+                                        <lightning-combobox options={freqTypeOptions} value={editFreqType}
+                                            variant="label-hidden" style="width: 150px;"
+                                            onchange={handleEditTypeChange}></lightning-combobox>
+                                    </div>
+                                </template>
+                                <div class="detail-row"><span class="detail-label">Created By</span> <span
+                                        class="detail-value">{selectedJob.createdBy}</span></div>
+                                <div class="detail-row"><span class="detail-label">Created Date</span> <span
+                                        class="detail-value">{selectedJob.createdDate}</span></div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-2">
+                                <div class="detail-row"><span class="detail-label">Next Run</span> <span
+                                        class="detail-value">{selectedJob.nextRun}</span></div>
+                                <div class="detail-row"><span class="detail-label">Last Run</span> <span
+                                        class="detail-value">{selectedJob.lastRun}</span></div>
+                                <div class="detail-row"><span class="detail-label">Last Run Status</span>
+                                    <span class="detail-value" style="display:flex; align-items:center; gap:5px;">
+                                        <lightning-icon icon-name={latestRunStats.icon} size="xx-small"
+                                            variant={latestRunStats.variant}></lightning-icon>
+                                        <span class={latestRunStats.variant}>{latestRunStats.status}</span>
+                                    </span>
+                                </div>
+                                <div class="detail-row slds-m-top_small"><span class="detail-label">Records
+                                        Processed</span>
+                                    <span class="detail-value">{latestRunStats.processed}</span>
+                                </div>
+                                <div class="detail-row"><span class="detail-label">Records Failed</span>
+                                    <span class="detail-value">{latestRunStats.failed}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="slds-grid slds-gutters slds-p-around_medium">
+                            <div class="slds-col slds-size_1-of-2">
+                                <!--style="border-right: 1px solid #e2e8f0; padding-right: 1rem;"-->
+                                <h3 class="box-title slds-m-bottom_medium">Sync Settings</h3>
+
+                                <div class="detail-row">
+                                    <span class="detail-label">Objects to Sync</span>
+                                    <span class="detail-value">{selectedJob.syncObject}</span>
+                                </div>
+
+                                <div class="detail-row">
+                                    <span class="detail-label">Direction</span>
+                                    <span class="detail-value">{syncSettings.direction}</span>
+                                </div>
+
+                                <div class="detail-row">
+                                    <span class="detail-label">Sync Type</span>
+                                    <span class="detail-value">{syncSettings.type}</span>
+                                </div>
+
+                                <div class="detail-row"><span class="detail-label">Error Handling</span> <span
+                                        class="detail-value">Continue on Error</span></div>
+                                <div class="detail-row"><span class="detail-label">Notification Email</span> <span
+                                        class="detail-value">hr@thelodestonegroup.com</span></div>
+                            </div>
+
+                            <!-- <div class="slds-col slds-size_1-of-2" style="padding-left: 1rem;">
+                                <div class="slds-grid slds-grid_align-spread slds-m-bottom_medium">
+                                    <h3 class="box-title" style="margin:0;">Recent Runs</h3>
+                                    <a href="javascript:void(0);"
+                                        style="font-size:0.85rem; font-weight:600; color:#2563eb; text-decoration:none;">View
+                                        All</a>
+                                </div>
+
+                                <template if:true={hasRecentRuns}>
+                                    <template for:each={recentRuns} for:item="run">
+                                        <div key={run.id}
+                                            class="run-item slds-grid slds-grid_align-spread slds-m-bottom_small">
+                                            <div style="display:flex; align-items:center; gap:8px; width: 45%;">
+                                                <lightning-icon icon-name={run.icon} size="xx-small"
+                                                    variant={run.variant}></lightning-icon>
+                                                <span>{run.date}</span>
+                                            </div>
+                                            <span style="width: 20%;">{run.status}</span>
+                                            <span style="width: 20%;">{run.processed} Batches</span>
+                                            <span style="width: 15%;">{run.failed} Failed</span>
+                                        </div>
+                                    </template>
+                                </template>
+
+                                <template if:false={hasRecentRuns}>
+                                    <div class="slds-text-align_center slds-p-around_medium"
+                                        style="color: #64748b; background: #f8fafc; border-radius: 8px;">
+                                        <p>No recent runs found for this job.</p>
+                                    </div>
+                                </template>
+                            </div> -->
+                        </div>
+                    </div>
+                </template>
+
+                <template if:false={selectedJob}>
+                    <div class="slds-box custom-box slds-text-align_center"
+                        style="padding: 4rem; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                        <lightning-icon icon-name="utility:event" size="large"
+                            style="--sds-c-icon-color-foreground-default: #94a3b8;"></lightning-icon>
+                        <p style="color: #64748b; font-size: 1.1rem; margin-top: 1rem;">Please select a job from the
+                            left panel to view its details.</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <template if:true={isNewScheduleView}>
+        <div class={usageCardClass}>
+            <div>
+                <p class="usage-label">Active Schedules</p>
+                <p class="usage-message">{usageSummary.message}</p>
+            </div>
+            <div class="usage-count">{usageCounterText}</div>
+        </div>
+
+        <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
+            <template for:each={syncObjects} for:item="obj">
+                <div key={obj.id} class="slds-col slds-size_1-of-2 slds-m-bottom_small">
+                    <button class={obj.btnClass} data-id={obj.id} onclick={toggleObjectSelection}>
+                        <lightning-icon icon-name={obj.icon} size="xx-small" class="btn-icon"></lightning-icon>
+                        {obj.label}
+                    </button>
+                </div>
+            </template>
+        </div>
+        <div class="slds-box custom-box slds-m-bottom_large"
+            style="padding: 1.2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0;">
+            <div>
+                <h3 style="font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0;">Sync Direction</h3>
+                <p style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Sync Salesforce to QBO</p>
+            </div>
+            <div>
+                <lightning-input type="toggle" label="Sync Salesforce to QBO" variant="label-hidden"
+                    message-toggle-active="Yes" message-toggle-inactive="No" checked={isSfToQboSync}
+                    onchange={handleSyncDirectionToggle}>
+                </lightning-input>
+            </div>
+        </div>
+        <div class="slds-grid slds-gutters slds-m-bottom_medium">
+            <div class="slds-col slds-size_1-of-2">
+                <label class="slds-form-element__label">Frequency Value</label>
+                <lightning-input type="number" value={freqValue} variant="label-hidden"
+                    onchange={handleValueChange}></lightning-input>
+            </div>
+            <div class="slds-col slds-size_1-of-2">
+                <label class="slds-form-element__label">Frequency Type</label>
+                <lightning-combobox options={freqTypeOptions} value={freqType} variant="label-hidden"
+                    onchange={handleTypeChange}></lightning-combobox>
+            </div>
+        </div>
+
+        <div class="slds-m-bottom_large slds-m-top_medium">
+            <button class="action-btn-full primary-btn slds-m-bottom_small" onclick={handleSetSchedule}
+                disabled={isScheduleLimitReached}>
+                Set Schedule
+            </button>
+        </div>
+    </template>
+</template>
