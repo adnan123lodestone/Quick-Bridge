@@ -12,7 +12,7 @@
     </values>
     <values>
         <field>PublishableKey__c</field>
-        <value xsi:type="xsd:string">pk_test_51TGdnaCkZ7oErXIzo1ovaj4tqyGLrNhELk3Rf3MTvPSCsGTwqdxrUi4vdu5o4EL83lEbCUTqOy5xpOOgFKae5CcI00oCe25gsF</value>
+        <value xsi:type="xsd:string"></value>
     </values>
     <values>
         <field>StartDate__c</field>
