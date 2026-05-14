@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>PublicClientKey__c</field>
-        <value xsi:type="xsd:string">6q8HNBT6ZzxhS9fVnqRmYQ5e29zDG7B5e9N8YpHQjZpdAfZ2M3anSy5nC8KBL85Z</value>
+        <value xsi:type="xsd:string"></value>
     </values>
     <values>
         <field>StartDate__c</field>
@@ -28,6 +28,6 @@
     </values>
     <values>
         <field>WebhookSigningKey__c</field>
-        <value xsi:type="xsd:string">1985A045DE7E5D0F126331D5676012608980BD43E46F22B0B5AA14E66462C7CE9AD51A384359DB5F5A4CFDAAEDCAFFAB19925ADEDE04FA43E02E2D894201E8E9</value>
+        <value xsi:type="xsd:string"></value>
     </values>
 </CustomMetadata>
