@@ -168,7 +168,7 @@
     </values>
     <values>
         <field>Stripe_Webhook_Signing_Secret__c</field>
-        <value xsi:type="xsd:string">whsec_VS2khUPlpbRHgoSSB6OoVLOyMm6IGAHx</value>
+        <value xsi:type="xsd:string"></value>
     </values>
     <values>
         <field>UPS_Account_Number__c</field>
