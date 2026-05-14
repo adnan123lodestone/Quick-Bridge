@@ -4,6 +4,7 @@ import getActiveCarriers from '@salesforce/apex/CarrierRecordActionController.ge
 import getActionsForObject from '@salesforce/apex/CarrierRecordActionController.getActionsForObject';
 import updateCarrierType from '@salesforce/apex/CarrierRecordActionController.updateCarrierType';
 import runAction from '@salesforce/apex/CarrierRecordActionController.runAction';
+import applyValidatedAddress from '@salesforce/apex/CarrierRecordActionController.applyValidatedAddress';
 import selectRateQuote from '@salesforce/apex/CarrierRecordActionController.selectRateQuote';
 
 export default class CarrierRecordAction extends LightningElement {
@@ -135,7 +136,11 @@ export default class CarrierRecordAction extends LightningElement {
     handleConfirmAddress() {
         this.showConfirmModal = false;
         this.isLoading = true;
-        runAction({ recordId: this.recordId, objectApiName: this.objectApiName, actionName: 'validateAddressAndUpdate' })
+        applyValidatedAddress({
+            recordId: this.recordId,
+            objectApiName: this.objectApiName,
+            validatedAddress: this.confirmedAddress
+        })
             .then((res) => {
                 if (res.success) {
                     this.showToast('Success', 'Validated address applied to record.', 'success');
@@ -192,7 +197,24 @@ export default class CarrierRecordAction extends LightningElement {
 
     get confirmedAddressLines() {
         if (!this.confirmedAddress) return [];
-        return Object.entries(this.confirmedAddress).map(([k, v]) => ({ key: k, value: v }));
+        const addr = this.confirmedAddress;
+
+        const rawStreet = addr.streetLines || addr.streetLinesToken || addr.STREETLINESTOKEN || addr.STREETLINES;
+        const street = Array.isArray(rawStreet)
+            ? rawStreet.filter(Boolean).join(', ')
+            : (rawStreet || null);
+
+        const fields = [
+            { key: 'Street',      value: street },
+            { key: 'City',        value: addr.city        || addr.CITY        || null },
+            { key: 'State',       value: addr.stateOrProvinceCode || addr.STATEORPROVINCECODE || null },
+            { key: 'Postal Code', value: addr.postalCode  || addr.POSTALCODE  || null },
+            { key: 'Country',     value: addr.countryCode || addr.COUNTRYCODE || null },
+            { key: 'Residential', value: addr.residential != null ? String(addr.residential)
+                                        : (addr.CLASSIFICATION ? addr.CLASSIFICATION : null) },
+        ];
+
+        return fields.filter(f => f.value != null && f.value !== '');
     }
 
     get hasRateQuotes() {

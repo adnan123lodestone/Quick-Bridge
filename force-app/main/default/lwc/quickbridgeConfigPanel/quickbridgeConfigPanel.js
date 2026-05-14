@@ -45,7 +45,10 @@ const TILE_START_FIELDS = {
     qbo: ['QuickBooks_Start_Date__c'],
     stripe: ['Stripe_Start_Date__c'],
     authorizenet: ['AuthorizeNet_Start_Date__c'],
-    paypal: ['PayPal_StartDate__c']
+    paypal: ['PayPal_StartDate__c'],
+    fedex: ['FedEx_Start_Date__c'],     
+    ups: ['UPS_Start_Date__c'],         
+    shopify: ['Shopify_Start_Date__c'] 
 };
 
 export default class QuickbridgeConfigPanel extends LightningElement {
@@ -209,14 +212,17 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         const startValue = startFields.map(field => fields[field]).find(value => value);
         const endValue = expiryFields.map(field => fields[field]).find(value => value);
 
-        if (startValue && endValue) {
-            const startDate = new Date(`${startValue}T00:00:00`);
-            const endDate = new Date(`${endValue}T23:59:59`);
-
-            if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
-                return startDate > endDate;
-            }
+        if (!startValue || !endValue) {
+            return true; 
         }
+
+        const startDate = new Date(`${startValue}T00:00:00`);
+        const endDate = new Date(`${endValue}T23:59:59`);
+
+        if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
+            return startDate > endDate;
+        }
+        
         return false;
     }
 

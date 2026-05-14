@@ -75,6 +75,10 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>FedEx_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Password__c</field>
         <value xsi:type="xsd:string">1234</value>
     </values>
@@ -143,6 +147,10 @@
         <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
+        <field>Shopify_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Shopify_Store_URL__c</field>
         <value xsi:nil="true"/>
     </values>
@@ -196,6 +204,10 @@
     </values>
     <values>
         <field>UPS_Environment__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Start_Date__c</field>
         <value xsi:nil="true"/>
     </values>
     <values>

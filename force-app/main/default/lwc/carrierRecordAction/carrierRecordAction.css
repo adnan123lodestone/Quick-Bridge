@@ -114,6 +114,45 @@
     padding: 0.1rem 0;
 }
 
+/* ── Address confirm modal ───────────────────────────── */
+.confirm-modal .slds-modal__container {
+    max-width: 440px;
+}
+
+.address-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.address-row {
+    display: flex;
+    align-items: baseline;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.address-row:last-child {
+    border-bottom: none;
+}
+
+.address-label {
+    width: 110px;
+    min-width: 110px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.address-value {
+    flex: 1;
+    font-size: 0.875rem;
+    color: #1e293b;
+    word-break: break-word;
+}
+
 /* ── Rate modal ──────────────────────────────────────── */
 .rate-modal .slds-modal__container {
     max-width: 560px;

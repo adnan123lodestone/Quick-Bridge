@@ -21,9 +21,25 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
 
     public Map<String, Object> getRateQuote(Map<String, Object> payload) {
         Map<String, Object> requestBody = buildShipmentRequest(payload, false);
+
+        // Rate API differences vs ship API:
+        // - Does not accept labelResponseOptions or labelSpecification
+        // - Uses singular "recipient" not "recipients" array
+        requestBody.remove('labelResponseOptions');
         Map<String, Object> requestedShipment = (Map<String, Object>) requestBody.get('requestedShipment');
-        if (requestedShipment != null && !requestedShipment.containsKey('rateRequestType')) {
-            requestedShipment.put('rateRequestType', new List<String>{ 'ACCOUNT' });
+        if (requestedShipment != null) {
+            requestedShipment.remove('labelSpecification');
+            // Undo the recipients→recipient array conversion done by buildShipmentRequest
+            if (requestedShipment.containsKey('recipients') && !requestedShipment.containsKey('recipient')) {
+                Object recipientsList = requestedShipment.get('recipients');
+                if (recipientsList instanceof List<Object> && !((List<Object>) recipientsList).isEmpty()) {
+                    requestedShipment.put('recipient', ((List<Object>) recipientsList)[0]);
+                }
+                requestedShipment.remove('recipients');
+            }
+            if (!requestedShipment.containsKey('rateRequestType')) {
+                requestedShipment.put('rateRequestType', new List<String>{ 'ACCOUNT' });
+            }
         }
         HttpResponse response = send('POST', '/rate/v1/rates/quotes', requestBody);
         Map<String, Object> responseBody = parseBody(response);
@@ -190,7 +206,8 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
         Map<String, Object> resolved = resolvedAddress instanceof Map<String, Object>
             ? (Map<String, Object>) resolvedAddress
             : new Map<String, Object>();
-        Object address = resolved.get('streetLines') != null ? resolved : resolved.get('address');
+        Boolean hasStreet = resolved.get('streetLines') != null || resolved.get('streetLinesToken') != null;
+        Object address = hasStreet ? resolved : resolved.get('address');
         result.put('validatedAddress', address instanceof Map<String, Object> ? address : resolved);
         result.put('addressClassification', resolved.get('classification'));
         result.put('residential', resolved.get('residential'));

@@ -7,7 +7,7 @@ export default class ErrorLogTable extends LightningElement {
     @track columns = [];
     @track allErrorLogs = [];
     @track paginatedLogs = [];
-    @track isRefreshing = false;
+    @track isRefreshing = true;
     
     // Pagination Variables
     @track currentPage = 1;
@@ -110,11 +110,19 @@ export default class ErrorLogTable extends LightningElement {
             });
     }
 
-    // --- PAGINATION LOGIC --- //
+    // --- PAGINATION LOGIC WITH UX LOADER --- //
     updatePagination() {
+        // Spinner on
+        this.isRefreshing = true; 
+        
         let start = (this.currentPage - 1) * this.pageSize;
         let end = this.currentPage * this.pageSize;
-        this.paginatedLogs = this.allErrorLogs.slice(start, end);
+        
+        // 2. Delay for 250 milliseconds (quarter second)
+        setTimeout(() => {
+            this.paginatedLogs = this.allErrorLogs.slice(start, end);
+            this.isRefreshing = false; 
+        }, 250);
     }
 
     handlePrevious() {

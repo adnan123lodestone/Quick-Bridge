@@ -74,16 +74,19 @@
             <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open confirm-modal">
                 <div class="slds-modal__container">
                     <header class="slds-modal__header">
-                        <h2 class="slds-modal__title">Address Validation Result</h2>
-                        <p class="slds-m-top_x-small slds-text-body_small">Review the validated address below. Click Apply to write it back to the record, or Discard to keep the original.</p>
+                        <lightning-icon icon-name="utility:location" size="small" class="slds-m-right_x-small"></lightning-icon>
+                        <h2 class="slds-modal__title">Validated Address</h2>
+                        <p class="slds-m-top_x-small slds-text-body_small slds-text-color_weak">Review the carrier-validated address. Click Apply to update the record, or Discard to keep the original.</p>
                     </header>
                     <div class="slds-modal__content slds-p-around_medium">
-                        <template for:each={confirmedAddressLines} for:item="line">
-                            <div key={line.key} class="slds-grid slds-gutters_small slds-m-bottom_x-small">
-                                <div class="slds-col slds-size_1-of-3 slds-text-title_caps">{line.key}</div>
-                                <div class="slds-col slds-size_2-of-3">{line.value}</div>
-                            </div>
-                        </template>
+                        <div class="address-card">
+                            <template for:each={confirmedAddressLines} for:item="line">
+                                <div key={line.key} class="address-row">
+                                    <span class="address-label">{line.key}</span>
+                                    <span class="address-value">{line.value}</span>
+                                </div>
+                            </template>
+                        </div>
                     </div>
                     <footer class="slds-modal__footer">
                         <button class="slds-button slds-button_neutral" onclick={handleCancelConfirmModal}>Discard</button>

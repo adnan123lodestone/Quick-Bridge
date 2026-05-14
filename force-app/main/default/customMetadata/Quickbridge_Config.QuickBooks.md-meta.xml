@@ -75,6 +75,10 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>FedEx_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Password__c</field>
         <value xsi:type="xsd:string">1234</value>
     </values>
@@ -100,7 +104,7 @@
     </values>
     <values>
         <field>QuickBooks_End_Date__c</field>
-        <value xsi:type="xsd:date">2026-05-12</value>
+        <value xsi:type="xsd:date">2026-05-14</value>
     </values>
     <values>
         <field>QuickBooks_Is_Active__c</field>
@@ -112,7 +116,7 @@
     </values>
     <values>
         <field>QuickBooks_Start_Date__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:date">2026-05-14</value>
     </values>
     <values>
         <field>QuickBooks_Verifier_Token__c</field>
@@ -141,6 +145,10 @@
     <values>
         <field>Shopify_Is_Active__c</field>
         <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Shopify_Start_Date__c</field>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Shopify_Store_URL__c</field>
@@ -196,6 +204,10 @@
     </values>
     <values>
         <field>UPS_Environment__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Start_Date__c</field>
         <value xsi:nil="true"/>
     </values>
     <values>

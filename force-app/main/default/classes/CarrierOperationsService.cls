@@ -55,17 +55,20 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
     public static OperationResult applyValidatedAddress(Id sourceRecordId, String sourceObjectApiName, String carrierType, Map<String, Object> validatedAddress) {
         OperationResult result = newResult(carrierType);
-        setLogContext(result, 'validateAddress', sourceObjectApiName, sourceRecordId, sourceObjectApiName, sourceRecordId);
+        setLogContext(result, 'applyValidatedAddress', sourceObjectApiName, sourceRecordId, sourceObjectApiName, sourceRecordId);
         try {
             String integration = normalizeCarrier(carrierType);
             CarrierMappingService.MappingSet mappings = CarrierMappingService.load(integration, 'validateAddress', sourceObjectApiName);
-            ensureResponseMappingsConfigured(mappings, 'validateAddress');
+            if (mappings.responseMappings.isEmpty()) {
+                result.success = true;
+                result.message = 'Address validated but no Carrier→SF field mappings are configured for validateAddress. Configure response mappings in Quickbridge settings to write fields back automatically.';
+                return result;
+            }
             Map<String, Object> responseValues = new Map<String, Object>{ 'validatedAddress' => validatedAddress };
             CarrierMappingService.applyResponseMappings(sourceRecordId, mappings, responseValues);
             result.success = true;
@@ -73,7 +76,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -99,7 +101,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -164,7 +165,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -204,7 +204,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -261,7 +260,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -300,7 +298,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -347,7 +344,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -393,7 +389,6 @@ public with sharing class CarrierOperationsService {
         } catch (Exception e) {
             applyError(result, e);
         }
-        trackSuccessfulRecordSync(result);
         return result;
     }
 
@@ -700,15 +695,17 @@ public with sharing class CarrierOperationsService {
         if (String.isBlank(imageType)) {
             imageType = stringValue(CarrierMappingService.getPath(adapterResult, 'returnShipment.imageType'));
         }
-        if (String.isBlank(imageType)) {
-            return '.bin';
+        if (String.isNotBlank(imageType)) {
+            String normalized = imageType.toLowerCase();
+            if (normalized.contains('pdf')) return '.pdf';
+            if (normalized.contains('gif')) return '.gif';
+            if (normalized.contains('png')) return '.png';
+            if (normalized.contains('zpl')) return '.zpl';
+            if (normalized.contains('epl')) return '.epl';
         }
-        String normalized = imageType.toLowerCase();
-        if (normalized.contains('pdf')) return '.pdf';
-        if (normalized.contains('gif')) return '.gif';
-        if (normalized.contains('png')) return '.png';
-        if (normalized.contains('zpl')) return '.zpl';
-        return '.' + normalized.replaceAll('[^a-z0-9]', '');
+        // imageType from carrier response (e.g. FedEx 'LABEL', 'LABEL_STOCK') is not a
+        // file format — fall back to PDF since that is what labelSpecification always requests
+        return '.pdf';
     }
 
     public static String normalizeCarrier(String carrierType) {
@@ -797,12 +794,6 @@ public with sharing class CarrierOperationsService {
             return 'Callout Failure';
         }
         return 'Code Exception';
-    }
-
-    private static void trackSuccessfulRecordSync(OperationResult result) {
-        if (result != null && result.success == true) {
-            IntegrationUsageService.recordSuccessfulRecordSync(result.carrierType, 1);
-        }
     }
 
     private static String stringValue(Object value) {

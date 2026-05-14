@@ -75,6 +75,10 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>FedEx_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Password__c</field>
         <value xsi:type="xsd:string">1234</value>
     </values>
@@ -143,6 +147,10 @@
         <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
+        <field>Shopify_Start_Date__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Shopify_Store_URL__c</field>
         <value xsi:nil="true"/>
     </values>
@@ -156,7 +164,7 @@
     </values>
     <values>
         <field>Stripe_Publishable_Key__c</field>
-        <value xsi:type="xsd:string"></value>
+        <value xsi:type="xsd:string">pk_test_51TJeAS2cwei2qgKuoBMTKdW0G3AFtjaazAALWxhqFJV7X2kdQ91mO1WbNmwlkZg6ux9PwaJ3O9MCgMEpwH5vC7jw00inJ8a84J</value>
     </values>
     <values>
         <field>Stripe_Start_Date__c</field>
@@ -168,7 +176,7 @@
     </values>
     <values>
         <field>Stripe_Webhook_Signing_Secret__c</field>
-        <value xsi:type="xsd:string"></value>
+        <value xsi:type="xsd:string">whsec_VS2khUPlpbRHgoSSB6OoVLOyMm6IGAHx</value>
     </values>
     <values>
         <field>UPS_Account_Number__c</field>
@@ -196,6 +204,10 @@
     </values>
     <values>
         <field>UPS_Environment__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>UPS_Start_Date__c</field>
         <value xsi:nil="true"/>
     </values>
     <values>
