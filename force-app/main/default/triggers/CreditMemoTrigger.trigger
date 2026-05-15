@@ -7,7 +7,15 @@ trigger CreditMemoTrigger on Credit_Memo__c (after insert, after update) {
         }
         
         if (!idsToProcess.isEmpty() && !System.isBatch()) {
-            Database.executeBatch(new QuickBooksCreditMemoBatch(idsToProcess, Trigger.isInsert), 1);
+            for (Id recordId : idsToProcess) {
+                IntegrationWorkService.enqueueQuickBooksWork(
+                    'CreditMemoUpsert',
+                    'Credit_Memo__c',
+                    recordId,
+                    'CreditMemo:' + String.valueOf(recordId),
+                    Trigger.isInsert
+                );
+            }
         }
     }
 }

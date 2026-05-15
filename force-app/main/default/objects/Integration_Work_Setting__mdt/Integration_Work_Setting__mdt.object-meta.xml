@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Integration Work Setting</label>
+    <pluralLabel>Integration Work Settings</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

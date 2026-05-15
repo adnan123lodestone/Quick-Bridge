@@ -109,4 +109,100 @@ private class QuickBooksInvoiceHandlerTest {
 
         System.assertEquals(false, QuickBooksInvoiceHandler.isProcessing);
     }
+
+    @isTest
+    static void testHandleInvoiceAndInvoiceLineEvents() {
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        Invoice__c invoiceRecord = new Invoice__c(Related_Account__c = acc.Id);
+        insert invoiceRecord;
+
+        Invoice__c oldInvoice = invoiceRecord.clone(false, true, true, true);
+        invoiceRecord.Status__c = 'Queued';
+
+        Test.startTest();
+        QuickBooksInvoiceHandler.handleInvoiceEvents(
+            new List<SObject>{ invoiceRecord },
+            new Map<Id, SObject>{ invoiceRecord.Id => oldInvoice },
+            true
+        );
+
+        SObject lineItem = Schema.getGlobalDescribe().get('QuickBridgeTLG__Invoice_Line__c') == null
+            ? Schema.getGlobalDescribe().get('Invoice_Line__c').newSObject()
+            : Schema.getGlobalDescribe().get('QuickBridgeTLG__Invoice_Line__c').newSObject();
+        lineItem.put('QuickBridgeTLG__Invoice__c', invoiceRecord.Id);
+        lineItem.put('QuickBridgeTLG__Quantity__c', 1);
+        try {
+            lineItem.put('QuickBridgeTLG__Rate__c', 10);
+        } catch (Exception ignored) {
+        }
+
+        QuickBooksInvoiceHandler.handleInvoiceLineEvents(
+            new List<SObject>{ lineItem },
+            new Map<Id, SObject>(),
+            true,
+            false
+        );
+
+        update new Invoice__c(Id = invoiceRecord.Id, External_Id__c = 'QB-INV-LINE');
+
+        try {
+            lineItem.put('QuickBridgeTLG__Product_Description__c', 'Line coverage');
+        } catch (Exception ignored) {
+        }
+        try {
+            lineItem.put('QuickBridgeTLG__Unit_Price__c', 10);
+        } catch (Exception ignored) {
+        }
+        insert lineItem;
+
+        SObject oldLineItem = lineItem.clone(true, true, true, true);
+        lineItem.put('QuickBridgeTLG__Quantity__c', 2);
+        try {
+            lineItem.put('QuickBridgeTLG__Rate__c', 20);
+            oldLineItem.put('QuickBridgeTLG__Rate__c', 10);
+        } catch (Exception ignored) {
+        }
+
+        QuickBooksInvoiceHandler.handleInvoiceLineEvents(
+            new List<SObject>{ lineItem },
+            new Map<Id, SObject>{ lineItem.Id => oldLineItem },
+            false,
+            true
+        );
+        Test.stopTest();
+
+        System.assertEquals(false, QuickBooksInvoiceHandler.isProcessing);
+    }
+
+    @isTest
+    static void testHandlerGuardAndInitialOrderItemPaths() {
+        Order ord = [SELECT Id, QuickbookID__c FROM Order LIMIT 1];
+        Product2 p = [SELECT Id FROM Product2 WHERE Name = 'Invoice Handler Product' LIMIT 1];
+        Id stdPbId = Test.getStandardPricebookId();
+        PricebookEntry pbe = [SELECT Id FROM PricebookEntry WHERE Product2Id = :p.Id AND Pricebook2Id = :stdPbId LIMIT 1];
+
+        OrderItem item = new OrderItem(
+            OrderId = ord.Id,
+            PricebookEntryId = pbe.Id,
+            Product2Id = p.Id,
+            Quantity = 1,
+            UnitPrice = 25
+        );
+        insert item;
+
+        Test.startTest();
+        QuickBooksInvoiceHandler.setBatchContext(true);
+        QuickBooksInvoiceHandler.handleInvoiceEvents(new List<SObject>(), new Map<Id, SObject>(), true);
+        QuickBooksInvoiceHandler.handleOrderEvents(new List<Order>{ ord }, null, true);
+        QuickBooksInvoiceHandler.handleOrderItemEvents(new List<OrderItem>{ item }, null, true, false);
+        QuickBooksInvoiceHandler.setBatchContext(false);
+
+        QuickBooksInvoiceHandler.handleOrderEvents(new List<Order>{ ord }, new Map<Id, Order>(), true);
+        QuickBooksInvoiceHandler.handleOrderItemEvents(new List<OrderItem>{ item }, null, true, false);
+        QuickBooksInvoiceHandler.handleOrderItemEvents(new List<OrderItem>{ item }, new Map<Id, OrderItem>(), false, true);
+        QuickBooksInvoiceHandler.handleOrderItemDeletion(new List<OrderItem>{ item });
+        Test.stopTest();
+
+        System.assertEquals(false, QuickBooksInvoiceHandler.isProcessing);
+    }
 }

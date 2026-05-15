@@ -19,8 +19,15 @@ public class QBTriggerHandler {
             }
             
             if (!accountsToSync.isEmpty()) {
-                // Enqueue batch job instead of direct callout
-                Database.executeBatch(new QBAccountBatch(accountsToSync, isInsert), 1); // Batch size 1 for callout per record
+                for (Account accountRecord : accountsToSync) {
+                    IntegrationWorkService.enqueueQuickBooksWork(
+                        'AccountUpsert',
+                        'Account',
+                        accountRecord.Id,
+                        'Account:' + String.valueOf(accountRecord.Id),
+                        isInsert
+                    );
+                }
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleAccountTrigger: ' + e.getMessage());
@@ -51,7 +58,15 @@ public class QBTriggerHandler {
             }
             
             if (!productsToSync.isEmpty()) {
-                Database.executeBatch(new QBProductBatch(productsToSync, isInsert), 1);
+                for (Product2 productRecord : productsToSync) {
+                    IntegrationWorkService.enqueueQuickBooksWork(
+                        'ProductUpsert',
+                        'Product2',
+                        productRecord.Id,
+                        'Product2:' + String.valueOf(productRecord.Id),
+                        isInsert
+                    );
+                }
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleProductTrigger: ' + e.getMessage());

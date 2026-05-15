@@ -27,7 +27,7 @@ public class QuickBooksInvoiceHandler {
             }
 
             if (!invoiceIdsToProcess.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(invoiceIdsToProcess, false), 1);
+                enqueueInvoiceWork(invoiceIdsToProcess, false);
             }
         } catch (Exception e) {
             ErrorLogUtility.logException(
@@ -100,10 +100,10 @@ public class QuickBooksInvoiceHandler {
             }
 
             if (!invoiceIdsForInitialSync.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(invoiceIdsForInitialSync, true), 1);
+                enqueueInvoiceWork(invoiceIdsForInitialSync, true);
             }
             if (!invoiceIdsForUpdate.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(invoiceIdsForUpdate, false, itemsForUpdate), 1);
+                enqueueInvoiceWork(invoiceIdsForUpdate, false);
             }
 
         } catch (Exception e) {
@@ -144,7 +144,7 @@ public class QuickBooksInvoiceHandler {
             }
 
             if (!orderIdsToProcess.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(orderIdsToProcess, false), 1);
+                enqueueOrderInvoiceWork(orderIdsToProcess, false);
             }
         } catch (Exception e) {
             ErrorLogUtility.logException(
@@ -220,11 +220,11 @@ public class QuickBooksInvoiceHandler {
             }
 
             if (!orderIdsForInitialSync.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(orderIdsForInitialSync, true), 1);
+                enqueueOrderInvoiceWork(orderIdsForInitialSync, true);
             }
 
             if (!orderIdsForUpdate.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(orderIdsForUpdate, false, itemsForUpdate), 1);
+                enqueueOrderInvoiceWork(orderIdsForUpdate, false);
             }
         } catch (Exception e) {
             System.debug('Error in handleOrderItemEvents: ' + e.getMessage());
@@ -266,7 +266,7 @@ public class QuickBooksInvoiceHandler {
             }
 
             if (!orderIdsForUpdate.isEmpty()) {
-                Database.executeBatch(new QuickBooksInvoiceBatch(orderIdsForUpdate, false), 1);
+                enqueueOrderInvoiceWork(orderIdsForUpdate, false);
             }
         } catch (Exception e) {
             ErrorLogUtility.logException(
@@ -283,6 +283,30 @@ public class QuickBooksInvoiceHandler {
 
     public static void setBatchContext(Boolean value) {
         isBatchContext = value;
+    }
+
+    private static void enqueueInvoiceWork(Set<Id> invoiceIds, Boolean isInitialSync) {
+        for (Id invoiceId : invoiceIds) {
+            IntegrationWorkService.enqueueQuickBooksWork(
+                'InvoiceUpsert',
+                'Invoice__c',
+                invoiceId,
+                'Invoice:' + String.valueOf(invoiceId),
+                isInitialSync
+            );
+        }
+    }
+
+    private static void enqueueOrderInvoiceWork(Set<Id> orderIds, Boolean isInitialSync) {
+        for (Id orderId : orderIds) {
+            IntegrationWorkService.enqueueQuickBooksWork(
+                'InvoiceUpsert',
+                'Order',
+                orderId,
+                'Order:' + String.valueOf(orderId),
+                isInitialSync
+            );
+        }
     }
 }
 // public class QuickBooksInvoiceHandler {

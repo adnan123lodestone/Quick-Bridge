@@ -1,0 +1,24 @@
+<template>
+    <lightning-card title="Integration Work Queue" icon-name="custom:custom53">
+        <div class="toolbar">
+            <lightning-combobox
+                label="Status"
+                value={selectedStatus}
+                options={statusOptions}
+                onchange={handleStatusChange}>
+            </lightning-combobox>
+            <lightning-button label="Refresh" onclick={handleRefresh}></lightning-button>
+        </div>
+        <div class="table-wrap">
+            <template if:true={isLoading}>
+                <lightning-spinner alternative-text="Loading work items" size="small"></lightning-spinner>
+            </template>
+            <lightning-datatable
+                key-field="Id"
+                data={rows}
+                columns={columns}
+                onrowaction={handleRowAction}>
+            </lightning-datatable>
+        </div>
+    </lightning-card>
+</template>
