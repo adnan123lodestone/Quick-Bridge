@@ -2321,6 +2321,39 @@ form {
     line-height: 1.5;
 }
 
+.integrations-page-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin: -1rem 0 1.5rem;
+}
+
+.renewal-request-button {
+    min-height: 2.35rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.95rem;
+    border: 1px solid #2b4281;
+    border-radius: 6px;
+    background: #2b4281;
+    color: #ffffff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.renewal-request-button:hover {
+    background: #1f305e;
+    border-color: #1f305e;
+    box-shadow: 0 4px 12px rgba(43, 66, 129, 0.18);
+}
+
+.renewal-request-button lightning-icon {
+    --sds-c-icon-color-foreground-default: currentColor;
+}
+
 /* Section spacing */
 .category-section {
     margin-bottom: 2.75rem;
@@ -2385,6 +2418,227 @@ form {
     color: #6b7280;
     font-size: 0.875rem;
     line-height: 1.4;
+}
+
+.renewal-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.renewal-modal {
+    width: min(780px, 100%);
+    max-height: min(760px, calc(100vh - 3rem));
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+    overflow: hidden;
+}
+
+.renewal-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.renewal-modal-title {
+    margin: 0;
+    color: #111827;
+    font-size: 1.125rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.renewal-modal-subtitle {
+    margin: 0.35rem 0 0;
+    color: #6b7280;
+    font-size: 0.875rem;
+    line-height: 1.35;
+}
+
+.renewal-modal-close {
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #374151;
+    cursor: pointer;
+}
+
+.renewal-modal-close:hover {
+    border-color: #9ca3af;
+    background: #f9fafb;
+}
+
+.renewal-modal-close:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.renewal-modal-close lightning-icon {
+    --sds-c-icon-color-foreground-default: currentColor;
+}
+
+.renewal-modal-body {
+    padding: 1.25rem 1.5rem;
+    overflow-y: auto;
+}
+
+.renewal-product-section + .renewal-product-section {
+    margin-top: 1.5rem;
+}
+
+.renewal-product-section-title {
+    margin: 0 0 0.75rem;
+    color: #2b4281;
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.renewal-product-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.renewal-product-row {
+    min-height: 4.75rem;
+    display: grid;
+    grid-template-columns: auto 5rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 7px;
+    background: #ffffff;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.renewal-product-row:hover {
+    border-color: #a7b4d8;
+    background: #f8fafc;
+}
+
+.renewal-product-logo-wrap {
+    width: 5rem;
+    height: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.renewal-product-logo-wrap.muted {
+    filter: grayscale(100%);
+    opacity: 0.72;
+}
+
+.renewal-product-logo {
+    max-width: 4.75rem;
+    max-height: 2.25rem;
+    object-fit: contain;
+}
+
+.renewal-product-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.renewal-product-name {
+    color: #111827;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.renewal-product-meta {
+    color: #6b7280;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+}
+
+.renewal-product-status {
+    justify-self: end;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.renewal-product-status.subscribed {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.renewal-product-status.available {
+    background: #eef2ff;
+    color: #3730a3;
+}
+
+.renewal-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
+}
+
+.renewal-secondary-button,
+.renewal-submit-button {
+    min-height: 2.4rem;
+    padding: 0.55rem 1rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.renewal-secondary-button {
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    color: #374151;
+}
+
+.renewal-submit-button {
+    border: 1px solid #2b4281;
+    background: #2b4281;
+    color: #ffffff;
+}
+
+.renewal-secondary-button:hover {
+    background: #f3f4f6;
+}
+
+.renewal-submit-button:hover {
+    background: #1f305e;
+}
+
+.renewal-secondary-button:disabled,
+.renewal-submit-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 /* 4 cards per row, centered */
@@ -2456,6 +2710,41 @@ form {
 
     .integrations-body .tile-card {
         width: 100%;
+    }
+
+    .integrations-page-actions {
+        justify-content: stretch;
+        margin: -0.75rem 0 1.25rem;
+    }
+
+    .renewal-request-button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .renewal-modal-backdrop {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .renewal-modal {
+        width: 100%;
+        max-height: 92vh;
+        border-radius: 8px 8px 0 0;
+    }
+
+    .renewal-product-row {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.65rem;
+    }
+
+    .renewal-product-logo-wrap {
+        display: none;
+    }
+
+    .renewal-product-status {
+        grid-column: 2;
+        justify-self: start;
     }
 }
 

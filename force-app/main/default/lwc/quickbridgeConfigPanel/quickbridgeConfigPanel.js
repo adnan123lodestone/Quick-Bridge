@@ -5,6 +5,7 @@ import updatePaymentMetadata from '@salesforce/apex/PaymentMetadataService.updat
 import getConfigPanelPreferences from '@salesforce/apex/PaymentMetadataService.getConfigPanelPreferences';
 import updateAvailableProductsVisible from '@salesforce/apex/PaymentMetadataService.updateAvailableProductsVisible';
 import checkIntegrationExpiry from '@salesforce/apex/PaymentMetadataService.checkIntegrationExpiry';
+import sendProductRenewalRequest from '@salesforce/apex/PaymentMetadataService.sendProductRenewalRequest';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import Authorize_Net_logo from '@salesforce/resourceUrl/Authorize_Net_logo';
 import QuickBridge_Logo from '@salesforce/resourceUrl/QuickBridge_Logo';
@@ -59,6 +60,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     @track availableProductsVisible = true;
     @track isSavingAvailableProductsPreference = false;
     @track integrationExpiryAlert = null;
+    @track isRenewalModalOpen = false;
+    @track isSendingRenewalEmail = false;
+    @track renewalProducts = [];
 
     userId = '';
     recoverUserId = '';
@@ -142,6 +146,30 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     get hasSubscribedTiles() {
         return this.subscribedTiles.length > 0;
+    }
+
+    get renewalExistingProducts() {
+        return this.renewalProducts.filter(product => product.isSubscribed);
+    }
+
+    get renewalAdditionalProducts() {
+        return this.renewalProducts.filter(product => !product.isSubscribed);
+    }
+
+    get hasRenewalExistingProducts() {
+        return this.renewalExistingProducts.length > 0;
+    }
+
+    get hasRenewalAdditionalProducts() {
+        return this.renewalAdditionalProducts.length > 0;
+    }
+
+    get hasRenewalSelections() {
+        return this.renewalProducts.some(product => product.selected);
+    }
+
+    get renewalSubmitDisabled() {
+        return this.isSendingRenewalEmail || !this.hasRenewalSelections;
     }
 
     get availableProductsToggleLabel() {
@@ -517,6 +545,76 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             );
         } finally {
             this.isSavingAvailableProductsPreference = false;
+        }
+    }
+
+    openRenewalRequestModal() {
+        this.renewalProducts = this.allTilesDefinition.map(tile => {
+            const isSubscribed = this.isSubscribedTile(tile.id);
+            return {
+                ...tile,
+                selected: false,
+                isSubscribed,
+                actionLabel: isSubscribed ? 'Renew existing subscription' : 'Add new subscription',
+                statusLabel: isSubscribed ? 'Subscribed' : 'Not subscribed'
+            };
+        });
+        this.isRenewalModalOpen = true;
+    }
+
+    closeRenewalRequestModal() {
+        if (this.isSendingRenewalEmail) {
+            return;
+        }
+
+        this.isRenewalModalOpen = false;
+        this.renewalProducts = [];
+    }
+
+    handleRenewalProductToggle(event) {
+        const productId = event.currentTarget.dataset.id;
+        const selected = event.target.checked;
+        this.renewalProducts = this.renewalProducts.map(product => (
+            product.id === productId ? { ...product, selected } : product
+        ));
+    }
+
+    async handleSendRenewalRequest() {
+        const selectedProducts = this.renewalProducts.filter(product => product.selected);
+        const renewalProductKeys = selectedProducts
+            .filter(product => product.isSubscribed)
+            .map(product => product.id);
+        const additionalSubscriptionProductKeys = selectedProducts
+            .filter(product => !product.isSubscribed)
+            .map(product => product.id);
+
+        if (!renewalProductKeys.length && !additionalSubscriptionProductKeys.length) {
+            this.showToast('Select Products', 'Select at least one product to include in the request.', 'warning');
+            return;
+        }
+
+        this.isSendingRenewalEmail = true;
+        try {
+            const result = await sendProductRenewalRequest({
+                renewalProductKeys,
+                additionalSubscriptionProductKeys
+            });
+
+            if (!result || result.success !== true) {
+                throw new Error(result?.message || 'Could not send the renewal request.');
+            }
+
+            this.showToast('Request Sent', result.message, 'success');
+            this.isRenewalModalOpen = false;
+            this.renewalProducts = [];
+        } catch (error) {
+            this.showToast(
+                'Request Failed',
+                error.body?.message || error.message || 'Could not send the renewal request.',
+                'error'
+            );
+        } finally {
+            this.isSendingRenewalEmail = false;
         }
     }
 

@@ -31,6 +31,8 @@ public with sharing class PaymentMetadataService {
         @AuraEnabled public Boolean notificationSent { get; set; }
     }
 
+    private class ProductRenewalRequestException extends Exception {}
+
     private static final Map<String, List<String>> PROVIDER_FIELDS = new Map<String, List<String>>{
         'authorizenet' => new List<String>{ 'Company_Name__c', 'AuthorizeNet_API_Login_ID__c', 'AuthorizeNet_Public_Client_Key__c', 'AuthorizeNet_Webhook_Signing_Key__c', 'AuthorizeNet_Active__c', 'AuthorizeNet_Use_Sandbox__c', 'AuthorizeNet_Start_Date__c', 'AuthorizeNet_End_Date__c' },
         'stripe' => new List<String>{ 'Company_Name__c', 'Stripe_Publishable_Key__c', 'Stripe_Webhook_Signing_Secret__c', 'Stripe_Active__c', 'Stripe_Use_Sandbox__c', 'Stripe_Start_Date__c', 'Stripe_End_Date__c' },
@@ -64,6 +66,7 @@ public with sharing class PaymentMetadataService {
     private static final String METADATA_TYPE_NAME = 'Quickbridge_Config__mdt';
     private static final Integer EXPIRY_WARNING_DAYS = 7;
     private static final String RENEWAL_NOTIFICATION_TYPE = 'QuickBridge_Renewal_Alert';
+    private static final String RENEWAL_REQUEST_RECIPIENT = 'adnan@thelodestonegroup.com';
 
     public class MetadataDeployQueueable implements Queueable {
         private String provider;
@@ -279,6 +282,39 @@ public with sharing class PaymentMetadataService {
         return alert;
     }
 
+    @AuraEnabled
+    public static MetadataUpdateResponse sendProductRenewalRequest(List<String> renewalProductKeys, List<String> additionalSubscriptionProductKeys) {
+        MetadataUpdateResponse response = new MetadataUpdateResponse();
+
+        try {
+            List<String> renewalProductLabels = resolveProviderLabels(renewalProductKeys);
+            List<String> additionalSubscriptionProductLabels = resolveProviderLabels(additionalSubscriptionProductKeys);
+
+            if (renewalProductLabels.isEmpty() && additionalSubscriptionProductLabels.isEmpty()) {
+                response.success = false;
+                response.message = 'Select at least one product before sending the request.';
+                return response;
+            }
+
+            Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+            email.setToAddresses(new List<String>{ RENEWAL_REQUEST_RECIPIENT });
+            email.setSaveAsActivity(false);
+            email.setSubject('QuickBridge renewal and subscription request');
+            email.setPlainTextBody(buildProductRenewalRequestEmailBody(renewalProductLabels, additionalSubscriptionProductLabels));
+
+            Messaging.sendEmail(new Messaging.SingleEmailMessage[] { email }, false);
+
+            response.success = true;
+            response.message = 'Renewal request email sent to ' + RENEWAL_REQUEST_RECIPIENT + '.';
+        } catch (Exception e) {
+            response.success = false;
+            response.message = 'Error sending renewal request: ' + e.getMessage();
+            ErrorLogUtility.logException('QuickBridge', 'PaymentMetadataService.sendProductRenewalRequest', e, null, null);
+        }
+
+        return response;
+    }
+
     private static MetadataConfig buildMetadataConfig(String provider) {
         MetadataConfig config = new MetadataConfig();
         config.provider = provider;
@@ -334,6 +370,7 @@ public with sharing class PaymentMetadataService {
         return normalizedProvider;
     }
 
+    @TestVisible
     private static String buildExpiryMessage(String providerLabel, Date expiryDate, Integer daysUntilExpiry) {
         String expiryText = String.valueOf(expiryDate);
         if (daysUntilExpiry < 0) {
@@ -346,6 +383,69 @@ public with sharing class PaymentMetadataService {
             ' (' + expiryText + '). Please renew the subscription.';
     }
 
+    @TestVisible
+    private static List<String> resolveProviderLabels(List<String> providerKeys) {
+        List<String> labels = new List<String>();
+        if (providerKeys == null) {
+            return labels;
+        }
+
+        Set<String> seenProviderKeys = new Set<String>();
+        for (String providerKey : providerKeys) {
+            if (String.isBlank(providerKey)) {
+                continue;
+            }
+
+            String normalizedProvider = providerKey.toLowerCase().trim();
+            if (!PROVIDER_LABELS.containsKey(normalizedProvider)) {
+                throw new ProductRenewalRequestException('Unsupported product: ' + providerKey);
+            }
+
+            if (seenProviderKeys.add(normalizedProvider)) {
+                labels.add(PROVIDER_LABELS.get(normalizedProvider));
+            }
+        }
+
+        labels.sort();
+        return labels;
+    }
+
+    @TestVisible
+    private static String buildProductRenewalRequestEmailBody(List<String> renewalProductLabels, List<String> additionalSubscriptionProductLabels) {
+        List<String> bodyLines = new List<String>{
+            'QuickBridge product request submitted.',
+            '',
+            'Requested By: ' + UserInfo.getName() + ' <' + UserInfo.getUserEmail() + '>',
+            'Submitted At: ' + String.valueOf(System.now()),
+            ''
+        };
+
+        bodyLines.add('Renewal for existing subscriptions:');
+        bodyLines.addAll(formatProductLines(renewalProductLabels));
+        bodyLines.add('');
+        bodyLines.add('Additional subscriptions requested:');
+        bodyLines.addAll(formatProductLines(additionalSubscriptionProductLabels));
+        bodyLines.add('');
+        bodyLines.add('This request was sent from the QuickBridge product selection page.');
+
+        return String.join(bodyLines, '\n');
+    }
+
+    @TestVisible
+    private static List<String> formatProductLines(List<String> productLabels) {
+        List<String> lines = new List<String>();
+        if (productLabels == null || productLabels.isEmpty()) {
+            lines.add('- None selected');
+            return lines;
+        }
+
+        for (String productLabel : productLabels) {
+            lines.add('- ' + productLabel);
+        }
+        return lines;
+    }
+
+    @TestVisible
     private static List<User> getActiveSystemAdmins() {
         return [
             SELECT Id, Email
@@ -357,6 +457,7 @@ public with sharing class PaymentMetadataService {
         ];
     }
 
+    @TestVisible
     private static void sendRenewalEmailToSystemAdmins(IntegrationExpiryAlert alert) {
         try {
             List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
@@ -384,6 +485,7 @@ public with sharing class PaymentMetadataService {
         }
     }
 
+    @TestVisible
     private static void sendRenewalNotification(IntegrationExpiryAlert alert) {
         try {
             List<CustomNotificationType> notificationTypes = [

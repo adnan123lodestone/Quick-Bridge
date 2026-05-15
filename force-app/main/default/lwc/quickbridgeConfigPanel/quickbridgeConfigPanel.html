@@ -201,6 +201,12 @@
 
                     <div class="dashboard-body dashboard-full-width integrations-body ">
                         <p class="integration-intro">Select the platforms you want to integrate with your Salesforce environment. Click on any application to proceed to its configuration screen.</p>
+                        <div class="integrations-page-actions">
+                            <button type="button" class="renewal-request-button" onclick={openRenewalRequestModal}>
+                                <lightning-icon icon-name="utility:email" size="xx-small"></lightning-icon>
+                                <span>Renewal Request</span>
+                            </button>
+                        </div>
                     <template if:true={hasSubscribedTiles}>
                         <div class="category-section slds-m-bottom_xx-large">
                             <div class="category-header">
@@ -260,6 +266,88 @@
                             </div>
                         </template>
                     </div>
+
+                    <template if:true={isRenewalModalOpen}>
+                        <section class="renewal-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="renewal-modal-title">
+                            <div class="renewal-modal">
+                                <div class="renewal-modal-header">
+                                    <div>
+                                        <h2 id="renewal-modal-title" class="renewal-modal-title">Product Renewal Request</h2>
+                                        <p class="renewal-modal-subtitle">Select products to include in the email request.</p>
+                                    </div>
+                                    <button type="button" class="renewal-modal-close" onclick={closeRenewalRequestModal} disabled={isSendingRenewalEmail} title="Close">
+                                        <lightning-icon icon-name="utility:close" size="xx-small"></lightning-icon>
+                                    </button>
+                                </div>
+
+                                <div class="renewal-modal-body">
+                                    <template if:true={hasRenewalExistingProducts}>
+                                        <div class="renewal-product-section">
+                                            <h3 class="renewal-product-section-title">Renew Existing Subscriptions</h3>
+                                            <div class="renewal-product-list">
+                                                <template for:each={renewalExistingProducts} for:item="product">
+                                                    <label key={product.id} class="renewal-product-row">
+                                                        <lightning-input
+                                                            type="checkbox"
+                                                            label={product.label}
+                                                            variant="label-hidden"
+                                                            data-id={product.id}
+                                                            checked={product.selected}
+                                                            onchange={handleRenewalProductToggle}>
+                                                        </lightning-input>
+                                                        <span class="renewal-product-logo-wrap">
+                                                            <img src={product.logoUrl} alt={product.label} class="renewal-product-logo" />
+                                                        </span>
+                                                        <span class="renewal-product-copy">
+                                                            <span class="renewal-product-name">{product.label}</span>
+                                                            <span class="renewal-product-meta">{product.actionLabel}</span>
+                                                        </span>
+                                                        <span class="renewal-product-status subscribed">{product.statusLabel}</span>
+                                                    </label>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <template if:true={hasRenewalAdditionalProducts}>
+                                        <div class="renewal-product-section">
+                                            <h3 class="renewal-product-section-title">Request Additional Subscriptions</h3>
+                                            <div class="renewal-product-list">
+                                                <template for:each={renewalAdditionalProducts} for:item="product">
+                                                    <label key={product.id} class="renewal-product-row">
+                                                        <lightning-input
+                                                            type="checkbox"
+                                                            label={product.label}
+                                                            variant="label-hidden"
+                                                            data-id={product.id}
+                                                            checked={product.selected}
+                                                            onchange={handleRenewalProductToggle}>
+                                                        </lightning-input>
+                                                        <span class="renewal-product-logo-wrap muted">
+                                                            <img src={product.logoUrl} alt={product.label} class="renewal-product-logo" />
+                                                        </span>
+                                                        <span class="renewal-product-copy">
+                                                            <span class="renewal-product-name">{product.label}</span>
+                                                            <span class="renewal-product-meta">{product.actionLabel}</span>
+                                                        </span>
+                                                        <span class="renewal-product-status available">{product.statusLabel}</span>
+                                                    </label>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div class="renewal-modal-footer">
+                                    <button type="button" class="renewal-secondary-button" onclick={closeRenewalRequestModal} disabled={isSendingRenewalEmail}>Cancel</button>
+                                    <button type="button" class="renewal-submit-button" onclick={handleSendRenewalRequest} disabled={renewalSubmitDisabled}>
+                                        <template if:false={isSendingRenewalEmail}>Send Email</template>
+                                        <template if:true={isSendingRenewalEmail}>Sending...</template>
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+                    </template>
                 </div>
                 </div>
             </template>
