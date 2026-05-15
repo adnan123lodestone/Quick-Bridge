@@ -2,10 +2,27 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
     private Set<Id> orderIds;
     private Boolean isInitialSync;
+    private Boolean mapDraftOrdersAsEstimates;
 
     public QBSalesOrderSyncBatch(Set<Id> ids, Boolean isInitial) {
         this.orderIds = ids;
         this.isInitialSync = isInitial;
+        this.mapDraftOrdersAsEstimates = getConfigValue();
+    }
+
+    private Boolean getConfigValue() {
+        try {
+            Quickbridge_Config__mdt config = [
+                SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c 
+                FROM QuickBridgeTLG__Quickbridge_Config__mdt 
+                WHERE DeveloperName = 'QuickBooks' 
+                LIMIT 1
+            ];
+            return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
+        } catch (Exception e) {
+            System.debug('Could not load Draft Order setting: ' + e.getMessage());
+            return false;
+        }
     }
 
     public Database.QueryLocator start(Database.BatchableContext bc) {
@@ -34,27 +51,37 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                 String endpointPath = '';
                 String qboObjectName = '';
 
-                // Status Check: Draft -> Estimate, Activated -> Invoice
                 if (ord.Status == 'Draft') {
-                    endpointPath = '/estimate';
-                    qboObjectName = 'Estimate';
-                } else if (ord.Status == 'Activated') {
+                    if (mapDraftOrdersAsEstimates) {
+                        // Create Estimate
+                        endpointPath = '/estimate';
+                        qboObjectName = 'Estimate';
+                    } else {
+                        // Create Invoice directly
+                        endpointPath = '/invoice';
+                        qboObjectName = 'Invoice';
+                    }
+                } 
+                else if (ord.Status == 'Activated') {
+                    if (!mapDraftOrdersAsEstimates) {
+                        System.debug('Skipping Activated Order ' + ord.Id + ' because Map Draft as Estimate is false.');
+                        continue; 
+                    }
                     endpointPath = '/invoice';
                     qboObjectName = 'Invoice';
-                } else {
+                } 
+                else {
                     continue;
                 }
 
+                // Build request body
                 Map<String, Object> requestBody = new Map<String, Object>();
 
-                // Dynamic Field Mapping for Order Header
                 for (String sfField : headerMap.keySet()) {
                     String qboFieldMapping = headerMap.get(sfField);
-
                     if (qboFieldMapping == 'CustomerRef.value' || qboFieldMapping == 'CustomerRef') {
                         continue;
                     }
-
                     Object val = getFieldValue(ord, sfField);
                     if (val != null) {
                         if (val instanceof Date) {
@@ -64,16 +91,15 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                     }
                 }
 
-                // Customer Reference (Account ID)
-                if(ord.Account != null && String.isNotBlank(ord.Account.QuickbookID__c)) {
+                // Customer Reference
+                if (ord.Account != null && String.isNotBlank(ord.Account.QuickbookID__c)) {
                     requestBody.put('CustomerRef', new Map<String, String>{
                         'value' => ord.Account.QuickbookID__c
                     });
                 }
 
-                // 3. Dynamic Field Mapping for Order Line Items
+                // Line items
                 List<Map<String, Object>> lines = new List<Map<String, Object>>();
-
                 for (OrderItem item : ord.OrderItems) {
                     Map<String, Object> line = new Map<String, Object>();
                     line.put('DetailType', 'SalesItemLineDetail');
@@ -85,7 +111,6 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                     for (String sfField : lineMap.keySet()) {
                         Object val = getFieldValue(item, sfField);
                         String qboField = lineMap.get(sfField);
-
                         if (val != null) {
                             if (qboField == 'Qty') {
                                 quantity = (Decimal)val;
@@ -100,63 +125,53 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                             }
                         }
                     }
-
                     line.put('Amount', quantity * unitPrice);
-
-                    if(item.Product2 != null && String.isNotBlank(item.Product2.QuickbookID__c)) {
+                    if (item.Product2 != null && String.isNotBlank(item.Product2.QuickbookID__c)) {
                         itemDetail.put('ItemRef', new Map<String, String>{ 'value' => item.Product2.QuickbookID__c });
                     }
-
                     line.put('SalesItemLineDetail', itemDetail);
-
                     if (String.isNotBlank(item.QB_LineiTemID__c) && item.QB_LineiTemID__c.contains(':')) {
                         if (qboObjectName != 'Invoice') {
                             line.put('Id', item.QB_LineiTemID__c.split(':')[1]);
                         }
                     }
-
                     lines.add(line);
                 }
-
                 requestBody.put('Line', lines);
 
-                // =======================================================
-                // 4. THE FIX: Handle QBO ID (Estimate to Invoice Logic)
-                // =======================================================
+                // Handle existing QBO ID for updates / conversion
                 if (String.isNotBlank(ord.QuickbookID__c) && !isInitialSync) {
-
                     if (ord.Status == 'Activated' && qboObjectName == 'Invoice') {
-                        System.debug('Converting Estimate to Invoice. Sending as a NEW record.');
+                        System.debug('Converting Estimate to Invoice.');
                     } else {
-                        // Normal update
                         requestBody.put('Id', ord.QuickbookID__c);
                         requestBody.put('SyncToken', String.isBlank(ord.SyncToken__c) ? '0' : ord.SyncToken__c);
                         requestBody.put('sparse', true);
                     }
                 }
 
-                // 5. API Callout
+                // API Callout
                 String jsonBody = JSON.serialize(requestBody);
                 HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', endpointPath, jsonBody);
 
                 if (res != null && res.getStatusCode() == 200) {
-                    Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
-                    Map<String, Object> qboResponseObj = (Map<String, Object>)responseMap.get(qboObjectName);
+                    Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+                    Map<String, Object> qboResponseObj = (Map<String, Object>) responseMap.get(qboObjectName);
 
                     Order ordToUpdate = new Order(Id = ord.Id);
-                    ordToUpdate.QuickbookID__c = (String)qboResponseObj.get('Id');
-                    ordToUpdate.SyncToken__c = (String)qboResponseObj.get('SyncToken');
+                    ordToUpdate.QuickbookID__c = (String) qboResponseObj.get('Id');
+                    ordToUpdate.SyncToken__c = (String) qboResponseObj.get('SyncToken');
                     ordersToUpdate.add(ordToUpdate);
 
-                    List<Object> qboLines = (List<Object>)qboResponseObj.get('Line');
+                    List<Object> qboLines = (List<Object>) qboResponseObj.get('Line');
                     if (qboLines != null) {
                         Integer qboLineIndex = 0;
                         for (OrderItem item : ord.OrderItems) {
                             while (qboLineIndex < qboLines.size()) {
-                                Map<String, Object> qbLine = (Map<String, Object>)qboLines[qboLineIndex];
+                                Map<String, Object> qbLine = (Map<String, Object>) qboLines[qboLineIndex];
                                 if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
                                     OrderItem itemToUpdate = new OrderItem(Id = item.Id);
-                                    itemToUpdate.QB_LineiTemID__c = ordToUpdate.QuickbookID__c + ':' + (String)qbLine.get('Id');
+                                    itemToUpdate.QB_LineiTemID__c = ordToUpdate.QuickbookID__c + ':' + (String) qbLine.get('Id');
                                     itemsToUpdate.add(itemToUpdate);
                                     qboLineIndex++;
                                     break;
@@ -189,6 +204,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
             }
         }
 
+        // DML updates 
         if (!ordersToUpdate.isEmpty()) {
             Database.SaveResult[] orderResults = Database.update(ordersToUpdate, false);
             ErrorLogUtility.logDmlResults(
@@ -220,7 +236,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
     }
 
     private Object getFieldValue(SObject obj, String fieldPath) {
-        if(!fieldPath.contains('.')) {
+        if (!fieldPath.contains('.')) {
             try { return obj.get(fieldPath); } catch(Exception e) { return null; }
         }
         List<String> fields = fieldPath.split('\\.');

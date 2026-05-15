@@ -9,7 +9,7 @@
  *    - Add scope: com.intuit.quickbooks.accounting
  */
 public with sharing class FieldMappingController {
-
+    
     private static final String QB_API_ENDPOINT = 'callout:QuickBooksOnline';
     private static final String INTEGRATION_QBO = 'qbonline';
     private static final String INTEGRATION_SHOPIFY = 'shopify';
@@ -36,7 +36,7 @@ public with sharing class FieldMappingController {
         'Purchase_Order__c' => 'PurchaseOrder',
         'Item_Sales_Tax__c' => 'TaxCode'
     };
-
+    
     private static final Set<String> VALID_SHOPIFY_ENTITIES = new Set<String>{
         'Customer', 'Order', 'Product', 'LineItem'
     };
@@ -46,12 +46,12 @@ public with sharing class FieldMappingController {
         'Product2'  => 'Product',
         'OrderItem' => 'LineItem'
     };
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getOrderFields() {
         return getObjectFields('Order');
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getObjectFields(String objectName) {
         List<FieldWrapper> fields = new List<FieldWrapper>();
@@ -59,9 +59,9 @@ public with sharing class FieldMappingController {
             if (String.isBlank(objectName)) {
                 throw new IllegalArgumentException('Object name is required');
             }
-
+            
             if (objectName != null && objectName.endsWith('Invoice__c')) {
-                String actualInvoiceObject = InvoiceMappingController.getCustomInvoiceObjectName(); 
+                String actualInvoiceObject = InvoiceMappingController.getCustomInvoiceObjectName();
                 if (String.isNotBlank(actualInvoiceObject)) {
                     objectName = actualInvoiceObject;
                 }
@@ -71,22 +71,22 @@ public with sharing class FieldMappingController {
             if (sObjectType == null) {
                 throw new IllegalArgumentException('Invalid object name: ' + objectName);
             }
-
+            
             Map<String, Schema.SObjectField> fieldMap = sObjectType.getDescribe().fields.getMap();
-
+            
             for (String fieldName : fieldMap.keySet()) {
                 Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName).getDescribe();
                 if (fieldDescribe.isAccessible()) {
                     fields.add(new FieldWrapper(
                         fieldDescribe.getLabel(),
-                        fieldDescribe.getName(),
-                        mapSalesforceType(fieldDescribe.getType())
-                    ));
+                    fieldDescribe.getName(),
+                    mapSalesforceType(fieldDescribe.getType())
+                        ));
                 }
             }
-
+            
             fields.sort();
-
+            
             List<Map<String, String>> result = new List<Map<String, String>>();
             for (FieldWrapper field : fields) {
                 Map<String, String> fieldData = new Map<String, String>();
@@ -101,47 +101,47 @@ public with sharing class FieldMappingController {
             throw new AuraHandledException('Unable to retrieve fields: ' + e.getMessage());
         }
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, Object>> getShopifyFields(String sfObject, String shopifyObject) {
         String shopifyEntity = resolveShopifyEntity(sfObject, shopifyObject);
         return convertQBFieldDefinitions(getFallbackShopifyFieldDefinitions(shopifyEntity));
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, Object>> getFedExFields(String actionName, String direction) {
         return convertQBFieldDefinitions(getFedExFieldDefinitions(actionName, direction));
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getExistingFedExMappings(String actionName, String sfObject) {
         return getCarrierMappings('fedex', actionName, sfObject);
     }
-
+    
     @AuraEnabled
     public static String saveFedExFieldMappings(String actionName, String sfObject, String mappingsJson) {
         return saveCarrierFieldMappings('fedex', actionName, sfObject, mappingsJson);
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, Object>> getUPSFields(String actionName, String direction) {
         return convertQBFieldDefinitions(getUPSFieldDefinitions(actionName, direction));
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getExistingUPSMappings(String actionName, String sfObject) {
         return getCarrierMappings('ups', actionName, sfObject);
     }
-
+    
     @AuraEnabled
     public static String saveUPSFieldMappings(String actionName, String sfObject, String mappingsJson) {
         return saveCarrierFieldMappings('ups', actionName, sfObject, mappingsJson);
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, Object>> getQuickBooksFields(String sfObject, String qbObject) {
         String qbEntity = resolveQBEntity(sfObject, qbObject);
-
+        
         try {
             Map<String, QBFieldDefinition> fieldDefinitions = fetchQBFieldDefinitions(qbEntity);
             return convertQBFieldDefinitions(fieldDefinitions);
@@ -151,12 +151,12 @@ public with sharing class FieldMappingController {
             return convertQBFieldDefinitions(getFallbackQBFieldDefinitions(qbEntity));
         }
     }
-
+    
     @AuraEnabled
     public static Map<String, Object> getMappingDirectionAvailability(String integration, String sfObject) {
         return buildMappingDirectionAvailability(integration, sfObject);
     }
-
+    
     @AuraEnabled
     public static String saveFieldMappings(String integration, String sfObject, String qbObject, String mappingsJson) {
         try {
@@ -173,22 +173,22 @@ public with sharing class FieldMappingController {
                     throw new AuraHandledException(
                         'Conflict Error: You cannot map both Order and ' + otherObject +
                         ' to QuickBooks Invoice. Please clear ' + otherObject + ' mappings first.'
-                    );
+                        );
                 }
             }
-
+            
             List<Object> rawList = String.isBlank(mappingsJson)
                 ? new List<Object>()
                 : (List<Object>) JSON.deserializeUntyped(mappingsJson);
             List<MappingRow> requestedMappings = new List<MappingRow>();
             Set<String> requestedExternalFields = new Set<String>();
-
+            
             for (Object objRow : rawList) {
                 Map<String, Object> row = (Map<String, Object>) objRow;
                 String sfField = (String) row.get('sfField');
                 String extField = (String) row.get('externalField');
                 String syncDirection = normalizeMappingDirection(integration, (String) row.get('syncDirection'));
-
+                
                 if (String.isBlank(sfField) || String.isBlank(extField)) {
                     continue;
                 }
@@ -199,24 +199,24 @@ public with sharing class FieldMappingController {
                 requestedMappings.add(new MappingRow(sfField, extField, syncDirection));
                 requestedExternalFields.add(extField);
             }
-
+            
             validateObjectDirectionAvailability(integration, sfObject, requestedMappings);
             validateRequiredMappings(integration, sfObject, qbObject, requestedMappings);
             validateDataTypes(integration, sfObject, qbObject, requestedMappings);
-
+            
             List<Field_Mapping__mdt> existingMappings = [
                 SELECT DeveloperName, External_Field__c, Is_Active__c
                 FROM Field_Mapping__mdt
                 WHERE Integration__c = :integration AND SF_Object__c = :sfObject
             ];
-
+            
             List<String> recordsToDeactivate = new List<String>();
             for (Field_Mapping__mdt existingRecord : existingMappings) {
                 if (existingRecord.Is_Active__c && !requestedExternalFields.contains(existingRecord.External_Field__c)) {
                     recordsToDeactivate.add(existingRecord.DeveloperName);
                 }
             }
-
+            
             String nsPrefix = getNamespacePrefix();
             Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
             for (String developerName : recordsToDeactivate) {
@@ -226,31 +226,31 @@ public with sharing class FieldMappingController {
                 addCustomMetadataValue(inactiveMetadata, 'Is_Active__c', false);
                 mdContainer.addMetadata(inactiveMetadata);
             }
-
+            
             for (MappingRow row : requestedMappings) {
                 Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
                 customMetadata.fullName = nsPrefix + 'Field_Mapping__mdt.' + buildRecordName(integration, sfObject, row.externalField);
                 String label = sfObject + ' ' + row.sfField;
                 customMetadata.label = label.length() > 40 ? label.substring(0, 40) : label;
-
+                
                 addCustomMetadataValue(customMetadata, 'Integration__c', integration);
                 addCustomMetadataValue(customMetadata, 'SF_Object__c', sfObject);
                 addCustomMetadataValue(customMetadata, 'SF_Field__c', row.sfField);
                 addCustomMetadataValue(customMetadata, 'External_Field__c', row.externalField);
                 addCustomMetadataValue(customMetadata, 'Sync_Direction__c', row.syncDirection);
                 addCustomMetadataValue(customMetadata, 'Is_Active__c', true);
-
+                
                 mdContainer.addMetadata(customMetadata);
             }
-
+            
             if (Test.isRunningTest()) {
                 return 'Mappings Deployment Started! Job ID: 0Af000000000000';
             }
-
+            
             if (requestedMappings.isEmpty() && recordsToDeactivate.isEmpty()) {
                 return 'Mappings updated successfully.';
             }
-
+            
             Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
             return 'Mappings Deployment Started! Job ID: ' + jobId;
         } catch (AuraHandledException e) {
@@ -258,15 +258,15 @@ public with sharing class FieldMappingController {
         } catch (Exception e) {
             ErrorLogUtility.logException(
                 integration == INTEGRATION_SHOPIFY ? 'Shopify' : 'QuickBooks',
-                'FieldMappingController.saveFieldMappings',
-                e,
-                null,
-                null
-            );
+            'FieldMappingController.saveFieldMappings',
+            e,
+            null,
+            null
+                );
             throw new AuraHandledException(e.getMessage());
         }
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getSalesforceObjects() {
         List<Map<String, String>> objects = new List<Map<String, String>>();
@@ -278,14 +278,14 @@ public with sharing class FieldMappingController {
             'Carrier_Shipment__c', 'Carrier_Package__c',
             'Carrier_Rate_Quote__c', 'Carrier_Tracking_Event__c'
         };
-
+        
         Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
-
+        
         for (String objApiName : allowedObjects) {
             try {
                 Schema.SObjectType sType = getSObjectType(objApiName);
                 if (sType == null) continue;
-
+                
                 Schema.DescribeSObjectResult describe = sType.getDescribe();
                 Map<String, String> objectData = new Map<String, String>();
                 objectData.put('label', describe.getLabel());
@@ -297,7 +297,7 @@ public with sharing class FieldMappingController {
         }
         return objects;
     }
-
+    
     private static String getNamespacePrefix() {
         String className = FieldMappingController.class.getName();
         if (className.contains('.')) {
@@ -305,16 +305,16 @@ public with sharing class FieldMappingController {
         }
         return '';
     }
-
+    
     /**
      * Helper to resolve SObjectType while accounting for package namespaces
      */
     private static Schema.SObjectType getSObjectType(String objApiName) {
         if (String.isBlank(objApiName)) return null;
-
+        
         Map<String, Schema.SObjectType> gd = Schema.getGlobalDescribe();
         Schema.SObjectType sType = gd.get(objApiName);
-
+        
         // If not found and looks like a custom object, try prepending the current namespace
         if (sType == null && objApiName.endsWith('__c')) {
             String nsPrefix = getNamespacePrefix();
@@ -324,7 +324,7 @@ public with sharing class FieldMappingController {
         }
         return sType;
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getExistingMappings(String integration, String sfObject) {
         List<Map<String, String>> savedMappings = new List<Map<String, String>>();
@@ -334,7 +334,7 @@ public with sharing class FieldMappingController {
                 FROM Field_Mapping__mdt
                 WHERE Integration__c = :integration AND SF_Object__c = :sfObject AND Is_Active__c = true
             ];
-
+            
             for (Field_Mapping__mdt record : records) {
                 if (String.isBlank(record.SF_Field__c) || String.isBlank(record.External_Field__c)) {
                     continue;
@@ -350,15 +350,15 @@ public with sharing class FieldMappingController {
             System.debug('Error loading metadata: ' + e.getMessage());
             ErrorLogUtility.logException(
                 integration == INTEGRATION_SHOPIFY ? 'Shopify' : 'QuickBooks',
-                'FieldMappingController.getExistingMappings',
-                e,
-                null,
-                null
-            );
+            'FieldMappingController.getExistingMappings',
+            e,
+            null,
+            null
+                );
         }
         return savedMappings;
     }
-
+    
     private static void validateRequiredMappings(String sfObject, String qbObject, List<MappingRow> requestedMappings) {
         String qbEntity = resolveQBEntity(sfObject, qbObject);
         Map<String, QBFieldDefinition> qbFields = fetchQBFieldDefinitionsSafe(qbEntity);
@@ -366,14 +366,14 @@ public with sharing class FieldMappingController {
         for (MappingRow row : requestedMappings) {
             mappedExternalFields.add(row.externalField);
         }
-
+        
         for (QBFieldDefinition fieldDef : qbFields.values()) {
             if (fieldDef.required && !mappedExternalFields.contains(fieldDef.value)) {
                 throw new AuraHandledException('Map every required QuickBooks field before saving.');
             }
         }
     }
-
+    
     private static void validateRequiredMappings(String integration, String sfObject, String extObject, List<MappingRow> requestedMappings) {
         Map<String, QBFieldDefinition> fieldDefs;
         String integrationLabel;
@@ -386,29 +386,29 @@ public with sharing class FieldMappingController {
             fieldDefs = fetchQBFieldDefinitionsSafe(qbEntity);
             integrationLabel = 'QuickBooks';
         }
-
+        
         Set<String> mappedExternalFields = new Set<String>();
         for (MappingRow row : requestedMappings) {
             mappedExternalFields.add(row.externalField);
         }
-
+        
         for (QBFieldDefinition fieldDef : fieldDefs.values()) {
             if (fieldDef.required && !mappedExternalFields.contains(fieldDef.value)) {
                 throw new AuraHandledException('Map every required ' + integrationLabel + ' field before saving.');
             }
         }
     }
-
+    
     private static void validateDataTypes(String sfObject, String qbObject, List<MappingRow> requestedMappings) {
         validateDataTypes(null, sfObject, qbObject, requestedMappings);
     }
-
+    
     private static void validateDataTypes(String integration, String sfObject, String extObject, List<MappingRow> requestedMappings) {
         Map<String, String> sfFieldTypes = new Map<String, String>();
         for (Map<String, String> sfField : getObjectFields(sfObject)) {
             sfFieldTypes.put(sfField.get('value'), sfField.get('type'));
         }
-
+        
         Map<String, QBFieldDefinition> extFields;
         String integrationLabel;
         if (integration == INTEGRATION_SHOPIFY) {
@@ -419,35 +419,35 @@ public with sharing class FieldMappingController {
             extFields = fetchQBFieldDefinitionsSafe(resolveQBEntity(sfObject, extObject));
             integrationLabel = 'QuickBooks';
         }
-
+        
         for (MappingRow row : requestedMappings) {
             if (!sfFieldTypes.containsKey(row.sfField) || !extFields.containsKey(row.externalField)) {
                 continue;
             }
-
+            
             String sfType = sfFieldTypes.get(row.sfField);
             String extType = extFields.get(row.externalField).type;
             if (!isTypeMatch(sfType, extType)) {
                 throw new AuraHandledException(
                     'Field type mismatch for ' + integrationLabel + ' field ' + row.externalField + '.'
-                );
+                    );
             }
         }
     }
-
+    
     private static Boolean isTypeMatch(String sfType, String qbType) {
         String normalizedSfType = normalizeType(sfType);
         String normalizedQbType = normalizeType(qbType);
         return normalizedQbType == null || normalizedSfType == normalizedQbType;
     }
-
+    
     private static String normalizeType(String value) {
         if (String.isBlank(value)) {
             return null;
         }
         String upperValue = value.trim().toUpperCase();
         if (upperValue == 'CURRENCY' || upperValue == 'DOUBLE' || upperValue == 'INTEGER' ||
-            upperValue == 'PERCENT' || upperValue == 'DECIMAL' || upperValue == 'LONG' || upperValue == 'NUMBER') {
+        upperValue == 'PERCENT' || upperValue == 'DECIMAL' || upperValue == 'LONG' || upperValue == 'NUMBER') {
             return 'NUMBER';
         }
         if (upperValue == 'DATE' || upperValue == 'DATETIME') {
@@ -458,18 +458,18 @@ public with sharing class FieldMappingController {
         }
         return 'STRING';
     }
-
+    
     private static Map<String, Object> buildMappingDirectionAvailability(String integration, String sfObject) {
         Map<String, Object> result = new Map<String, Object>();
         String normalizedIntegration = normalizeIntegration(integration);
         String otherIntegration = getPeerIntegration(normalizedIntegration);
         String otherLabel = getIntegrationLabel(otherIntegration);
-
+        
         Boolean inboundAllowed = true;
         Boolean outboundAllowed = true;
         String inboundConflictDirection;
         String outboundConflictDirection;
-
+        
         if (otherIntegration != null && String.isNotBlank(sfObject)) {
             for (Field_Mapping__mdt mapping : getActiveMappingsForAvailability(otherIntegration, sfObject)) {
                 if (directionTouchesInbound(mapping.Sync_Direction__c)) {
@@ -490,7 +490,7 @@ public with sharing class FieldMappingController {
                 }
             }
         }
-
+        
         Boolean twoWayAllowed = inboundAllowed && outboundAllowed;
         result.put('integration', normalizedIntegration);
         result.put('sfObject', sfObject);
@@ -504,25 +504,25 @@ public with sharing class FieldMappingController {
         result.put('outboundConflictDirection', outboundConflictDirection);
         result.put(
             'message',
-            buildAvailabilityMessage(
-                sfObject,
-                otherLabel,
-                inboundAllowed,
-                outboundAllowed,
-                inboundConflictDirection,
-                outboundConflictDirection
+        buildAvailabilityMessage(
+            sfObject,
+        otherLabel,
+        inboundAllowed,
+        outboundAllowed,
+        inboundConflictDirection,
+        outboundConflictDirection
             )
-        );
+            );
         return result;
     }
-
+    
     private static String buildAvailabilityMessage(
         String sfObject,
-        String otherLabel,
-        Boolean inboundAllowed,
-        Boolean outboundAllowed,
-        String inboundConflictDirection,
-        String outboundConflictDirection
+    String otherLabel,
+    Boolean inboundAllowed,
+    Boolean outboundAllowed,
+    String inboundConflictDirection,
+    String outboundConflictDirection
     ) {
         if (inboundAllowed && outboundAllowed) {
             return '';
@@ -543,21 +543,21 @@ public with sharing class FieldMappingController {
         return 'Cannot create outbound mapping. ' + otherLabel + ' already has ' +
             outboundConflictDirection + ' mapping for ' + objectLabel + '.';
     }
-
+    
     private static void validateObjectDirectionAvailability(
         String integration,
-        String sfObject,
-        List<MappingRow> requestedMappings
+    String sfObject,
+    List<MappingRow> requestedMappings
     ) {
         if (!isQboOrShopify(integration) || requestedMappings.isEmpty()) {
             return;
         }
-
+        
         Map<String, Object> availability = buildMappingDirectionAvailability(integration, sfObject);
         Boolean inboundAllowed = (Boolean) availability.get('inboundAllowed');
         Boolean outboundAllowed = (Boolean) availability.get('outboundAllowed');
         String message = (String) availability.get('message');
-
+        
         for (MappingRow row : requestedMappings) {
             if (!inboundAllowed && directionTouchesInbound(row.syncDirection)) {
                 throw new AuraHandledException('Mapping Direction Conflict: ' + message);
@@ -567,25 +567,25 @@ public with sharing class FieldMappingController {
             }
         }
     }
-
+    
     private static List<Field_Mapping__mdt> getActiveMappingsForAvailability(String integration, String sfObject) {
         List<Field_Mapping__mdt> records = new List<Field_Mapping__mdt>();
         if (String.isBlank(integration) || String.isBlank(sfObject)) {
             return records;
         }
-
+        
         if (Test.isRunningTest() && testActiveMappings != null) {
             for (Field_Mapping__mdt mapping : testActiveMappings) {
                 if (mapping != null &&
                     mapping.Integration__c == integration &&
                     mapping.SF_Object__c == sfObject &&
-                    mapping.Is_Active__c == true) {
+                mapping.Is_Active__c == true) {
                     records.add(mapping);
                 }
             }
             return records;
         }
-
+        
         return [
             SELECT Integration__c, SF_Object__c, Sync_Direction__c, Is_Active__c
             FROM Field_Mapping__mdt
@@ -594,41 +594,41 @@ public with sharing class FieldMappingController {
             AND Is_Active__c = true
         ];
     }
-
+    
     private static Boolean directionTouchesInbound(String syncDirection) {
         String direction = String.isBlank(syncDirection) ? DIRECTION_TWO_WAY : syncDirection;
         return direction == DIRECTION_TWO_WAY ||
             direction == DIRECTION_QBO_TO_SF ||
             direction == DIRECTION_SHOPIFY_TO_SF;
     }
-
+    
     private static Boolean directionTouchesOutbound(String syncDirection) {
         String direction = String.isBlank(syncDirection) ? DIRECTION_TWO_WAY : syncDirection;
         return direction == DIRECTION_TWO_WAY ||
             direction == DIRECTION_SF_TO_QBO ||
             direction == DIRECTION_SF_TO_SHOPIFY;
     }
-
+    
     private static String normalizeMappingDirection(String integration, String syncDirection) {
         if (!isQboOrShopify(integration)) {
             return syncDirection;
         }
-
+        
         String direction = String.isBlank(syncDirection) ? DIRECTION_TWO_WAY : syncDirection.trim();
         Set<String> validDirections = normalizeIntegration(integration) == INTEGRATION_SHOPIFY
-            ? new Set<String>{ DIRECTION_SF_TO_SHOPIFY, DIRECTION_SHOPIFY_TO_SF, DIRECTION_TWO_WAY }
-            : new Set<String>{ DIRECTION_SF_TO_QBO, DIRECTION_QBO_TO_SF, DIRECTION_TWO_WAY };
-
+        ? new Set<String>{ DIRECTION_SF_TO_SHOPIFY, DIRECTION_SHOPIFY_TO_SF, DIRECTION_TWO_WAY }
+        : new Set<String>{ DIRECTION_SF_TO_QBO, DIRECTION_QBO_TO_SF, DIRECTION_TWO_WAY };
+        
         if (!validDirections.contains(direction)) {
             throw new AuraHandledException('Invalid sync direction for ' + getIntegrationLabel(integration) + ' mappings.');
         }
         return direction;
     }
-
+    
     private static String normalizeIntegration(String integration) {
         return String.isBlank(integration) ? '' : integration.trim().toLowerCase();
     }
-
+    
     private static String getPeerIntegration(String integration) {
         String normalized = normalizeIntegration(integration);
         if (normalized == INTEGRATION_QBO) {
@@ -639,12 +639,12 @@ public with sharing class FieldMappingController {
         }
         return null;
     }
-
+    
     private static Boolean isQboOrShopify(String integration) {
         String normalized = normalizeIntegration(integration);
         return EXCLUSIVE_INTEGRATIONS.contains(normalized);
     }
-
+    
     private static String getIntegrationLabel(String integration) {
         String normalized = normalizeIntegration(integration);
         if (normalized == INTEGRATION_SHOPIFY) {
@@ -655,7 +655,7 @@ public with sharing class FieldMappingController {
         }
         return 'the other integration';
     }
-
+    
     private static Map<String, QBFieldDefinition> fetchQBFieldDefinitionsSafe(String qbEntity) {
         try {
             return fetchQBFieldDefinitions(qbEntity);
@@ -663,17 +663,17 @@ public with sharing class FieldMappingController {
             return getFallbackQBFieldDefinitions(qbEntity);
         }
     }
-
+    
     private static Map<String, QBFieldDefinition> fetchQBFieldDefinitions(String qbEntity) {
         Map<String, QBFieldDefinition> fieldDefinitions = getFallbackQBFieldDefinitions(qbEntity);
         List<Map<String, Object>> apiFields = fetchQBFieldsFromAPI(qbEntity);
-
+        
         for (Map<String, Object> fieldData : apiFields) {
             String fieldPath = (String) fieldData.get('value');
             if (String.isBlank(fieldPath)) {
                 continue;
             }
-
+            
             QBFieldDefinition definition = fieldDefinitions.containsKey(fieldPath)
                 ? fieldDefinitions.get(fieldPath)
                 : new QBFieldDefinition();
@@ -688,13 +688,13 @@ public with sharing class FieldMappingController {
             }
             fieldDefinitions.put(fieldPath, definition);
         }
-
+        
         return fieldDefinitions;
     }
-
+    
     private static Map<String, QBFieldDefinition> getFallbackQBFieldDefinitions(String qbEntity) {
         Map<String, QBFieldDefinition> qbFields = new Map<String, QBFieldDefinition>();
-
+        
         if (qbEntity == 'Customer') {
             addQBFieldDefinition(qbFields, 'QB - DisplayName', 'DisplayName', 'STRING', true);
             addQBFieldDefinition(qbFields, 'QB - CompanyName', 'CompanyName', 'STRING', false);
@@ -737,17 +737,23 @@ public with sharing class FieldMappingController {
         } else if (qbEntity == 'TaxCode') {
             addQBFieldDefinition(qbFields, 'QB - Name', 'Name', 'STRING', true);
             addQBFieldDefinition(qbFields, 'QB - Description', 'Description', 'STRING', false);
+        }else if (qbEntity == 'InvoiceLine') {
+            addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.SalesItemLineDetail.ItemRef.value', 'STRING', true);
+            addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
+            addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.SalesItemLineDetail.Qty', 'NUMBER', false);
+            addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.SalesItemLineDetail.UnitPrice', 'NUMBER', false);
+            addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
         }
-
+        
         return qbFields;
     }
-
+    
     private static void addQBFieldDefinition(
         Map<String, QBFieldDefinition> fieldMap,
-        String label,
-        String value,
-        String type,
-        Boolean required
+    String label,
+    String value,
+    String type,
+    Boolean required
     ) {
         QBFieldDefinition definition = new QBFieldDefinition();
         definition.label = label;
@@ -756,12 +762,12 @@ public with sharing class FieldMappingController {
         definition.required = required;
         fieldMap.put(value, definition);
     }
-
+    
     private static List<Map<String, Object>> convertQBFieldDefinitions(Map<String, QBFieldDefinition> definitions) {
         List<QBFieldDefinition> sortableFields = new List<QBFieldDefinition>();
         sortableFields.addAll(definitions.values());
         sortableFields.sort();
-
+        
         List<Map<String, Object>> result = new List<Map<String, Object>>();
         for (QBFieldDefinition definition : sortableFields) {
             Map<String, Object> row = new Map<String, Object>();
@@ -773,10 +779,10 @@ public with sharing class FieldMappingController {
         }
         return result;
     }
-
+    
     private static List<Map<String, Object>> fetchQBFieldsFromAPI(String qbEntity) {
         List<Map<String, Object>> qbFields = new List<Map<String, Object>>();
-
+        
         List<Quickbridge_Config__mdt> configs = [
             SELECT QuickBooks_Realm_ID__c
             FROM Quickbridge_Config__mdt
@@ -786,32 +792,32 @@ public with sharing class FieldMappingController {
         if (configs.isEmpty() || String.isBlank(configs[0].QuickBooks_Realm_ID__c)) {
             throw new CalloutException('Realm ID is missing in configuration.');
         }
-
+        
         String realmId = configs[0].QuickBooks_Realm_ID__c.trim();
-
+        
         HttpRequest req = new HttpRequest();
         String query = EncodingUtil.urlEncode('SELECT * FROM ' + qbEntity + ' MAXRESULTS 1', 'UTF-8');
         req.setEndpoint(QB_API_ENDPOINT + '/v3/company/' + realmId + '/query?query=' + query);
         req.setMethod('GET');
         req.setHeader('Accept', 'application/json');
         req.setTimeout(20000);
-
+        
         HttpResponse res = new Http().send(req);
         if (res.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'FieldMappingController.fetchQBFieldsFromAPI',
-                'QB API error while loading field metadata: ' + res.getStatusCode() + ' ' + res.getBody(),
-                res.getStatusCode(),
-                null,
-                null
-            );
+            'FieldMappingController.fetchQBFieldsFromAPI',
+            'QB API error while loading field metadata: ' + res.getStatusCode() + ' ' + res.getBody(),
+            res.getStatusCode(),
+            null,
+            null
+                );
             throw new CalloutException('QB API error: ' + res.getStatusCode());
         }
-
+        
         Map<String, Object> responseBody = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
         Map<String, Object> queryResponse = (Map<String, Object>) responseBody.get('QueryResponse');
-
+        
         if (queryResponse != null && queryResponse.containsKey(qbEntity)) {
             List<Object> entities = (List<Object>) queryResponse.get(qbEntity);
             if (!entities.isEmpty()) {
@@ -821,16 +827,16 @@ public with sharing class FieldMappingController {
         }
         return qbFields;
     }
-
+    
     private static void flattenFields(
         Map<String, Object> jsonMap,
-        String prefix,
-        List<Map<String, Object>> resultList
+    String prefix,
+    List<Map<String, Object>> resultList
     ) {
         for (String key : jsonMap.keySet()) {
             Object value = jsonMap.get(key);
             String fieldPath = String.isBlank(prefix) ? key : prefix + '.' + key;
-
+            
             if (value instanceof Map<String, Object>) {
                 flattenFields((Map<String, Object>) value, fieldPath, resultList);
             } else if (value instanceof List<Object>) {
@@ -839,17 +845,17 @@ public with sharing class FieldMappingController {
                 String qbType = 'STRING';
                 if (value instanceof Boolean) {
                     qbType = 'BOOLEAN';
-                } 
+                }
                 else if (value instanceof Integer || value instanceof Long || value instanceof Double || value instanceof Decimal) {
                     qbType = 'NUMBER';
-                } 
+                }
                 else {
                     String lowerPath = fieldPath.toLowerCase();
                     if (lowerPath.contains('date') || lowerPath.contains('time')) {
                         qbType = 'DATE';
                     }
                 }
-
+                
                 Map<String, Object> fieldData = new Map<String, Object>();
                 fieldData.put('label', 'QB - ' + fieldPath);
                 fieldData.put('value', fieldPath);
@@ -858,7 +864,7 @@ public with sharing class FieldMappingController {
             }
         }
     }
-
+    
     private static String resolveShopifyEntity(String sfObject, String shopifyObject) {
         if (String.isNotBlank(shopifyObject) && VALID_SHOPIFY_ENTITIES.contains(shopifyObject)) {
             return shopifyObject;
@@ -868,10 +874,10 @@ public with sharing class FieldMappingController {
         }
         return 'Customer';
     }
-
+    
     private static Map<String, QBFieldDefinition> getFallbackShopifyFieldDefinitions(String entity) {
         Map<String, QBFieldDefinition> fields = new Map<String, QBFieldDefinition>();
-
+        
         if (entity == 'Customer') {
             addQBFieldDefinition(fields, 'Shopify - id',                             'id',                                       'STRING',  true);
             addQBFieldDefinition(fields, 'Shopify - email',                          'email',                                    'STRING',  false);
@@ -914,15 +920,15 @@ public with sharing class FieldMappingController {
             addQBFieldDefinition(fields, 'Shopify - sku',      'sku',      'STRING', false);
             addQBFieldDefinition(fields, 'Shopify - title',    'title',    'STRING', false);
         }
-
+        
         return fields;
     }
-
+    
     private static String resolveQBEntity(String sfObject, String qbObject) {
         if (!String.isBlank(qbObject) && VALID_QB_ENTITIES.contains(qbObject)) {
             return qbObject;
         }
-
+        
         String key = sfObject;
         if (String.isNotBlank(sfObject) && sfObject.endsWith('__c') && sfObject.contains('__')) {
             // Check if it's a namespaced custom object (e.g. pkg__Object__c)
@@ -930,22 +936,22 @@ public with sharing class FieldMappingController {
                 key = sfObject.substringAfter('__');
             }
         }
-
+        
         if (!String.isBlank(key) && SF_TO_QB_ENTITY.containsKey(key)) {
             return SF_TO_QB_ENTITY.get(key);
         }
         return 'Invoice';
     }
-
+    
     private static List<Map<String, String>> getCarrierMappings(String integration, String actionName, String sfObject) {
         List<Map<String, String>> savedMappings = new List<Map<String, String>>();
         try {
             List<Field_Mapping__mdt> records = queryCarrierMappings(
                 integration,
-                actionName,
-                sfObject,
-                true
-            );
+            actionName,
+            sfObject,
+            true
+                );
             for (Field_Mapping__mdt record : records) {
                 if (String.isBlank(record.SF_Field__c) || String.isBlank(record.External_Field__c)) {
                     continue;
@@ -961,26 +967,26 @@ public with sharing class FieldMappingController {
             System.debug('Error loading carrier mappings: ' + e.getMessage());
             ErrorLogUtility.logException(
                 integration == 'fedex' ? 'FedEx' : 'UPS',
-                'FieldMappingController.getCarrierMappings',
-                e,
-                null,
-                null
-            );
+            'FieldMappingController.getCarrierMappings',
+            e,
+            null,
+            null
+                );
         }
         return savedMappings;
     }
-
+    
     private static String saveCarrierFieldMappings(String integration, String actionName, String sfObject, String mappingsJson) {
         try {
             String integrationActionKey = integration + '_' + actionName;
-
+            
             List<Object> rawList = String.isBlank(mappingsJson)
                 ? new List<Object>()
                 : (List<Object>) JSON.deserializeUntyped(mappingsJson);
             List<MappingRow> requestedMappings = new List<MappingRow>();
             Set<String> requestedExternalFields = new Set<String>();
             String requestedDirection = null;
-
+            
             for (Object objRow : rawList) {
                 Map<String, Object> row = (Map<String, Object>) objRow;
                 String sfField = (String) row.get('sfField');
@@ -1003,11 +1009,11 @@ public with sharing class FieldMappingController {
             if (requestedDirection == null) {
                 requestedDirection = 'SF to Carrier';
             }
-
+            
             Map<String, QBFieldDefinition> fieldDefs = integration == 'fedex'
                 ? getFedExFieldDefinitions(actionName, null)
                 : getUPSFieldDefinitions(actionName, null);
-
+            
             Set<String> mappedFields = new Set<String>();
             for (MappingRow row : requestedMappings) {
                 mappedFields.add(row.externalField);
@@ -1018,14 +1024,14 @@ public with sharing class FieldMappingController {
                     throw new AuraHandledException('Map every required ' + carrierLabel + ' field before saving.');
                 }
             }
-
+            
             List<Field_Mapping__mdt> existingMappings = queryCarrierMappings(
                 integration,
-                actionName,
-                sfObject,
-                false
-            );
-
+            actionName,
+            sfObject,
+            false
+                );
+            
             List<String> recordsToDeactivate = new List<String>();
             for (Field_Mapping__mdt existingRecord : existingMappings) {
                 if (toCanonicalCarrierDirection(existingRecord.Sync_Direction__c) != requestedDirection) {
@@ -1035,7 +1041,7 @@ public with sharing class FieldMappingController {
                     recordsToDeactivate.add(existingRecord.DeveloperName);
                 }
             }
-
+            
             String nsPrefix = getNamespacePrefix();
             Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
             for (String developerName : recordsToDeactivate) {
@@ -1045,7 +1051,7 @@ public with sharing class FieldMappingController {
                 addCustomMetadataValue(inactiveMetadata, 'Is_Active__c', false);
                 mdContainer.addMetadata(inactiveMetadata);
             }
-
+            
             for (MappingRow row : requestedMappings) {
                 Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
                 String canonicalDirection = toCanonicalCarrierDirection(row.syncDirection);
@@ -1062,15 +1068,15 @@ public with sharing class FieldMappingController {
                 addCustomMetadataValue(customMetadata, 'Is_Active__c', true);
                 mdContainer.addMetadata(customMetadata);
             }
-
+            
             if (Test.isRunningTest()) {
                 return 'Mappings Deployment Started! Job ID: 0Af000000000000';
             }
-
+            
             if (requestedMappings.isEmpty() && recordsToDeactivate.isEmpty()) {
                 return 'Mappings updated successfully.';
             }
-
+            
             Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
             return 'Mappings Deployment Started! Job ID: ' + jobId;
         } catch (AuraHandledException e) {
@@ -1078,26 +1084,26 @@ public with sharing class FieldMappingController {
         } catch (Exception e) {
             ErrorLogUtility.logException(
                 integration == 'fedex' ? 'FedEx' : 'UPS',
-                'FieldMappingController.saveCarrierFieldMappings',
-                e,
-                null,
-                null
-            );
+            'FieldMappingController.saveCarrierFieldMappings',
+            e,
+            null,
+            null
+                );
             throw new AuraHandledException(e.getMessage());
         }
     }
-
+    
     private static List<Field_Mapping__mdt> queryCarrierMappings(
         String integration,
-        String actionName,
-        String sfObject,
-        Boolean activeOnly
+    String actionName,
+    String sfObject,
+    Boolean activeOnly
     ) {
         List<Field_Mapping__mdt> records = new List<Field_Mapping__mdt>();
         if (String.isBlank(integration) || String.isBlank(actionName) || String.isBlank(sfObject)) {
             return records;
         }
-
+        
         String legacyIntegrationActionKey = integration + '_' + actionName;
         if (activeOnly == true) {
             records.addAll([
@@ -1117,7 +1123,7 @@ public with sharing class FieldMappingController {
             ]);
             return records;
         }
-
+        
         records.addAll([
             SELECT DeveloperName, Action__c, SF_Field__c, External_Field__c, Sync_Direction__c, Is_Active__c
             FROM Field_Mapping__mdt
@@ -1133,7 +1139,7 @@ public with sharing class FieldMappingController {
         ]);
         return records;
     }
-
+    
     private static String toCanonicalCarrierDirection(String directionValue) {
         if (String.isBlank(directionValue)) {
             return 'SF to Carrier';
@@ -1142,12 +1148,12 @@ public with sharing class FieldMappingController {
         if (normalized == 'carrier to sf' ||
             normalized == 'carrier to salesforce' ||
             normalized == 'fedex to sf' ||
-            normalized == 'ups to sf') {
+        normalized == 'ups to sf') {
             return 'Carrier to SF';
         }
         return 'SF to Carrier';
     }
-
+    
     private static String toProviderDirection(String integration, String directionValue) {
         String canonical = toCanonicalCarrierDirection(directionValue);
         if (integration == 'fedex') {
@@ -1158,11 +1164,11 @@ public with sharing class FieldMappingController {
         }
         return canonical;
     }
-
+    
     private static Map<String, QBFieldDefinition> getFedExFieldDefinitions(String actionName, String direction) {
         Map<String, QBFieldDefinition> fields = new Map<String, QBFieldDefinition>();
         String act = String.isBlank(actionName) ? '' : actionName;
-
+        
         if (act == 'validateAddress') {
             addQBFieldDefinition(fields, 'FedEx - streetLines[0]',          'streetLines[0]',               'STRING', true);
             addQBFieldDefinition(fields, 'FedEx - city',                    'city',                         'STRING', true);
@@ -1230,14 +1236,14 @@ public with sharing class FieldMappingController {
         } else {
             addQBFieldDefinition(fields, 'FedEx - masterTrackingNumber',            'masterTrackingNumber',             'STRING', false);
         }
-
+        
         return fields;
     }
-
+    
     private static Map<String, QBFieldDefinition> getUPSFieldDefinitions(String actionName, String direction) {
         Map<String, QBFieldDefinition> fields = new Map<String, QBFieldDefinition>();
         String act = String.isBlank(actionName) ? '' : actionName;
-
+        
         if (act == 'validateAddress') {
             addQBFieldDefinition(fields, 'UPS - AddressLine',              'AddressLine',              'STRING', true);
             addQBFieldDefinition(fields, 'UPS - City',                     'City',                     'STRING', true);
@@ -1306,64 +1312,64 @@ public with sharing class FieldMappingController {
         } else {
             addQBFieldDefinition(fields, 'UPS - masterTrackingNumber',            'masterTrackingNumber',            'STRING', false);
         }
-
+        
         return fields;
     }
-
+    
     private static String buildRecordName(String integration, String sfObject, String extField) {
         String cleanObjName = sfObject.replace('__c', '').replaceAll('__+', '_');
         String sanitizedExternalField = extField.replaceAll('[^a-zA-Z0-9]', '_').replaceAll('__+', '_');
         String baseName = integration + '_' + cleanObjName + '_' + sanitizedExternalField;
         String hashSuffix = '_' + EncodingUtil.convertToHex(
             Crypto.generateDigest('MD5', Blob.valueOf(baseName))
-        ).substring(0, 8).toLowerCase();
-
+            ).substring(0, 8).toLowerCase();
+        
         Integer maxPrefixLength = 40 - hashSuffix.length();
         String prefix = baseName.length() > maxPrefixLength
             ? baseName.substring(0, maxPrefixLength)
             : baseName;
-
+        
         prefix = prefix.replaceAll('_+$', '');
         if (prefix.length() + hashSuffix.length() > 40) {
             prefix = prefix.substring(0, 40 - hashSuffix.length()).replaceAll('_+$', '');
         }
         return prefix + hashSuffix;
     }
-
+    
     private static void addCustomMetadataValue(Metadata.CustomMetadata metadataRecord, String fieldName, Object value) {
         Metadata.CustomMetadataValue customValue = new Metadata.CustomMetadataValue();
         customValue.field = getNamespacePrefix() + fieldName;
         customValue.value = value;
         metadataRecord.values.add(customValue);
     }
-
+    
     private static String mapSalesforceType(Schema.DisplayType displayType) {
         return normalizeType(String.valueOf(displayType));
     }
-
+    
     private class FieldWrapper implements Comparable {
         public String label { get; set; }
         public String value { get; set; }
         public String type { get; set; }
-
+        
         public FieldWrapper(String label, String value, String type) {
             this.label = label;
             this.value = value;
             this.type = type;
         }
-
+        
         public Integer compareTo(Object obj) {
             FieldWrapper other = (FieldWrapper) obj;
             return this.label.toLowerCase().compareTo(other.label.toLowerCase());
         }
     }
-
+    
     private class QBFieldDefinition implements Comparable {
         public String label { get; set; }
         public String value { get; set; }
         public String type { get; set; }
         public Boolean required { get; set; }
-
+        
         public Integer compareTo(Object obj) {
             QBFieldDefinition other = (QBFieldDefinition) obj;
             if (this.required != other.required) {
@@ -1372,16 +1378,147 @@ public with sharing class FieldMappingController {
             return this.label.toLowerCase().compareTo(other.label.toLowerCase());
         }
     }
-
+    
     private class MappingRow {
         public String sfField { get; set; }
         public String externalField { get; set; }
         public String syncDirection { get; set; }
-
+        
         public MappingRow(String sfField, String externalField, String syncDirection) {
             this.sfField = sfField;
             this.externalField = externalField;
             this.syncDirection = syncDirection;
         }
     }
+    
+    @AuraEnabled
+    public static String saveChildFieldMappings(String integration, String sfObject, String qbObject, String mappingsJson) {
+        try {
+            List<Object> rawList = String.isBlank(mappingsJson) ? new List<Object>() : (List<Object>) JSON.deserializeUntyped(mappingsJson);
+            List<MappingRow> requestedMappings = new List<MappingRow>();
+            Set<String> requestedExternalFields = new Set<String>();
+            
+            for (Object objRow : rawList) {
+                Map<String, Object> row = (Map<String, Object>) objRow;
+                String sfField = (String) row.get('sfField');
+                String extField = (String) row.get('qbField');
+                String syncDirection = (String) row.get('syncDirection');
+                if (String.isBlank(syncDirection)) syncDirection = DIRECTION_TWO_WAY;
+                
+                if (String.isBlank(sfField) || String.isBlank(extField)) continue;
+                if (requestedExternalFields.contains(extField)) {
+                    throw new AuraHandledException('Each QuickBooks field can only be mapped once.');
+                }
+                requestedMappings.add(new MappingRow(sfField, extField, syncDirection));
+                requestedExternalFields.add(extField);
+            }
+            
+            // Existing active mappings for this child object
+            List<Field_Mapping__mdt> existingMappings = [
+            SELECT DeveloperName, External_Field__c, Is_Active__c
+            FROM Field_Mapping__mdt
+            WHERE Integration__c = :integration AND SF_Object__c = :sfObject
+        ];
+            
+            List<String> recordsToDeactivate = new List<String>();
+            for (Field_Mapping__mdt existingRecord : existingMappings) {
+                if (existingRecord.Is_Active__c && !requestedExternalFields.contains(existingRecord.External_Field__c)) {
+                    recordsToDeactivate.add(existingRecord.DeveloperName);
+                }
+            }
+            
+            String nsPrefix = getNamespacePrefix();
+            Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
+            
+            for (String developerName : recordsToDeactivate) {
+                Metadata.CustomMetadata inactiveMetadata = new Metadata.CustomMetadata();
+                inactiveMetadata.fullName = nsPrefix + 'Field_Mapping__mdt.' + developerName;
+                inactiveMetadata.label = developerName;
+                addCustomMetadataValue(inactiveMetadata, 'Is_Active__c', false);
+                mdContainer.addMetadata(inactiveMetadata);
+            }
+            
+            for (MappingRow row : requestedMappings) {
+                Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
+                customMetadata.fullName = nsPrefix + 'Field_Mapping__mdt.' + buildRecordName(integration, sfObject, row.externalField);
+                String label = sfObject + ' ' + row.sfField;
+                customMetadata.label = label.length() > 40 ? label.substring(0, 40) : label;
+                
+                addCustomMetadataValue(customMetadata, 'Integration__c', integration);
+                addCustomMetadataValue(customMetadata, 'SF_Object__c', sfObject);
+                addCustomMetadataValue(customMetadata, 'SF_Field__c', row.sfField);
+                addCustomMetadataValue(customMetadata, 'External_Field__c', row.externalField);
+                addCustomMetadataValue(customMetadata, 'Sync_Direction__c', row.syncDirection);
+                addCustomMetadataValue(customMetadata, 'Is_Active__c', true);
+                
+                mdContainer.addMetadata(customMetadata);
+            }
+            
+            if (Test.isRunningTest()) return 'Child Mappings Deployment Started!';
+            if (requestedMappings.isEmpty() && recordsToDeactivate.isEmpty()) return 'Child mappings updated successfully.';
+            
+            Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
+            return 'Child Mappings Deployment Started! Job ID: ' + jobId;
+            
+        } catch (AuraHandledException e) { throw e; }
+        catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+    }
+
+    // Get the current value of Map Draft Orders as Estimates for QuickBooks config
+@AuraEnabled(cacheable=true)
+public static Boolean getDraftOrderSetting() {
+    try {
+        Quickbridge_Config__mdt config = [
+    SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c
+    FROM QuickBridgeTLG__Quickbridge_Config__mdt
+    WHERE DeveloperName = 'QuickBooks'
+    LIMIT 1
+];
+        return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+// Save the value using Metadata API deployment
+@AuraEnabled
+public static void saveDraftOrderSetting(Boolean value) {
+    try {
+        // Fetch the existing custom metadata record to get its full name
+        Quickbridge_Config__mdt config = [
+            SELECT Id, DeveloperName
+            FROM QuickBridgeTLG__Quickbridge_Config__mdt
+            WHERE DeveloperName = 'QuickBooks'
+            LIMIT 1
+        ];
+        if (config == null) {
+            throw new AuraHandledException('QuickBooks configuration record not found.');
+        }
+
+        String nsPrefix = getNamespacePrefix(); 
+        String fullRecordName = nsPrefix + 'Quickbridge_Config__mdt.' + config.DeveloperName;
+
+        Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
+        customMetadata.fullName = fullRecordName;
+        customMetadata.label = 'QuickBooks';
+
+        // Add the field value (boolean)
+        Metadata.CustomMetadataValue fieldValue = new Metadata.CustomMetadataValue();
+        fieldValue.field = nsPrefix + 'Map_Draft_Orders_as_Estimates__c';
+        fieldValue.value = value;
+        customMetadata.values.add(fieldValue);
+
+        Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
+        mdContainer.addMetadata(customMetadata);
+
+        if (!Test.isRunningTest()) {
+            Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
+            System.debug('Deployment started for draft order setting: ' + jobId);
+        }
+    } catch (Exception e) {
+        throw new AuraHandledException(e.getMessage());
+    }
+}
 }

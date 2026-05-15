@@ -7,6 +7,51 @@ public with sharing class InvoiceQRService {
     }
     
     public class CustomQRException extends Exception {}
+
+    public static String buildQRCodeImageUrl(String paymentUrl) {
+        if (String.isBlank(paymentUrl)) {
+            throw new CustomQRException('Payment URL is required to generate a QR code.');
+        }
+        return 'https://quickchart.io/qr?text=' + EncodingUtil.urlEncode(paymentUrl, 'UTF-8');
+    }
+
+    public static Id saveQRCodeFileForUrl(Id parentRecordId, String paymentUrl, String title) {
+        if (parentRecordId == null) {
+            throw new CustomQRException('A parent record is required to save the QR code file.');
+        }
+        String qrImageUrl = buildQRCodeImageUrl(paymentUrl);
+        String fileTitle = String.isBlank(title) ? 'Payment QR Code' : title;
+        String htmlBody =
+            '<!doctype html><html><head><meta charset="UTF-8"><title>' + fileTitle.escapeHtml4() + '</title></head>' +
+            '<body style="font-family: Arial, sans-serif; text-align: center; padding: 24px;">' +
+            '<h1 style="font-size: 18px;">Payment QR Code</h1>' +
+            '<p><img src="' + qrImageUrl.escapeHtml4() + '" alt="Payment QR Code" width="260" height="260"/></p>' +
+            '<p><a href="' + paymentUrl.escapeHtml4() + '">Open payment invoice</a></p>' +
+            '</body></html>';
+
+        ContentVersion contentVersion = new ContentVersion(
+            Title = fileTitle,
+            PathOnClient = fileTitle.replaceAll('[^A-Za-z0-9_ -]', '') + '.html',
+            VersionData = Blob.valueOf(htmlBody)
+        );
+        insert contentVersion;
+
+        contentVersion = [
+            SELECT ContentDocumentId
+            FROM ContentVersion
+            WHERE Id = :contentVersion.Id
+            LIMIT 1
+        ];
+
+        insert new ContentDocumentLink(
+            ContentDocumentId = contentVersion.ContentDocumentId,
+            LinkedEntityId = parentRecordId,
+            ShareType = 'V',
+            Visibility = 'AllUsers'
+        );
+
+        return contentVersion.ContentDocumentId;
+    }
     
     @AuraEnabled(cacheable=false)
     public static QRWrapper generateAndSaveQRCode(Id invoiceId) {

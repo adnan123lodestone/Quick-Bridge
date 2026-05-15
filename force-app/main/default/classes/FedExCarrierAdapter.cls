@@ -236,12 +236,14 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
         shipmentValues.put('masterTrackingNumber', shipment.get('masterTrackingNumber'));
         shipmentValues.put('status', 'Created');
         shipmentValues.put('serviceType', shipment.get('serviceType'));
-        // Try shipmentRating.totalNetCharge.amount first, then shipmentRateDetails[0].totalNetCharge
         Object totalNetCharge = CarrierMappingService.getPath(shipment, 'shipmentRating.totalNetCharge.amount');
         Object currencyCode = CarrierMappingService.getPath(shipment, 'shipmentRating.totalNetCharge.currency');
         if (totalNetCharge == null) {
             totalNetCharge = CarrierMappingService.getPath(shipment, 'shipmentRating.shipmentRateDetails.0.totalNetCharge');
             currencyCode = CarrierMappingService.getPath(shipment, 'shipmentRating.shipmentRateDetails.0.currency');
+        }
+        if (totalNetCharge == null) {
+            totalNetCharge = CarrierMappingService.getPath(shipment, 'pieceResponses.0.netChargeAmount');
         }
         shipmentValues.put('totalNetCharge', totalNetCharge);
         shipmentValues.put('currency', currencyCode);

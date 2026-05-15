@@ -542,7 +542,7 @@
                                 style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                 <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">Stripe Mapping
                                 </h2>
-                                <p><c-invoice-mapping-tool></c-invoice-mapping-tool></p>
+                                <p><c-invoice-mapping-tool gateway="stripe"></c-invoice-mapping-tool></p>
                             </div>
                         </template>
 
@@ -551,16 +551,16 @@
                                 style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                 <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">PayPal Mapping
                                 </h2>
-                                <p><c-invoice-mapping-tool></c-invoice-mapping-tool></p>
+                                <p style="color: #64748b;">Invoice mapping for PayPal will be added after the Stripe flow is verified.</p>
                             </div>
                         </template>
 
                         <template if:true={isAuthNetSelected}>
                             <div class="slds-box"
                                 style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
-                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">PayPal Mapping
+                                <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">Authorize.Net Mapping
                                 </h2>
-                                <p><c-invoice-mapping-tool></c-invoice-mapping-tool></p>
+                                <p style="color: #64748b;">Invoice mapping for Authorize.Net will be added after the Stripe flow is verified.</p>
                             </div>
                         </template>
 

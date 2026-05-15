@@ -303,4 +303,84 @@ public without sharing class ErrorLogUtility {
         }
         return messages.isEmpty() ? 'Unknown DML error.' : String.join(messages, ' | ');
     }
+
+    @AuraEnabled(cacheable=true)
+    public static Map<String, Object> getDynamicLogs(String gatewayName) {
+        Map<String, Object> result = new Map<String, Object>();
+        List<Map<String, Object>> columns = new List<Map<String, Object>>();
+        List<String> queryFields = new List<String>{'Id', 'Name'}; 
+        
+        Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+        Schema.SObjectType sObjType = globalDescribe.get('QuickBridgeTLG__Error_Log__c');
+        if (sObjType == null) {
+            sObjType = globalDescribe.get('Error_Log__c'); // Fallback if no namespace
+        }
+        
+        // Fetch the Field Set
+        Schema.FieldSet fieldSet = sObjType.getDescribe().fieldSets.getMap().get('QuickBridgeTLG__Default_Error_Logs');
+        if (fieldSet == null) {
+            fieldSet = sObjType.getDescribe().fieldSets.getMap().get('Default_Error_Logs');
+        }
+        
+        // Build Columns for LWC Datatable & Extract SOQL Fields
+        for (Schema.FieldSetMember fsm : fieldSet.getFields()) {
+            String fieldPath = fsm.getFieldPath();
+            
+            // Add field to SOQL list
+            if (!queryFields.contains(fieldPath)) {
+                queryFields.add(fieldPath);
+            }
+            
+            Map<String, Object> col = new Map<String, Object>();
+            col.put('label', fsm.getLabel());
+            
+            Schema.DisplayType sfType = fsm.getType();
+            
+            // A) Handle Date/Time Fields
+            if (sfType == Schema.DisplayType.DATETIME || sfType == Schema.DisplayType.DATE) {
+                col.put('type', 'date');
+                col.put('fieldName', fieldPath);
+                col.put('typeAttributes', new Map<String, Object>{
+                    'year' => 'numeric', 'month' => 'short', 'day' => '2-digit', 
+                    'hour' => '2-digit', 'minute' => '2-digit'
+                });
+            } 
+            // B) Handle Clickable Lookups & ID Text Fields
+            else if (sfType == Schema.DisplayType.REFERENCE || fieldPath.contains('Source_Record_Id__c') || fieldPath.contains('Action_Source_Record_Id__c')) {
+                col.put('type', 'url');
+                col.put('fieldName', fieldPath + '_Url'); // Custom JS property for URL
+                col.put('typeAttributes', new Map<String, Object>{
+                    'label' => new Map<String, String>{ 'fieldName' => fieldPath + '_Name' },
+                    'target' => '_blank'
+                });
+                
+                if (sfType == Schema.DisplayType.REFERENCE) {
+                    String relationName = fieldPath.endsWith('__c') ? fieldPath.replace('__c', '__r') : fieldPath.replace('Id', '');
+                    queryFields.add(relationName + '.Name');
+                }
+            }
+            // C) Normal Text Fields
+            else {
+                col.put('type', 'text');
+                col.put('fieldName', fieldPath);
+                col.put('wrapText', true);
+            }
+            
+            columns.add(col);
+        }
+        
+        // 4. Build and Execute Dynamic SOQL
+        String objectName = sObjType.getDescribe().getName();
+        String gatewayField = objectName.contains('QuickBridgeTLG__') ? 'QuickBridgeTLG__Gateway_Name__c' : 'Gateway_Name__c';
+        
+        String query = 'SELECT ' + String.join(queryFields, ', ') + 
+                       ' FROM ' + objectName + 
+                       ' WHERE ' + gatewayField + ' = :gatewayName ' +
+                       ' ORDER BY CreatedDate DESC LIMIT 500';
+                       
+        result.put('columns', columns);
+        result.put('records', Database.query(query));
+        
+        return result;
+    }
 }

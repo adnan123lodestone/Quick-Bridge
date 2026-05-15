@@ -1,0 +1,49 @@
+<template>
+    <div class="invoice-action-panel">
+        <template if:true={isPanelLoading}>
+            <div class="invoice-action-loading">
+                <lightning-spinner size="x-small" alternative-text="Loading invoice action"></lightning-spinner>
+            </div>
+        </template>
+
+        <template if:false={isPanelLoading}>
+            <div class="invoice-action-bar">
+                <template if:false={hasPaymentOptions}>
+                    <span class="invoice-action-message">{panelMessage}</span>
+                </template>
+
+                <template if:true={hasPaymentOptions}>
+                    <div class="invoice-selector-wrap">
+                        <span class="invoice-label">Payment</span>
+                        <div class="invoice-select-box">
+                            <lightning-combobox
+                                label="Payment integration"
+                                value={selectedGateway}
+                                options={paymentOptions}
+                                placeholder="Select"
+                                disabled={isLoading}
+                                onchange={handleGatewayChange}
+                                variant="label-hidden">
+                            </lightning-combobox>
+                        </div>
+                    </div>
+
+                    <div class="invoice-divider"></div>
+
+                    <button
+                        type="button"
+                        class="invoice-action-btn"
+                        onclick={handleCreateInvoice}
+                        disabled={createDisabled}>
+                        <template if:true={isLoading}>
+                            <lightning-spinner size="x-small" alternative-text="Creating invoice"></lightning-spinner>
+                        </template>
+                        <template if:false={isLoading}>
+                            Create Invoice
+                        </template>
+                    </button>
+                </template>
+            </div>
+        </template>
+    </div>
+</template>

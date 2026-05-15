@@ -618,3 +618,141 @@ fieldset {
         border-top: 1px solid #f1f5f9 !important;
     }
 }
+
+/* Fixed layout table - equal column distribution */
+.new-mapping-table.fixed-layout {
+    table-layout: fixed;
+    width: 100%;
+}
+
+/* Full width select inputs */
+.custom-select-table.full-width {
+    width: 100%;
+}
+
+/* Sync direction select - slightly smaller width */
+.custom-select-table.sync-direction-select {
+    width: auto;
+    min-width: 100px;
+    max-width: 140px;
+}
+
+/* Text alignment utilities */
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+/* Required field star */
+.required-star {
+    color: #ef4444;
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-left: 6px;
+    line-height: 1;
+}
+
+/* Locked icon styling */
+.locked-icon {
+    --sds-c-icon-color-foreground-default: #94a3b8;
+}
+
+/* Scrollable for responsiveness */
+.slds-scrollable_x {
+    overflow-x: auto;
+}
+
+/* Ensure parent and child tables have same card styling */
+.ui-card.table-card {
+    margin-bottom: 1.5rem;
+}
+
+/* Make responsive for mobile */
+@media (max-width: 768px) {
+    .new-mapping-table.fixed-layout,
+    .new-mapping-table.fixed-layout colgroup,
+    .new-mapping-table.fixed-layout col {
+        display: none;
+    }
+    
+    .new-mapping-table.fixed-layout tbody,
+    .new-mapping-table.fixed-layout tr,
+    .new-mapping-table.fixed-layout td {
+        display: block;
+        width: 100%;
+    }
+    
+    .new-mapping-table.fixed-layout tr {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        position: relative;
+    }
+    
+    .new-mapping-table.fixed-layout td {
+        padding: 0.5rem 0;
+        text-align: left;
+        border: none;
+    }
+    
+    .new-mapping-table.fixed-layout td:before {
+        content: attr(data-label);
+        font-weight: bold;
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.8rem;
+        color: #64748b;
+    }
+}
+/* Make child "Add Line Field" button same as top "Add Field" button */
+.btn-primary.btn-inline {
+    width: auto !important;
+    white-space: nowrap;
+    padding: 0 24px;
+    height: 40px;
+}
+
+/* Professional heading style */
+.box-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    letter-spacing: -0.2px;
+}
+
+.ui-card.table-card .slds-grid.slds-grid_align-spread {
+    margin-bottom: 1rem !important;
+    align-items: center;
+}
+
+/* Fix button width */
+.btn-primary.btn-inline {
+    width: auto !important;
+    white-space: nowrap;
+    padding: 0 24px;
+    height: 40px;
+}
+
+/* Improve heading style */
+.box-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    letter-spacing: -0.2px;
+}
+
+/* Align heading row properly */
+.ui-card.table-card .slds-grid.slds-grid_align-spread {
+    margin-bottom: 1rem !important;
+    align-items: center;
+}

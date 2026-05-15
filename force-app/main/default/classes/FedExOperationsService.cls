@@ -512,8 +512,17 @@ public with sharing class FedExOperationsService {
         shipmentValues.put('masterTrackingNumber', shipment.get('masterTrackingNumber'));
         shipmentValues.put('status', 'Created');
         shipmentValues.put('serviceType', shipment.get('serviceType'));
-        shipmentValues.put('totalNetCharge', FedExMappingService.getPath(shipment, 'shipmentRating.totalNetCharge.amount'));
-        shipmentValues.put('currency', FedExMappingService.getPath(shipment, 'shipmentRating.totalNetCharge.currency'));
+        Object totalNetCharge = FedExMappingService.getPath(shipment, 'shipmentRating.totalNetCharge.amount');
+        Object currencyCode = FedExMappingService.getPath(shipment, 'shipmentRating.totalNetCharge.currency');
+        if (totalNetCharge == null) {
+            totalNetCharge = FedExMappingService.getPath(shipment, 'shipmentRating.shipmentRateDetails.0.totalNetCharge');
+            currencyCode = FedExMappingService.getPath(shipment, 'shipmentRating.shipmentRateDetails.0.currency');
+        }
+        if (totalNetCharge == null) {
+            totalNetCharge = FedExMappingService.getPath(shipment, 'pieceResponses.0.netChargeAmount');
+        }
+        shipmentValues.put('totalNetCharge', totalNetCharge);
+        shipmentValues.put('currency', currencyCode);
         result.put('shipment', shipmentValues);
 
         Object piece = FedExMappingService.getPath(shipment, 'pieceResponses.0');

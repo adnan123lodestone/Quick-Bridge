@@ -6,6 +6,9 @@ import getQuickBooksFields from '@salesforce/apex/FieldMappingController.getQuic
 import getExistingMappings from '@salesforce/apex/FieldMappingController.getExistingMappings';
 import getMappingDirectionAvailability from '@salesforce/apex/FieldMappingController.getMappingDirectionAvailability';
 import saveFieldMappings from '@salesforce/apex/FieldMappingController.saveFieldMappings';
+import saveChildFieldMappings from '@salesforce/apex/FieldMappingController.saveChildFieldMappings';
+import getDraftOrderSetting from '@salesforce/apex/FieldMappingController.getDraftOrderSetting';
+import saveDraftOrderSetting from '@salesforce/apex/FieldMappingController.saveDraftOrderSetting';
 
 export default class FieldMappingComponent extends LightningElement {
     @track selectedIntegration = 'qbonline';
@@ -40,8 +43,25 @@ export default class FieldMappingComponent extends LightningElement {
         { label: 'Tax Code', value: 'TaxCode', selected: false }
     ];
 
+    // --- Child Mapping Variables ---
+    @track childSfObject = '';
+    @track childQbObject = 'InvoiceLine';
+    @track childMappingRows = [];
+    @track childSfFieldOptions = [];
+    @track childQbFieldOptions = [];
+    @track showChildMapping = false;
+    @track mapDraftAsEstimate = false;
+
     connectedCallback() {
         this.loadInitialData();
+
+        getDraftOrderSetting()
+            .then(result => {
+                this.mapDraftAsEstimate = result;
+            })
+            .catch(error => {
+                console.error('Error loading draft order setting:', error);
+            });
     }
 
     loadInitialData() {
@@ -115,7 +135,6 @@ export default class FieldMappingComponent extends LightningElement {
             Item_Sales_Tax__c: 'TaxCode'
         };
 
-        // Handle namespaced objects by stripping prefix for map lookup
         let key = sfObject;
         if (sfObject && sfObject.endsWith('__c') && (sfObject.match(/__/g) || []).length === 2) {
             key = sfObject.split('__')[1] + '__c';
@@ -182,6 +201,22 @@ export default class FieldMappingComponent extends LightningElement {
             ...opt,
             selected: opt.value === objectName
         }));
+
+        const childObjectMap = {
+            'Order': 'OrderItem',
+            'QuickBridgeTLG__Invoice__c': 'QuickBridgeTLG__Invoice_Line__c',
+            'Invoice__c': 'Invoice_Line__c'
+        };
+
+        if (childObjectMap[this.selectedSFObject]) {
+            this.childSfObject = childObjectMap[this.selectedSFObject];
+            this.showChildMapping = true;
+            this.loadChildFields();
+        } else {
+            this.showChildMapping = false;
+            this.childSfObject = '';
+            this.childMappingRows = [];
+        }
 
         Promise.all([
             this.loadObjectFields(objectName),
@@ -310,7 +345,7 @@ export default class FieldMappingComponent extends LightningElement {
         this.updateRowDropdowns();
     }
 
-    handleSave() {
+    async handleSave() {
         if (this.isMappingBlocked) {
             this.showToast('Validation Error', this.directionConflictMessage, 'error');
             return;
@@ -351,6 +386,24 @@ export default class FieldMappingComponent extends LightningElement {
                 this.isLoading = false;
                 this.showToast('Error', error.body?.message || error.message, 'error');
             });
+
+        if (this.showChildMapping && this.childMappingRows.length) {
+            const childRowsToSave = this.childMappingRows
+                .filter(row => row.sfField && row.qbField)
+                .map(row => ({
+                    sfField: row.sfField,
+                    qbField: row.qbField,
+                    syncDirection: row.syncDirection
+                }));
+            if (childRowsToSave.length) {
+                await saveChildFieldMappings({
+                    integration: this.selectedIntegration,
+                    sfObject: this.childSfObject,
+                    qbObject: this.childQbObject,
+                    mappingsJson: JSON.stringify(childRowsToSave)
+                });
+            }
+        }
     }
 
     handleReset() {
@@ -435,6 +488,10 @@ export default class FieldMappingComponent extends LightningElement {
         return normSf === normQb;
     }
 
+    get showDraftOrderCheckbox() {
+        return this.showChildMapping && this.selectedSFObject === 'Order';
+    }
+
     showToast(title, message, variant) {
         this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
     }
@@ -446,5 +503,208 @@ export default class FieldMappingComponent extends LightningElement {
             row.id === rowId ? { ...row, syncDirection: value } : row
         );
         this.updateRowDropdowns();
+    }
+
+
+    loadChildFields() {
+        this.childSfFieldOptions = [];
+        this.childQbFieldOptions = [];
+        this.childMappingRows = [];
+
+        Promise.all([
+            getObjectFields({ objectName: this.childSfObject }),
+            getQuickBooksFields({ sfObject: this.childSfObject, qbObject: this.childQbObject }),
+            getExistingMappings({ integration: this.selectedIntegration, sfObject: this.childSfObject })
+        ])
+            .then(([sfFields, qbFields, savedMappings]) => {
+                this.childSfFieldOptions = (sfFields || []).map(f => ({ label: f.label, value: f.value, type: f.type }));
+                this.childQbFieldOptions = (qbFields || []).map(f => ({
+                    label: f.label + (f.required ? ' *' : ''),
+                    value: f.value,
+                    type: f.type,
+                    required: f.required
+                }));
+                this.initializeChildRows(savedMappings || []);
+            })
+            .catch(error => {
+                console.error('Error loading child fields:', error);
+                this.showToast('Error', 'Failed to load child fields: ' + (error.body?.message || error.message), 'error');
+            });
+    }
+
+    initializeChildRows(savedMappings = []) {
+        if (!this.childQbFieldOptions || this.childQbFieldOptions.length === 0) {
+            this.childMappingRows = [];
+            return;
+        }
+
+        let cCounter = 1000;
+        const rows = [];
+
+        // Required QB fields – mandatory rows
+        this.childQbFieldOptions.forEach(qbField => {
+            if (!qbField) return;
+            if (qbField.required) {
+                const existing = savedMappings.find(m => m.externalField === qbField.value);
+                const syncDir = existing ? this.getAvailableDirectionValue(existing.syncDirection) : this.getAvailableDirectionValue();
+                rows.push({
+                    id: cCounter++,
+                    sfField: existing?.sfField || '',
+                    qbField: qbField.value,
+                    isMandatory: true,
+                    isSFFieldDisabled: false,
+                    syncDirection: syncDir,
+                    sfFieldOptions: this.buildChildSfOptions(existing?.sfField || ''),
+                    qbFieldOptions: this.buildChildQbOptions(qbField.value),
+                    syncDirectionOptions: this.buildSyncDirectionOptions(syncDir)
+                });
+            }
+        });
+
+        // Non‑required saved mappings (additional rows)
+        savedMappings.forEach(mapping => {
+            const isRequired = this.childQbFieldOptions.some(f => f.required && f.value === mapping.externalField);
+            if (!isRequired) {
+                const syncDir = this.getAvailableDirectionValue(mapping.syncDirection);
+                rows.push({
+                    id: cCounter++,
+                    sfField: mapping.sfField,
+                    qbField: mapping.externalField,
+                    isMandatory: false,
+                    isSFFieldDisabled: false,
+                    syncDirection: syncDir,
+                    sfFieldOptions: this.buildChildSfOptions(mapping.sfField),
+                    qbFieldOptions: this.buildChildQbOptions(mapping.externalField),
+                    syncDirectionOptions: this.buildSyncDirectionOptions(syncDir)
+                });
+            }
+        });
+
+        this.childMappingRows = rows;
+    }
+
+    buildChildSfOptions(selectedValue) {
+        if (!this.childSfFieldOptions || !Array.isArray(this.childSfFieldOptions)) {
+            return [];
+        }
+        return this.childSfFieldOptions.map(opt => ({
+            ...opt,
+            selected: opt.value === selectedValue
+        }));
+    }
+
+    buildChildQbOptions(selectedValue) {
+        if (!this.childQbFieldOptions || !Array.isArray(this.childQbFieldOptions)) {
+            return [];
+        }
+        return this.childQbFieldOptions.map(opt => ({
+            ...opt,
+            selected: opt.value === selectedValue
+        }));
+    }
+
+    buildSyncDirectionOptions(selectedValue) {
+        const allowedDirections = this.getAllowedSyncDirectionOptions();
+        if (!allowedDirections || !Array.isArray(allowedDirections)) {
+            return [];
+        }
+        return allowedDirections.map((option) => ({
+            ...option,
+            selected: option.value === selectedValue
+        }));
+    }
+
+    handleAddChildRow() {
+        const newId = this.childMappingRows.length > 0
+            ? Math.max(...this.childMappingRows.map(r => r.id)) + 1
+            : 1000;
+        const defaultDir = this.getAvailableDirectionValue();
+
+        this.childMappingRows = [...this.childMappingRows, {
+            id: newId,
+            sfField: '',
+            qbField: '',
+            isMandatory: false,
+            isSFFieldDisabled: true,
+            syncDirection: defaultDir,
+            sfFieldOptions: this.buildChildSfOptions(''),
+            qbFieldOptions: this.buildChildQbOptions(''),
+            syncDirectionOptions: this.buildSyncDirectionOptions(defaultDir)
+        }];
+    }
+
+    handleRemoveChildRow(event) {
+        const rowId = event.currentTarget?.dataset?.rowId;
+        if (!rowId) return;
+        const numericRowId = Number(rowId);
+        if (isNaN(numericRowId)) return;
+
+        this.childMappingRows = this.childMappingRows.filter(row => row && row.id !== numericRowId);
+    }
+
+    handleChildSfFieldChange(event) {
+        const rowId = event.currentTarget?.dataset?.rowId;
+        if (!rowId) return;
+        const numericRowId = Number(rowId);
+        if (isNaN(numericRowId)) return;
+
+        const value = event.target.value;
+
+        this.childMappingRows = this.childMappingRows.map(row => {
+            if (!row || row.id !== numericRowId) return row;
+            return {
+                ...row,
+                sfField: value,
+                sfFieldOptions: this.buildChildSfOptions(value)
+            };
+        }).filter(row => row);
+    }
+
+    handleChildQbFieldChange(event) {
+        const rowId = event.currentTarget?.dataset?.rowId;
+        if (!rowId) return;
+        const numericRowId = Number(rowId);
+        if (isNaN(numericRowId)) return;
+
+        const value = event.target.value;
+
+        this.childMappingRows = this.childMappingRows.map(row => {
+            if (!row || row.id !== numericRowId) return row;
+            const isSFFieldDisabled = !value;
+            return {
+                ...row,
+                qbField: value,
+                qbFieldOptions: this.buildChildQbOptions(value),
+                isSFFieldDisabled: isSFFieldDisabled
+            };
+        }).filter(row => row);
+    }
+
+    handleChildSyncDirectionChange(event) {
+        const rowId = event.currentTarget?.dataset?.rowId;
+        if (!rowId) return;
+        const numericRowId = Number(rowId);
+        if (isNaN(numericRowId)) return;
+
+        const value = event.target.value;
+
+        this.childMappingRows = this.childMappingRows.map(row => {
+            if (!row || row.id !== numericRowId) return row;
+            return {
+                ...row,
+                syncDirection: value,
+                syncDirectionOptions: this.buildSyncDirectionOptions(value)
+            };
+        }).filter(row => row);
+    }
+
+    handleDraftChange(event) {
+        this.mapDraftAsEstimate = event.target.checked;
+        saveDraftOrderSetting({ value: this.mapDraftAsEstimate })
+            .catch(error => {
+                this.showToast('Error', 'Failed to save setting: ' + (error.body?.message || error.message), 'error');
+                // Revert checkbox if save fails
+                this.mapDraftAsEstimate = !event.target.checked;
+            });
     }
 }
