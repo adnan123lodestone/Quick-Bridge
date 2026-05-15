@@ -41,7 +41,7 @@ public with sharing class CarrierTrackingStatusBatch implements Database.Batchab
                     String.isBlank(integrationType) ? 'Carrier' : integrationType,
                     'CarrierTrackingStatusBatch.execute',
                     e,
-                    'Carrier_Shipment__c',
+                    'QuickBridgeTLG__Carrier_Shipment__c',
                     shipmentId
                 );
             }

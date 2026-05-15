@@ -55,7 +55,7 @@ private class CarrierRecordActionControllerTest {
         insert shipment;
 
         CarrierOperationsService.OperationResult result =
-            CarrierRecordActionController.runAction(shipment.Id, 'Carrier_Shipment__c', 'syncTrackingStatus');
+            CarrierRecordActionController.runAction(shipment.Id, 'QuickBridgeTLG__Carrier_Shipment__c', 'syncTrackingStatus');
 
         System.assertEquals(true, result.success);
         System.assertEquals(shipment.Id, result.shipmentId);

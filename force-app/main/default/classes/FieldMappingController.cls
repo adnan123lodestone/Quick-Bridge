@@ -1182,7 +1182,7 @@ public with sharing class FieldMappingController {
             addQBFieldDefinition(fields, 'FedEx - recipient.stateOrProvinceCode',   'recipient.stateOrProvinceCode',    'STRING', true);
             addQBFieldDefinition(fields, 'FedEx - recipient.postalCode',            'recipient.postalCode',             'STRING', true);
             addQBFieldDefinition(fields, 'FedEx - recipient.countryCode',           'recipient.countryCode',            'STRING', true);
-            addQBFieldDefinition(fields, 'FedEx - requestedPackageLineItems[0].weight.value', 'requestedPackageLineItems[0].weight.value', 'NUMBER', false);
+            addQBFieldDefinition(fields, 'FedEx - requestedPackageLineItems[0].weight.value', 'requestedPackageLineItems[0].weight.value', 'NUMBER', true);
         } else if (act == 'createShipment') {
             addQBFieldDefinition(fields, 'FedEx - shipper.contact.personName',      'shipper.contact.personName',       'STRING', true);
             addQBFieldDefinition(fields, 'FedEx - shipper.contact.phoneNumber',     'shipper.contact.phoneNumber',      'STRING', true);
@@ -1204,10 +1204,6 @@ public with sharing class FieldMappingController {
             addQBFieldDefinition(fields, 'FedEx - requestedPackageLineItems[0].dimensions.length','requestedPackageLineItems[0].dimensions.length','NUMBER', false);
             addQBFieldDefinition(fields, 'FedEx - requestedPackageLineItems[0].dimensions.width','requestedPackageLineItems[0].dimensions.width','NUMBER', false);
             addQBFieldDefinition(fields, 'FedEx - requestedPackageLineItems[0].dimensions.height','requestedPackageLineItems[0].dimensions.height','NUMBER', false);
-        } else if (act == 'generateLabel') {
-            addQBFieldDefinition(fields, 'FedEx - label.trackingNumber',            'label.trackingNumber',             'STRING', false);
-            addQBFieldDefinition(fields, 'FedEx - label.imageType',                 'label.imageType',                  'STRING', false);
-            addQBFieldDefinition(fields, 'FedEx - label.contentDocumentId',         'label.contentDocumentId',          'STRING', false);
         } else if (act == 'storeTrackingNumber') {
             addQBFieldDefinition(fields, 'FedEx - shipment.masterTrackingNumber',   'shipment.masterTrackingNumber',    'STRING', false);
             addQBFieldDefinition(fields, 'FedEx - package.trackingNumber',          'package.trackingNumber',           'STRING', false);
@@ -1260,7 +1256,7 @@ public with sharing class FieldMappingController {
             addQBFieldDefinition(fields, 'UPS - ShipTo.Address.StateProvinceCode', 'ShipTo.Address.StateProvinceCode', 'STRING', true);
             addQBFieldDefinition(fields, 'UPS - ShipTo.Address.PostalCode',   'ShipTo.Address.PostalCode',   'STRING', true);
             addQBFieldDefinition(fields, 'UPS - ShipTo.Address.CountryCode',  'ShipTo.Address.CountryCode',  'STRING', true);
-            addQBFieldDefinition(fields, 'UPS - Package.PackageWeight.Weight','Package.PackageWeight.Weight', 'NUMBER', false);
+            addQBFieldDefinition(fields, 'UPS - Package.PackageWeight.Weight','Package.PackageWeight.Weight', 'NUMBER', true);
         } else if (act == 'createShipment') {
             addQBFieldDefinition(fields, 'UPS - Shipper.Name',                    'Shipper.Name',                     'STRING', true);
             addQBFieldDefinition(fields, 'UPS - Shipper.Phone.Number',            'Shipper.Phone.Number',             'STRING', true);
@@ -1283,10 +1279,6 @@ public with sharing class FieldMappingController {
             addQBFieldDefinition(fields, 'UPS - Package.Dimensions.Width',        'Package.Dimensions.Width',         'NUMBER', false);
             addQBFieldDefinition(fields, 'UPS - Package.Dimensions.Height',       'Package.Dimensions.Height',        'NUMBER', false);
             addQBFieldDefinition(fields, 'UPS - Package.Description',             'Package.Description',              'STRING', false);
-        } else if (act == 'generateLabel') {
-            addQBFieldDefinition(fields, 'UPS - label.trackingNumber',            'label.trackingNumber',             'STRING', false);
-            addQBFieldDefinition(fields, 'UPS - label.imageType',                 'label.imageType',                  'STRING', false);
-            addQBFieldDefinition(fields, 'UPS - label.contentDocumentId',         'label.contentDocumentId',          'STRING', false);
         } else if (act == 'storeTrackingNumber') {
             addQBFieldDefinition(fields, 'UPS - shipment.masterTrackingNumber',   'shipment.masterTrackingNumber',    'STRING', false);
             addQBFieldDefinition(fields, 'UPS - package.trackingNumber',          'package.trackingNumber',           'STRING', false);

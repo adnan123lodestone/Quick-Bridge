@@ -45,9 +45,9 @@
                             </div>
 
                             <template for:each={log.mobileFields} for:item="field">
-                                <div key={field.label} class="slds-grid slds-m-bottom_xx-small">
-                                    <div class="slds-col slds-size_1-of-3 card-label slds-text-color_weak">{field.label}:</div>
-                                    <div class="slds-col slds-size_2-of-3 card-value slds-text-align_right">
+                                <div key={field.label} class="card-row">
+                                    <div class="card-label slds-text-color_weak">{field.label}</div>
+                                    <div class="card-value slds-text-color_default slds-p-top_xx-small">
                                         <template if:true={field.isDate}>
                                             <lightning-formatted-date-time value={field.value} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time>
                                         </template>
@@ -59,7 +59,7 @@
                                         </template>
                                         <template if:false={field.isDate}>
                                             <template if:false={field.isUrl}>
-                                                <span class="slds-truncate" title={field.value}>{field.value}</span>
+                                                <span class="slds-cell-wrap" style="word-break: break-word;">{field.value}</span>
                                             </template>
                                         </template>
                                     </div>

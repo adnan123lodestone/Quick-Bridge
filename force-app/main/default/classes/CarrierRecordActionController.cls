@@ -26,7 +26,7 @@ public with sharing class CarrierRecordActionController {
         }
     }
 
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled(cacheable=false)
     public static ActiveCarriersResult getActiveCarriers() {
         try {
             ActiveCarriersResult result = new ActiveCarriersResult();
@@ -48,7 +48,6 @@ public with sharing class CarrierRecordActionController {
         'validateAddress'     => 'Validate Address',
         'getRateQuote'        => 'Get Rate Quote',
         'createShipment'      => 'Create Shipment',
-        'generateLabel'       => 'Generate Label',
         'syncTrackingStatus'  => 'Sync Tracking Status',
         'voidShipment'        => 'Void Shipment',
         'createReturnLabel'   => 'Create Return Label'
@@ -169,10 +168,6 @@ public with sharing class CarrierRecordActionController {
             if (actionName == 'createShipmentWithLabel') {
                 return trackTaskAndReturn(carrierType, CarrierOperationsService.createShipment(recordId, objectApiName, carrierType, true));
             }
-            if (actionName == 'generateLabel') {
-                Id shipmentId = resolveShipmentId(recordId, objectApiName, integration);
-                return trackTaskAndReturn(carrierType, CarrierOperationsService.generateLabel(shipmentId, carrierType));
-            }
             if (actionName == 'syncTrackingStatus') {
                 Id shipmentId = resolveShipmentId(recordId, objectApiName, integration);
                 return trackTaskAndReturn(carrierType, CarrierOperationsService.syncTrackingStatus(shipmentId, carrierType));
@@ -236,19 +231,6 @@ public with sharing class CarrierRecordActionController {
     }
 
     private static String resolveCarrierType(Id recordId, String objectApiName) {
-        if (objectApiName == 'Carrier_Shipment__c') {
-            List<Carrier_Shipment__c> records = [
-                SELECT Integration_Type__c
-                FROM Carrier_Shipment__c
-                WHERE Id = :recordId
-                LIMIT 1
-            ];
-            if (!records.isEmpty() && String.isNotBlank(records[0].Integration_Type__c)) {
-                return records[0].Integration_Type__c;
-            }
-            throw new AuraHandledException('Carrier_Shipment__c record does not have an Integration_Type__c value.');
-        }
-
         String fieldName = 'Carrier_Type__c';
         String queryText = 'SELECT ' + fieldName + ' FROM ' + objectApiName + ' WHERE Id = :recordId LIMIT 1';
         SObject record;
@@ -280,7 +262,7 @@ public with sharing class CarrierRecordActionController {
     }
 
     private static Id resolveShipmentId(Id recordId, String objectApiName, String integration) {
-        if (objectApiName == 'Carrier_Shipment__c') {
+        if (objectApiName == 'QuickBridgeTLG__Carrier_Shipment__c') {
             return recordId;
         }
 

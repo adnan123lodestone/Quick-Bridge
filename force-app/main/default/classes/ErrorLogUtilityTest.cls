@@ -177,7 +177,7 @@ private class ErrorLogUtilityTest {
         context.gatewayName = 'FedEx';
         context.classMethodName = 'CarrierOperationsService.syncTrackingStatus';
         context.errorMessage = 'Tracking sync failed';
-        context.sourceObjectApiName = 'Carrier_Shipment__c';
+        context.sourceObjectApiName = 'QuickBridgeTLG__Carrier_Shipment__c';
         context.sourceRecordId = shipment.Id;
         context.errorCategory = 'Callout Failure';
 
@@ -193,7 +193,7 @@ private class ErrorLogUtilityTest {
             LIMIT 1
         ];
         System.assertEquals(shipment.Id, logRecord.Carrier_Shipment__c);
-        System.assertEquals('Carrier_Shipment__c', logRecord.Source_Object__c);
+        System.assertEquals('QuickBridgeTLG__Carrier_Shipment__c', logRecord.Source_Object__c);
         System.assertEquals(String.valueOf(shipment.Id), logRecord.Source_Record_Id__c);
         System.assertEquals('Callout Failure', logRecord.Error_Category__c);
     }

@@ -112,8 +112,6 @@ private class CarrierOperationsServiceTest {
             CarrierOperationsService.getRateQuote(account.Id, 'Account', 'FedEx');
         CarrierOperationsService.OperationResult shipmentResult =
             CarrierOperationsService.createShipment(account.Id, 'Account', 'FedEx', false);
-        CarrierOperationsService.OperationResult labelResult =
-            CarrierOperationsService.generateLabel(shipmentResult.shipmentId, 'FedEx');
         CarrierOperationsService.OperationResult trackingResult =
             CarrierOperationsService.syncTrackingStatus(shipmentResult.shipmentId, 'FedEx');
         CarrierOperationsService.OperationResult returnResult =
@@ -125,7 +123,6 @@ private class CarrierOperationsServiceTest {
         System.assertEquals(true, addressResult.success);
         System.assertEquals(true, rateResult.success);
         System.assertEquals(true, shipmentResult.success);
-        System.assertEquals(true, labelResult.success);
         System.assertEquals(true, trackingResult.success);
         System.assertEquals(true, returnResult.success);
         System.assertEquals(true, voidResult.success);
@@ -268,9 +265,9 @@ private class CarrierOperationsServiceTest {
         addMapping('fedex', 'getRateQuote', 'Account', 'Name', 'recipient.contact.personName', CarrierMappingService.DIRECTION_TO_CARRIER);
         addMapping('fedex', 'createShipment', 'Account', 'Name', 'recipient.contact.personName', CarrierMappingService.DIRECTION_TO_CARRIER);
         addMapping('fedex', 'createReturnLabel', 'Account', 'Name', 'recipient.contact.personName', CarrierMappingService.DIRECTION_TO_CARRIER);
-        addMapping('fedex', 'generateLabel', 'Carrier_Shipment__c', 'Name', 'shipment.name', CarrierMappingService.DIRECTION_TO_CARRIER);
-        addMapping('fedex', 'syncTrackingStatus', 'Carrier_Shipment__c', 'Latest_Status__c', 'tracking.latestStatus', CarrierMappingService.DIRECTION_TO_SF);
-        addMapping('fedex', 'voidShipment', 'Carrier_Shipment__c', 'Shipment_Status__c', 'void.status', CarrierMappingService.DIRECTION_TO_SF);
+        addMapping('fedex', 'generateLabel', 'QuickBridgeTLG__Carrier_Shipment__c', 'Name', 'shipment.name', CarrierMappingService.DIRECTION_TO_CARRIER);
+        addMapping('fedex', 'syncTrackingStatus', 'QuickBridgeTLG__Carrier_Shipment__c', 'Latest_Status__c', 'tracking.latestStatus', CarrierMappingService.DIRECTION_TO_SF);
+        addMapping('fedex', 'voidShipment', 'QuickBridgeTLG__Carrier_Shipment__c', 'Shipment_Status__c', 'void.status', CarrierMappingService.DIRECTION_TO_SF);
     }
 
     private static void addMapping(

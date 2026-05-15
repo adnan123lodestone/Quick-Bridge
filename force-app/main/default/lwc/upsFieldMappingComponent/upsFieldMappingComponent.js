@@ -6,6 +6,9 @@ import getUPSFields from '@salesforce/apex/FieldMappingController.getUPSFields';
 import getExistingUPSMappings from '@salesforce/apex/FieldMappingController.getExistingUPSMappings';
 import saveUPSFieldMappings from '@salesforce/apex/FieldMappingController.saveUPSFieldMappings';
 
+const SHIPMENT_ONLY_ACTIONS = new Set(['voidShipment', 'syncTrackingStatus']);
+const SHIPMENT_OBJECT = 'QuickBridgeTLG__Carrier_Shipment__c';
+
 const ACTIONS = [
     {
         value: 'validateAddress',
@@ -24,12 +27,6 @@ const ACTIONS = [
         label: 'Create Shipment',
         scope: 'Shipment-centric',
         note: 'Creates or uses a shipment record, updates package, label, tracking, cost, and status fields after UPS confirms.'
-    },
-    {
-        value: 'generateLabel',
-        label: 'Generate Label',
-        scope: 'Shipment only',
-        note: 'Stores the generated label as a Salesforce File and maps label metadata back to the shipment.'
     },
     {
         value: 'syncTrackingStatus',
@@ -55,7 +52,14 @@ export default class UpsFieldMappingComponent extends LightningElement {
     @track selectedAction = 'validateAddress';
     @track selectedDirection = 'SF to UPS';
     @track selectedSFObject = 'Case';
-    @track sfObjectOptions = [];
+    @track allSFObjectOptions = [];
+
+    get sfObjectOptions() {
+        if (SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)) {
+            return [{ label: 'Shipment', value: SHIPMENT_OBJECT, selected: true }];
+        }
+        return this.allSFObjectOptions;
+    }
     @track sfFieldOptions = [];
     @track upsFieldOptions = [];
     @track mappingRows = [];
@@ -114,7 +118,7 @@ export default class UpsFieldMappingComponent extends LightningElement {
             const preferredObjects = [
                 'Case',
                 'Shipment',
-                'Carrier_Shipment__c',
+                'QuickBridgeTLG__Carrier_Shipment__c',
                 'Carrier_Package__c',
                 'Carrier_Rate_Quote__c',
                 'ReturnOrder',
@@ -123,14 +127,14 @@ export default class UpsFieldMappingComponent extends LightningElement {
             ];
             const filtered = (result || []).filter((obj) => preferredObjects.includes(obj.value));
             const optionsSource = filtered.length ? filtered : (result || []);
-            this.sfObjectOptions = optionsSource.map((obj) => ({
+            this.allSFObjectOptions = optionsSource.map((obj) => ({
                 label: obj.label,
                 value: obj.value,
                 selected: obj.value === this.selectedSFObject
             }));
-            if (!this.sfObjectOptions.some((obj) => obj.value === this.selectedSFObject) && this.sfObjectOptions.length) {
-                this.selectedSFObject = this.sfObjectOptions[0].value;
-                this.sfObjectOptions[0].selected = true;
+            if (!this.allSFObjectOptions.some((obj) => obj.value === this.selectedSFObject) && this.allSFObjectOptions.length) {
+                this.selectedSFObject = this.allSFObjectOptions[0].value;
+                this.allSFObjectOptions[0].selected = true;
             }
         });
     }
@@ -212,6 +216,9 @@ export default class UpsFieldMappingComponent extends LightningElement {
     handleActionSelect(event) {
         this.selectedAction = event.currentTarget.dataset.action;
         this.selectedDirection = this.selectedAction === 'handleDeliveryExceptions' ? 'UPS to SF' : this.selectedDirection;
+        if (SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)) {
+            this.selectedSFObject = SHIPMENT_OBJECT;
+        }
         this.reloadMappings();
     }
 
@@ -222,7 +229,7 @@ export default class UpsFieldMappingComponent extends LightningElement {
 
     handleSalesforceObjectChange(event) {
         this.selectedSFObject = event.target.value;
-        this.sfObjectOptions = this.sfObjectOptions.map((option) => ({
+        this.allSFObjectOptions = this.allSFObjectOptions.map((option) => ({
             ...option,
             selected: option.value === this.selectedSFObject
         }));

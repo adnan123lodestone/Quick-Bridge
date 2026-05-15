@@ -2,6 +2,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     
     private List<String> customerIds;
     private String lastSyncDate;
+    private Id defaultAccountRecordTypeId;
     
     public QBCustomerToAccountSyncBatch() {
         Datetime yesterday = Datetime.now().addDays(-1);
@@ -47,11 +48,11 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             System.debug('Error querying QuickBooks customers: ' + e.getMessage());
             ErrorLogUtility.logException(
                 'QuickBooks',
-                'QBCustomerToAccountSyncBatch.start',
-                e,
-                null,
-                null
-            );
+            'QBCustomerToAccountSyncBatch.start',
+            e,
+            null,
+            null
+                );
         }
         
         return customerIdsList;
@@ -60,14 +61,16 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     public void execute(Database.BatchableContext bc, List<String> scope) {
         IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         QBTriggerHandler.isAccountProcessing = true;
-
+        
         try {
             List<Account> accountsToUpsert = new List<Account>();
             List<Contact> contactsToUpsert = new List<Contact>();
             Map<String, Map<String, Object>> customerDataMap = new Map<String, Map<String, Object>>();
-
+            
             Boolean isPersonAccountEnabled = Schema.sObjectType.Account.fields.getMap().containsKey('IsPersonAccount');
-
+            if (Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().containsKey('Customer')) {
+                defaultAccountRecordTypeId = Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get('Customer').getRecordTypeId();
+            }
             Id personAccountRecordTypeId = null;
             if (isPersonAccountEnabled) {
                 List<RecordType> personRTs = [SELECT Id FROM RecordType WHERE SobjectType = 'Account' AND IsPersonType = true AND IsActive = true LIMIT 1];
@@ -138,13 +141,13 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                 Database.UpsertResult[] results = Database.upsert(accountsToUpsert, Account.QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults(
                     'QuickBooks',
-                    'QBCustomerToAccountSyncBatch.execute.upsertAccounts',
-                    'upsert',
-                    accountsToUpsert,
-                    results,
-                    null,
-                    null
-                );
+                'QBCustomerToAccountSyncBatch.execute.upsertAccounts',
+                'upsert',
+                accountsToUpsert,
+                results,
+                null,
+                null
+                    );
                 Integer successCount = 0;
                 
                 for (Integer i = 0; i < results.size(); i++) {
@@ -177,20 +180,20 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                 Database.UpsertResult[] contactResults = Database.upsert(contactsToUpsert, Contact.External_Id__c, false);
                 ErrorLogUtility.logUpsertResults(
                     'QuickBooks',
-                    'QBCustomerToAccountSyncBatch.execute.upsertContacts',
-                    'upsert',
-                    contactsToUpsert,
-                    contactResults,
-                    null,
-                    null
-                );
+                'QBCustomerToAccountSyncBatch.execute.upsertContacts',
+                'upsert',
+                contactsToUpsert,
+                contactResults,
+                null,
+                null
+                    );
             }
             
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
         }
     }
-
+    
     public void finish(Database.BatchableContext bc) {
         System.debug('QBCustomerToAccountSyncBatch completed');
     }
@@ -198,13 +201,16 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     private Account processCustomerData(Map<String, Object> customerData) {
         String qbId = (String)customerData.get('Id');
         
-        List<Account> existingAccounts = [SELECT Id, QuickbookID__c FROM Account WHERE QuickbookID__c = :qbId LIMIT 1];
+        List<Account> existingAccounts = [SELECT Id, RecordTypeId, QuickbookID__c FROM Account WHERE QuickbookID__c = :qbId LIMIT 1];
         
         Account account;
         if (!existingAccounts.isEmpty()) {
             account = existingAccounts[0];
         } else {
             account = new Account();
+            if (defaultAccountRecordTypeId != null) {
+                account.RecordTypeId = defaultAccountRecordTypeId;
+            }
         }
         
         account.Is_Synced__c = true;
@@ -221,7 +227,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                 } catch(Exception e) {}
             }
         }
-
+        
         account.QuickbookID__c = qbId;
         
         return account;
@@ -252,9 +258,9 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         if (String.isNotBlank(lastName)) {
             contact.LastName = lastName;
         } else if (String.isNotBlank(firstName)) {
-            contact.LastName = firstName; 
+            contact.LastName = firstName;
         } else {
-            contact.LastName = 'Unknown'; 
+            contact.LastName = 'Unknown';
         }
         
         if (String.isNotBlank(firstName)) {
@@ -300,31 +306,31 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         }
         return current;
     }
-
+    
     private void putFieldValue(SObject record, String fieldName, Object value) {
         if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) {
             return;
         }
-
+        
         Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
         if (!fields.containsKey(fieldName)) {
             return;
         }
-
+        
         Schema.DescribeFieldResult fieldDescribe = fields.get(fieldName).getDescribe();
         if (!fieldDescribe.isCreateable() && !fieldDescribe.isUpdateable()) {
             return;
         }
-
+        
         Schema.DisplayType displayType = fieldDescribe.getType();
         record.put(fieldName, coerceValue(value, displayType));
     }
-
+    
     private Object coerceValue(Object value, Schema.DisplayType displayType) {
         if (value == null) {
             return null;
         }
-
+        
         try {
             if (
                 displayType == Schema.DisplayType.Currency ||
@@ -357,7 +363,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         } catch (Exception e) {
             return value;
         }
-
+        
         return value;
     }
 }

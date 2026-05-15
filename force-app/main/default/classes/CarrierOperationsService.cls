@@ -207,65 +207,10 @@ public with sharing class CarrierOperationsService {
         return result;
     }
 
-    public static OperationResult generateLabel(Id shipmentId, String carrierType) {
-        OperationResult result = newResult(carrierType);
-        setLogContext(result, 'generateLabel', 'Carrier_Shipment__c', shipmentId, 'Carrier_Shipment__c', shipmentId);
-        try {
-            String integration = normalizeCarrier(carrierType);
-            ICarrierAdapter adapter = CarrierAdapterFactory.getAdapter(integration);
-            Carrier_Shipment__c shipment = [
-                SELECT Id, Master_Tracking_Number__c, External_Shipment_Id__c, Label_Content_Document_Id__c
-                FROM Carrier_Shipment__c
-                WHERE Id = :shipmentId
-                LIMIT 1
-            ];
-
-            if (String.isNotBlank(shipment.Label_Content_Document_Id__c)) {
-                result.success = true;
-                result.message = integration.capitalize() + ' label already exists.';
-                result.shipmentId = shipmentId;
-                result.fileId = (Id) shipment.Label_Content_Document_Id__c;
-                result.trackingNumber = shipment.Master_Tracking_Number__c;
-                return result;
-            }
-
-            CarrierMappingService.MappingSet mappings = CarrierMappingService.load(integration, 'generateLabel', 'Carrier_Shipment__c');
-            ensureRequestMappingsConfigured(mappings, 'generateLabel');
-            SObject shipmentRecord = CarrierMappingService.queryMappedRecord(shipmentId, mappings, CarrierMappingService.DIRECTION_TO_CARRIER);
-            Map<String, Object> mappedPayload = CarrierMappingService.buildRequestPayload(shipmentRecord, mappings);
-
-            Map<String, Object> adapterResult = adapter.generateLabel(
-                shipment.Master_Tracking_Number__c,
-                shipment.External_Shipment_Id__c,
-                mappedPayload
-            );
-            Id fileId = saveLabelIfPresent(shipmentId, adapterResult, integration.capitalize() + ' Label');
-            if (fileId != null) {
-                CarrierMappingService.putPath(adapterResult, 'label.contentDocumentId', fileId);
-                update new Carrier_Shipment__c(
-                    Id = shipmentId,
-                    Label_Content_Document_Id__c = String.valueOf(fileId),
-                    Raw_Response__c = abbreviate(stringValue(adapterResult.get('rawResponse')), 32768)
-                );
-            }
-
-            CarrierMappingService.applyResponseMappings(shipmentId, mappings, adapterResult);
-
-            result.success = true;
-            result.message = integration.capitalize() + ' label generated.';
-            result.shipmentId = shipmentId;
-            result.fileId = fileId;
-            result.trackingNumber = stringValue(CarrierMappingService.getPath(adapterResult, 'shipment.masterTrackingNumber'));
-            result.rawResponse = stringValue(adapterResult.get('rawResponse'));
-        } catch (Exception e) {
-            applyError(result, e);
-        }
-        return result;
-    }
 
     public static OperationResult createReturnLabel(Id sourceRecordId, String sourceObjectApiName, String carrierType, Id originalShipmentId) {
         OperationResult result = newResult(carrierType);
-        setLogContext(result, 'createReturnLabel', sourceObjectApiName, sourceRecordId, 'Carrier_Shipment__c', originalShipmentId);
+        setLogContext(result, 'createReturnLabel', sourceObjectApiName, sourceRecordId, 'QuickBridgeTLG__Carrier_Shipment__c', originalShipmentId);
         try {
             String integration = normalizeCarrier(carrierType);
             ICarrierAdapter adapter = CarrierAdapterFactory.getAdapter(integration);
@@ -303,7 +248,7 @@ public with sharing class CarrierOperationsService {
 
     public static OperationResult syncTrackingStatus(Id shipmentId, String carrierType) {
         OperationResult result = newResult(carrierType);
-        setLogContext(result, 'syncTrackingStatus', 'Carrier_Shipment__c', shipmentId, 'Carrier_Shipment__c', shipmentId);
+        setLogContext(result, 'syncTrackingStatus', 'QuickBridgeTLG__Carrier_Shipment__c', shipmentId, 'QuickBridgeTLG__Carrier_Shipment__c', shipmentId);
         try {
             String integration = normalizeCarrier(carrierType);
             ICarrierAdapter adapter = CarrierAdapterFactory.getAdapter(integration);
@@ -332,7 +277,7 @@ public with sharing class CarrierOperationsService {
 
             CarrierMappingService.applyResponseMappings(
                 shipmentId,
-                CarrierMappingService.load(integration, 'syncTrackingStatus', 'Carrier_Shipment__c'),
+                CarrierMappingService.load(integration, 'syncTrackingStatus', 'QuickBridgeTLG__Carrier_Shipment__c'),
                 adapterResult
             );
 
@@ -349,7 +294,7 @@ public with sharing class CarrierOperationsService {
 
     public static OperationResult voidShipment(Id shipmentId, String carrierType) {
         OperationResult result = newResult(carrierType);
-        setLogContext(result, 'voidShipment', 'Carrier_Shipment__c', shipmentId, 'Carrier_Shipment__c', shipmentId);
+        setLogContext(result, 'voidShipment', 'QuickBridgeTLG__Carrier_Shipment__c', shipmentId, 'QuickBridgeTLG__Carrier_Shipment__c', shipmentId);
         try {
             String integration = normalizeCarrier(carrierType);
             ICarrierAdapter adapter = CarrierAdapterFactory.getAdapter(integration);
@@ -377,7 +322,7 @@ public with sharing class CarrierOperationsService {
             );
             CarrierMappingService.applyResponseMappings(
                 shipmentId,
-                CarrierMappingService.load(integration, 'voidShipment', 'Carrier_Shipment__c'),
+                CarrierMappingService.load(integration, 'voidShipment', 'QuickBridgeTLG__Carrier_Shipment__c'),
                 adapterResult
             );
 
@@ -393,13 +338,13 @@ public with sharing class CarrierOperationsService {
     }
 
     private static Id ensureShipment(Id sourceRecordId, String sourceObjectApiName, String integration, Boolean isReturn, Id originalShipmentId) {
-        if (sourceObjectApiName == 'Carrier_Shipment__c' && isReturn != true) {
+        if (sourceObjectApiName == 'QuickBridgeTLG__Carrier_Shipment__c' && isReturn != true) {
             return sourceRecordId;
         }
 
         String sourceIdStr = sourceRecordId == null ? null : String.valueOf(sourceRecordId);
         Id linkedOriginalShipmentId = originalShipmentId;
-        if (sourceObjectApiName == 'Carrier_Shipment__c' && isReturn == true && linkedOriginalShipmentId == null) {
+        if (sourceObjectApiName == 'QuickBridgeTLG__Carrier_Shipment__c' && isReturn == true && linkedOriginalShipmentId == null) {
             linkedOriginalShipmentId = sourceRecordId;
         }
 

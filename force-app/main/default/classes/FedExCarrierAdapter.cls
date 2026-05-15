@@ -60,12 +60,6 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
         return result;
     }
 
-    public Map<String, Object> generateLabel(String masterTrackingNumber, String externalShipmentId, Map<String, Object> payload) {
-        throw new AuraHandledException(
-            'FedEx label regeneration is not supported for an existing shipment in this integration. ' +
-            'Use Create Shipment With Label when creating the shipment.'
-        );
-    }
 
     public Map<String, Object> voidShipment(String masterTrackingNumber, String externalShipmentId) {
         FedExAuthService.FedExCredentialConfig config = FedExAuthService.getCredentialConfig();
@@ -176,9 +170,25 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
                 ? (Map<String, Object>) requestedShipment.remove('package')
                 : new Map<String, Object>();
             if (!packageInfo.containsKey('weight')) {
-                packageInfo.put('weight', new Map<String, Object>{ 'units' => 'LB', 'value' => 1 });
+                packageInfo.put('weight', new Map<String, Object>{ 'units' => 'LB', 'value' => 0 });
+            } else if (packageInfo.get('weight') instanceof Map<String, Object>) {
+                Map<String, Object> weightMap = (Map<String, Object>) packageInfo.get('weight');
+                if (!weightMap.containsKey('units')) {
+                    weightMap.put('units', 'LB');
+                }
             }
             requestedShipment.put('requestedPackageLineItems', new List<Object>{ packageInfo });
+        } else if (requestedShipment.get('requestedPackageLineItems') instanceof List<Object>) {
+            List<Object> lineItems = (List<Object>) requestedShipment.get('requestedPackageLineItems');
+            if (!lineItems.isEmpty() && lineItems[0] instanceof Map<String, Object>) {
+                Map<String, Object> firstItem = (Map<String, Object>) lineItems[0];
+                if (firstItem.get('weight') instanceof Map<String, Object>) {
+                    Map<String, Object> weightMap = (Map<String, Object>) firstItem.get('weight');
+                    if (!weightMap.containsKey('units')) {
+                        weightMap.put('units', 'LB');
+                    }
+                }
+            }
         }
 
         requestedShipment.put('labelSpecification', new Map<String, Object>{

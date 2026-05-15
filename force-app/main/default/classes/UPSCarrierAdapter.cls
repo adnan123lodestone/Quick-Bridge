@@ -232,12 +232,18 @@ public with sharing class UPSCarrierAdapter implements ICarrierAdapter {
                 'Packaging' => new Map<String, Object>{ 'Code' => '02', 'Description' => 'Package' },
                 'PackageWeight' => new Map<String, Object>{
                     'UnitOfMeasurement' => new Map<String, Object>{ 'Code' => 'LBS' },
-                    'Weight' => '1'
+                    'Weight' => '0'
                 }
             });
-        } else if (isReturn && shipment.get('Package') instanceof Map<String, Object>) {
+        } else if (shipment.get('Package') instanceof Map<String, Object>) {
             Map<String, Object> pkg = (Map<String, Object>) shipment.get('Package');
-            if (!pkg.containsKey('Description')) {
+            if (pkg.get('PackageWeight') instanceof Map<String, Object>) {
+                Map<String, Object> pkgWeight = (Map<String, Object>) pkg.get('PackageWeight');
+                if (!pkgWeight.containsKey('UnitOfMeasurement')) {
+                    pkgWeight.put('UnitOfMeasurement', new Map<String, Object>{ 'Code' => 'LBS' });
+                }
+            }
+            if (isReturn && !pkg.containsKey('Description')) {
                 pkg.put('Description', 'Return Package');
             }
         }
