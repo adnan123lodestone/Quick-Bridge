@@ -11,14 +11,12 @@
         <inputParameters>
             <name>senderType</name>
             <value>
-                <inputConfiguratorMode>Custom</inputConfiguratorMode>
                 <stringValue>CurrentUser</stringValue>
             </value>
         </inputParameters>
         <inputParameters>
             <name>senderAddress</name>
             <value>
-                <inputConfiguratorMode>Custom</inputConfiguratorMode>
                 <stringValue>devgroup@thelodestonegroup.com</stringValue>
             </value>
         </inputParameters>
@@ -31,32 +29,25 @@
         <inputParameters>
             <name>emailTemplateId</name>
             <value>
-                <inputConfiguratorMode>Custom</inputConfiguratorMode>
-                <stringValue>00Xal00000BuyKwEAJ</stringValue>
+                <elementReference>Get_Email_Template.Id</elementReference>
             </value>
         </inputParameters>
         <inputParameters>
             <name>recipientId</name>
             <value>
-                <elementReference>gr_Order.BillToContactId</elementReference>
+                <elementReference>gr_Contact.Id</elementReference>
             </value>
         </inputParameters>
         <inputParameters>
             <name>relatedRecordId</name>
-            <value>
-                <elementReference>$Record.Id</elementReference>
-                <inputConfiguratorMode>Resource</inputConfiguratorMode>
-            </value>
         </inputParameters>
         <nameSegment>emailSimple</nameSegment>
         <offset>0</offset>
-        <versionString>2.0.1</versionString>
     </actionCalls>
     <apiVersion>66.0</apiVersion>
-    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
     <decisions>
-        <name>Order_Found_Contact_Exists</name>
-        <label>Order Found &amp; Contact Exists?</label>
+        <name>Contact_Exists</name>
+        <label>Contact Exists?</label>
         <locationX>0</locationX>
         <locationY>0</locationY>
         <defaultConnectorLabel>No</defaultConnectorLabel>
@@ -64,14 +55,14 @@
             <name>Yes</name>
             <conditionLogic>and</conditionLogic>
             <conditions>
-                <leftValueReference>gr_Order</leftValueReference>
+                <leftValueReference>gr_Contact</leftValueReference>
                 <operator>IsNull</operator>
                 <rightValue>
                     <booleanValue>false</booleanValue>
                 </rightValue>
             </conditions>
             <conditions>
-                <leftValueReference>gr_Order.BillToContactId</leftValueReference>
+                <leftValueReference>Get_Email_Template</leftValueReference>
                 <operator>IsNull</operator>
                 <rightValue>
                     <booleanValue>false</booleanValue>
@@ -106,31 +97,52 @@
     </processMetadataValues>
     <processType>AutoLaunchedFlow</processType>
     <recordLookups>
-        <name>gr_Order</name>
-        <label>Get Order</label>
+        <name>Get_Email_Template</name>
+        <label>Get Email Template</label>
         <locationX>0</locationX>
         <locationY>0</locationY>
         <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
         <connector>
-            <targetReference>Order_Found_Contact_Exists</targetReference>
+            <targetReference>Contact_Exists</targetReference>
         </connector>
         <filterLogic>and</filterLogic>
         <filters>
-            <field>Id</field>
+            <field>Name</field>
             <operator>EqualTo</operator>
             <value>
-                <elementReference>$Record.Order__c</elementReference>
+                <stringValue>Payment QR Email</stringValue>
             </value>
         </filters>
         <getFirstRecordOnly>true</getFirstRecordOnly>
-        <object>Order</object>
+        <object>EmailTemplate</object>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordLookups>
+    <recordLookups>
+        <name>gr_Contact</name>
+        <label>Get Contact</label>
+        <locationX>0</locationX>
+        <locationY>0</locationY>
+        <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>Get_Email_Template</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>AccountId</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.Related_Account__c</elementReference>
+            </value>
+        </filters>
+        <getFirstRecordOnly>true</getFirstRecordOnly>
+        <object>Contact</object>
         <storeOutputAutomatically>true</storeOutputAutomatically>
     </recordLookups>
     <start>
         <locationX>0</locationX>
         <locationY>0</locationY>
         <connector>
-            <targetReference>gr_Order</targetReference>
+            <targetReference>gr_Contact</targetReference>
         </connector>
         <filterLogic>and</filterLogic>
         <filters>
