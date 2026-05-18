@@ -23,30 +23,6 @@ public with sharing class FieldMappingController {
         INTEGRATION_SHOPIFY
     };
     @TestVisible private static List<Field_Mapping__mdt> testActiveMappings;
-    private static final Set<String> VALID_QB_ENTITIES = new Set<String>{
-        'Customer', 'Vendor', 'Item', 'Invoice', 'CreditMemo', 'PurchaseOrder', 'TaxCode'
-    };
-    private static final Map<String, String> SF_TO_QB_ENTITY = new Map<String, String>{
-        'Account' => 'Customer',
-        'Contact' => 'Customer',
-        'Product2' => 'Item',
-        'Order' => 'Invoice',
-        'Invoice__c' => 'Invoice',
-        'Credit_Memo__c' => 'CreditMemo',
-        'Purchase_Order__c' => 'PurchaseOrder',
-        'Item_Sales_Tax__c' => 'TaxCode'
-    };
-    
-    private static final Set<String> VALID_SHOPIFY_ENTITIES = new Set<String>{
-        'Customer', 'Order', 'Product', 'LineItem'
-    };
-    private static final Map<String, String> SF_TO_SHOPIFY_ENTITY = new Map<String, String>{
-        'Account'   => 'Customer',
-        'Order'     => 'Order',
-        'Product2'  => 'Product',
-        'OrderItem' => 'LineItem'
-    };
-    
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> getOrderFields() {
         return getObjectFields('Order');
@@ -866,13 +842,7 @@ public with sharing class FieldMappingController {
     }
     
     private static String resolveShopifyEntity(String sfObject, String shopifyObject) {
-        if (String.isNotBlank(shopifyObject) && VALID_SHOPIFY_ENTITIES.contains(shopifyObject)) {
-            return shopifyObject;
-        }
-        if (String.isNotBlank(sfObject) && SF_TO_SHOPIFY_ENTITY.containsKey(sfObject)) {
-            return SF_TO_SHOPIFY_ENTITY.get(sfObject);
-        }
-        return 'Customer';
+        return IntegrationEntityRegistry.resolveExternalEntity(INTEGRATION_SHOPIFY, sfObject, shopifyObject, 'Customer');
     }
     
     private static Map<String, QBFieldDefinition> getFallbackShopifyFieldDefinitions(String entity) {
@@ -925,22 +895,7 @@ public with sharing class FieldMappingController {
     }
     
     private static String resolveQBEntity(String sfObject, String qbObject) {
-        if (!String.isBlank(qbObject) && VALID_QB_ENTITIES.contains(qbObject)) {
-            return qbObject;
-        }
-        
-        String key = sfObject;
-        if (String.isNotBlank(sfObject) && sfObject.endsWith('__c') && sfObject.contains('__')) {
-            // Check if it's a namespaced custom object (e.g. pkg__Object__c)
-            if (sfObject.indexOf('__') != sfObject.lastIndexOf('__')) {
-                key = sfObject.substringAfter('__');
-            }
-        }
-        
-        if (!String.isBlank(key) && SF_TO_QB_ENTITY.containsKey(key)) {
-            return SF_TO_QB_ENTITY.get(key);
-        }
-        return 'Invoice';
+        return IntegrationEntityRegistry.resolveExternalEntity(INTEGRATION_QBO, sfObject, qbObject, 'Invoice');
     }
     
     private static List<Map<String, String>> getCarrierMappings(String integration, String actionName, String sfObject) {

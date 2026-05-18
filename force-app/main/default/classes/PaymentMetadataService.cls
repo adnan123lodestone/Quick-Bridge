@@ -114,9 +114,10 @@ public with sharing class PaymentMetadataService {
     }
 
     @AuraEnabled
-    public static MetadataUpdateResponse updatePaymentMetadata(String provider, String fieldValuesJson) {
+    public static MetadataUpdateResponse updatePaymentMetadata(String provider, String fieldValuesJson, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
         try {
+            requireAdminSession(sessionToken);
             if (String.isBlank(provider) || String.isBlank(fieldValuesJson)) {
                 response.success = false;
                 response.message = 'Invalid request parameters';
@@ -178,9 +179,10 @@ public with sharing class PaymentMetadataService {
     }
 
     @AuraEnabled
-    public static MetadataUpdateResponse updateAvailableProductsVisible(Boolean visible) {
+    public static MetadataUpdateResponse updateAvailableProductsVisible(Boolean visible, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
         try {
+            requireAdminSession(sessionToken);
             Metadata.DeployContainer container = new Metadata.DeployContainer();
             Metadata.CustomMetadata record = new Metadata.CustomMetadata();
             record.fullName = METADATA_TYPE_NAME + '.Default';
@@ -258,10 +260,11 @@ public with sharing class PaymentMetadataService {
     }
 
     @AuraEnabled
-    public static MetadataUpdateResponse sendProductRenewalRequest(List<String> renewalProductKeys, List<String> additionalSubscriptionProductKeys) {
+    public static MetadataUpdateResponse sendProductRenewalRequest(List<String> renewalProductKeys, List<String> additionalSubscriptionProductKeys, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
 
         try {
+            requireAdminSession(sessionToken);
             List<String> renewalProductLabels = resolveProviderLabels(renewalProductKeys);
             List<String> additionalSubscriptionProductLabels = resolveProviderLabels(additionalSubscriptionProductKeys);
 
@@ -296,10 +299,17 @@ public with sharing class PaymentMetadataService {
         config.label = PROVIDER_LABELS.get(provider);
         config.fields = new Map<String, String>();
         config.editableFields = PROVIDER_FIELDS.get(provider);
+        if (config.editableFields == null) {
+            config.editableFields = new List<String>();
+        }
 
         try {
             SObject metadataRecord;
             String recordName = PROVIDER_RECORD_NAMES.get(provider);
+            if (String.isBlank(recordName) || config.editableFields.isEmpty()) {
+                config.active = false;
+                return config;
+            }
             String query = 'SELECT ' + String.join(config.editableFields, ',') + ' FROM ' + METADATA_TYPE_NAME + ' WHERE DeveloperName = :recordName LIMIT 1';
 
             try {
@@ -330,6 +340,10 @@ public with sharing class PaymentMetadataService {
         }
 
         return config;
+    }
+
+    private static void requireAdminSession(String sessionToken) {
+        QuickBridgeAdminSessionService.requireValidSession(sessionToken);
     }
 
     private static String normalizeProvider(String provider) {

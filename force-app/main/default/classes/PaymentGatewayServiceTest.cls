@@ -38,6 +38,7 @@ private class PaymentGatewayServiceTest {
             // Assertions
             System.assertNotEquals(null, response, 'Response should not be null.');
             System.assert(response.contains('Success'), 'Mock response should return Success status.');
+            System.assert(response.contains('sessionToken'), 'Successful login should return an admin session token.');
         } catch (AuraHandledException e) {
             System.assert(e.getMessage().contains('credentials'), 'Exception should be related to missing credentials in metadata.');
         }

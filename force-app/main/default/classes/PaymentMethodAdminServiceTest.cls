@@ -57,6 +57,37 @@ private class PaymentMethodAdminServiceTest {
     }
 
     @IsTest
+    static void deactivatePaymentMethods_acceptsNewPaymentProductFromCatalog() {
+        insert new Integration_Product__c(
+            Product_Key__c = 'venmo',
+            Connector_Key__c = 'venmo',
+            Product_Label__c = 'Venmo',
+            Aliases__c = 'venmo',
+            Category__c = 'Payment',
+            Config_Record_Name__c = 'Venmo',
+            Display_Order__c = 80,
+            Enabled__c = true,
+            Catalog_Active__c = true,
+            Has_Payment__c = true,
+            Has_Checkout__c = true
+        );
+        IntegrationConnectorRegistry.clearCache();
+        PaymentMethodAdminService.testUpdater = new FakeUpdater();
+
+        PaymentMethodAdminService.DeactivateRequest request = new PaymentMethodAdminService.DeactivateRequest();
+        request.paymentMethodStates = new List<PaymentMethodAdminService.PaymentMethodState>{
+            buildState('Venmo', true)
+        };
+
+        PaymentMethodAdminService.DeactivateResponse response = PaymentMethodAdminService.deactivatePaymentMethods(request);
+
+        System.assertEquals(true, response.success);
+        System.assertEquals(new List<String>{ 'venmo' }, response.acceptedMethods);
+        System.assertEquals(true, capturedProviderStates.get('venmo'));
+        System.assert(response.message.contains('Venmo'));
+    }
+
+    @IsTest
     static void deactivatePaymentMethods_defaultUpdaterPathIsCallable() {
         PaymentMethodAdminService.testUpdater = null;
         PaymentMethodAdminService.DeactivateRequest request = new PaymentMethodAdminService.DeactivateRequest();

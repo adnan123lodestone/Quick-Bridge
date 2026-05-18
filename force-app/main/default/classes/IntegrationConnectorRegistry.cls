@@ -18,6 +18,11 @@ public with sharing class IntegrationConnectorRegistry {
         @AuraEnabled public Boolean hasCheckout { get; set; }
         @AuraEnabled public Boolean hasPayment { get; set; }
         @AuraEnabled public Boolean hasCarrier { get; set; }
+        @AuraEnabled public String logoUrl { get; set; }
+        @AuraEnabled public Boolean catalogActive { get; set; }
+        @AuraEnabled public Date startDate { get; set; }
+        @AuraEnabled public Date endDate { get; set; }
+        @AuraEnabled public String status { get; set; }
     }
 
     private static List<ConnectorDescriptor> cachedConnectors;
@@ -32,7 +37,13 @@ public with sharing class IntegrationConnectorRegistry {
             return cloneList(cachedConnectors);
         }
 
-        List<ConnectorDescriptor> rows = new List<ConnectorDescriptor>();
+        List<ConnectorDescriptor> rows = productRows();
+        if (!rows.isEmpty()) {
+            cachedConnectors = rows;
+            return cloneList(cachedConnectors);
+        }
+
+        rows = new List<ConnectorDescriptor>();
         try {
             for (Integration_Connector__mdt row : [
                 SELECT Connector_Key__c, Product_Key__c, Provider_Label__c, Aliases__c, Category__c,
@@ -102,6 +113,26 @@ public with sharing class IntegrationConnectorRegistry {
         return String.isBlank(value) ? '' : value.toLowerCase().replaceAll('[^a-z0-9]', '');
     }
 
+    private static List<ConnectorDescriptor> productRows() {
+        List<ConnectorDescriptor> rows = new List<ConnectorDescriptor>();
+        try {
+            for (Integration_Product__c row : [
+                SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Aliases__c, Category__c,
+                    Config_Record_Name__c, Active_Field__c, Expiry_Field__c, Editable_Fields__c,
+                    Display_Order__c, Enabled__c, Catalog_Active__c, Has_Config__c, Has_Reporting__c,
+                    Has_Mapping__c, Has_Scheduler__c, Has_Checkout__c, Has_Payment__c, Has_Carrier__c,
+                    Logo_URL__c, Start_Date__c, End_Date__c, Status__c
+                FROM Integration_Product__c
+                WHERE Enabled__c = true
+                ORDER BY Display_Order__c ASC, Product_Label__c ASC
+            ]) {
+                rows.add(fromProduct(row));
+            }
+        } catch (Exception ignored) {
+        }
+        return rows;
+    }
+
     private static ConnectorDescriptor fromMetadata(Integration_Connector__mdt row) {
         ConnectorDescriptor connector = new ConnectorDescriptor();
         connector.connectorKey = row.Connector_Key__c;
@@ -122,6 +153,39 @@ public with sharing class IntegrationConnectorRegistry {
         connector.hasCheckout = row.Has_Checkout__c == true;
         connector.hasPayment = row.Has_Payment__c == true;
         connector.hasCarrier = row.Has_Carrier__c == true;
+        connector.logoUrl = null;
+        connector.catalogActive = true;
+        connector.startDate = null;
+        connector.endDate = null;
+        connector.status = 'Available';
+        return connector;
+    }
+
+    private static ConnectorDescriptor fromProduct(Integration_Product__c row) {
+        ConnectorDescriptor connector = new ConnectorDescriptor();
+        connector.connectorKey = row.Connector_Key__c;
+        connector.productKey = row.Product_Key__c;
+        connector.label = row.Product_Label__c;
+        connector.aliases = row.Aliases__c;
+        connector.category = row.Category__c;
+        connector.configRecordName = row.Config_Record_Name__c;
+        connector.activeField = row.Active_Field__c;
+        connector.expiryField = row.Expiry_Field__c;
+        connector.editableFields = splitList(row.Editable_Fields__c);
+        connector.displayOrder = row.Display_Order__c == null ? 999 : row.Display_Order__c.intValue();
+        connector.enabled = row.Enabled__c == true;
+        connector.hasConfig = row.Has_Config__c == true;
+        connector.hasReporting = row.Has_Reporting__c == true;
+        connector.hasMapping = row.Has_Mapping__c == true;
+        connector.hasScheduler = row.Has_Scheduler__c == true;
+        connector.hasCheckout = row.Has_Checkout__c == true;
+        connector.hasPayment = row.Has_Payment__c == true;
+        connector.hasCarrier = row.Has_Carrier__c == true;
+        connector.logoUrl = row.Logo_URL__c;
+        connector.catalogActive = row.Catalog_Active__c == true;
+        connector.startDate = row.Start_Date__c;
+        connector.endDate = row.End_Date__c;
+        connector.status = row.Status__c;
         return connector;
     }
 
@@ -157,6 +221,11 @@ public with sharing class IntegrationConnectorRegistry {
         connector.hasCheckout = hasCheckout;
         connector.hasPayment = hasPayment;
         connector.hasCarrier = hasCarrier;
+        connector.logoUrl = null;
+        connector.catalogActive = true;
+        connector.startDate = null;
+        connector.endDate = null;
+        connector.status = 'Available';
         return connector;
     }
 
@@ -209,6 +278,15 @@ public with sharing class IntegrationConnectorRegistry {
         cloneValue.hasCheckout = source.hasCheckout;
         cloneValue.hasPayment = source.hasPayment;
         cloneValue.hasCarrier = source.hasCarrier;
+        cloneValue.logoUrl = source.logoUrl;
+        cloneValue.catalogActive = source.catalogActive;
+        cloneValue.startDate = source.startDate;
+        cloneValue.endDate = source.endDate;
+        cloneValue.status = source.status;
         return cloneValue;
+    }
+
+    public static void clearCache() {
+        cachedConnectors = null;
     }
 }

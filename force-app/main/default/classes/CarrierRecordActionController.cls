@@ -48,6 +48,7 @@ public with sharing class CarrierRecordActionController {
         'validateAddress'     => 'Validate Address',
         'getRateQuote'        => 'Get Rate Quote',
         'createShipment'      => 'Create Shipment',
+        'generateLabel'       => 'Generate Label',
         'syncTrackingStatus'  => 'Sync Tracking Status',
         'voidShipment'        => 'Void Shipment',
         'createReturnLabel'   => 'Create Return Label'
@@ -120,9 +121,9 @@ public with sharing class CarrierRecordActionController {
     @AuraEnabled
     public static void updateCarrierType(Id recordId, String objectApiName, String carrierType) {
         try {
-            String lower = String.isBlank(carrierType) ? '' : carrierType.toLowerCase().trim();
-            if (lower != 'fedex' && lower != 'ups') {
-                throw new AuraHandledException('Unsupported carrier type "' + carrierType + '". Supported values: FedEx, UPS.');
+            String normalized = CarrierAdapterFactory.normalizeCarrierKey(carrierType);
+            if (!CarrierAdapterFactory.supportedCarrierKeys().contains(normalized)) {
+                throw new AuraHandledException('Unsupported carrier type "' + carrierType + '". Supported values: ' + String.join(CarrierAdapterFactory.supportedCarrierLabels(), ', ') + '.');
             }
 
             Schema.SObjectType sObjectType = Schema.getGlobalDescribe().get(objectApiName);
@@ -166,6 +167,9 @@ public with sharing class CarrierRecordActionController {
                 return trackTaskAndReturn(carrierType, CarrierOperationsService.createShipment(recordId, objectApiName, carrierType, false));
             }
             if (actionName == 'createShipmentWithLabel') {
+                return trackTaskAndReturn(carrierType, CarrierOperationsService.createShipment(recordId, objectApiName, carrierType, true));
+            }
+            if (actionName == 'generateLabel') {
                 return trackTaskAndReturn(carrierType, CarrierOperationsService.createShipment(recordId, objectApiName, carrierType, true));
             }
             if (actionName == 'syncTrackingStatus') {
@@ -251,10 +255,10 @@ public with sharing class CarrierRecordActionController {
         }
 
         String carrierType = String.valueOf(carrierTypeValue);
-        String lower = carrierType.toLowerCase().trim();
-        if (lower != 'fedex' && lower != 'ups') {
+        String normalized = CarrierAdapterFactory.normalizeCarrierKey(carrierType);
+        if (!CarrierAdapterFactory.supportedCarrierKeys().contains(normalized)) {
             throw new AuraHandledException(
-                'Unsupported carrier type "' + carrierType + '". Supported values: FedEx, UPS.'
+                'Unsupported carrier type "' + carrierType + '". Supported values: ' + String.join(CarrierAdapterFactory.supportedCarrierLabels(), ', ') + '.'
             );
         }
 

@@ -7,6 +7,7 @@ import updateAvailableProductsVisible from '@salesforce/apex/PaymentMetadataServ
 import checkIntegrationExpiry from '@salesforce/apex/PaymentMetadataService.checkIntegrationExpiry';
 import sendProductRenewalRequest from '@salesforce/apex/PaymentMetadataService.sendProductRenewalRequest';
 import getConnectorDescriptors from '@salesforce/apex/IntegrationConnectorRegistry.getConnectorDescriptors';
+import revokeAdminSession from '@salesforce/apex/PaymentGatewayService.revokeAdminSession';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import Authorize_Net_logo from '@salesforce/resourceUrl/Authorize_Net_logo';
 import QuickBridge_Logo from '@salesforce/resourceUrl/QuickBridge_Logo';
@@ -71,13 +72,13 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     quickBridgeLogo = QuickBridge_Logo;
 
     allTilesDefinition = [
-        { id: 'qbo', label: 'QuickBooks', logoUrl: QB_Logo },
-        { id: 'shopify', label: 'Shopify', logoUrl: 'https://cdn.worldvectorlogo.com/logos/shopify.svg' },
-        { id: 'stripe', label: 'Stripe', logoUrl: 'https://cdn.worldvectorlogo.com/logos/stripe-4.svg' },
-        { id: 'authorizenet', label: 'Authorize.Net', logoUrl: Authorize_Net_logo },
-        { id: 'paypal', label: 'PayPal', logoUrl: 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg' },
-        { id: 'fedex', label: 'FedEx', logoUrl: FedEx_Logo },
-        { id: 'ups', label: 'UPS', logoUrl: 'https://cdn.worldvectorlogo.com/logos/ups-1.svg' }
+        { id: 'qbo', productKey: 'quickbooks', label: 'QuickBooks', logoUrl: QB_Logo, aliases: TILE_PROVIDER_ALIASES.qbo },
+        { id: 'shopify', productKey: 'shopify', label: 'Shopify', logoUrl: 'https://cdn.worldvectorlogo.com/logos/shopify.svg', aliases: TILE_PROVIDER_ALIASES.shopify },
+        { id: 'stripe', productKey: 'stripe', label: 'Stripe', logoUrl: 'https://cdn.worldvectorlogo.com/logos/stripe-4.svg', aliases: TILE_PROVIDER_ALIASES.stripe },
+        { id: 'authorizenet', productKey: 'authorizenet', label: 'Authorize.Net', logoUrl: Authorize_Net_logo, aliases: TILE_PROVIDER_ALIASES.authorizenet },
+        { id: 'paypal', productKey: 'paypal', label: 'PayPal', logoUrl: 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg', aliases: TILE_PROVIDER_ALIASES.paypal },
+        { id: 'fedex', productKey: 'fedex', label: 'FedEx', logoUrl: FedEx_Logo, aliases: TILE_PROVIDER_ALIASES.fedex },
+        { id: 'ups', productKey: 'ups', label: 'UPS', logoUrl: 'https://cdn.worldvectorlogo.com/logos/ups-1.svg', aliases: TILE_PROVIDER_ALIASES.ups }
     ];
 
     @track paymentMetadataConfigs = [];
@@ -128,15 +129,16 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     get selectedReportingProductKey() {
-        return REPORTING_PRODUCT_KEYS[this.selectedTile] || '';
+        const tile = this.getTileDefinition(this.selectedTile);
+        return tile?.productKey || REPORTING_PRODUCT_KEYS[this.selectedTile] || '';
     }
 
     get subscribedReportingProductKeys() {
-        return this.subscribedTiles.map(tile => REPORTING_PRODUCT_KEYS[tile.id]).filter(Boolean);
+        return this.subscribedTiles.map(tile => tile.productKey || REPORTING_PRODUCT_KEYS[tile.id]).filter(Boolean);
     }
 
     get availableReportingProductKeys() {
-        return this.availableTiles.map(tile => REPORTING_PRODUCT_KEYS[tile.id]).filter(Boolean);
+        return this.availableTiles.map(tile => tile.productKey || REPORTING_PRODUCT_KEYS[tile.id]).filter(Boolean);
     }
 
     navigateToScheduler() {
@@ -186,11 +188,16 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     getConfigForTile(tileId) {
-        const aliases = TILE_PROVIDER_ALIASES[tileId] || [tileId];
+        const tile = this.getTileDefinition(tileId);
+        const aliases = tile?.aliases || TILE_PROVIDER_ALIASES[tileId] || [tileId];
         return this.paymentMetadataConfigs.find(config => {
             const provider = (config.provider || '').toLowerCase().replace(/\s+/g, '');
             return aliases.some(alias => provider === alias.toLowerCase().replace(/\s+/g, ''));
         });
+    }
+
+    getTileDefinition(tileId) {
+        return this.allTilesDefinition.find(tile => tile.id === tileId);
     }
 
     isConfigActiveAndCurrent(tileId, config) {
@@ -262,7 +269,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             try {
                 const parsedSession = JSON.parse(sessionData);
                 const expiresAt = parsedSession.sessionExpiresAt ? new Date(parsedSession.sessionExpiresAt) : null;
-                if (expiresAt && expiresAt.getTime() <= Date.now()) {
+                if (!parsedSession.sessionToken || (expiresAt && expiresAt.getTime() <= Date.now())) {
                     sessionStorage.removeItem(SESSION_KEY);
                     return;
                 }
@@ -293,19 +300,34 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             };
             const descriptors = await getConnectorDescriptors();
             const tiles = (descriptors || [])
+                .filter(connector => connector.catalogActive !== false)
                 .filter(connector => connector.hasConfig || connector.hasReporting || connector.hasMapping)
                 .map(connector => ({
                     id: connector.connectorKey,
                     label: connector.label,
-                    logoUrl: logoById[connector.connectorKey]
+                    logoUrl: connector.logoUrl || logoById[connector.connectorKey] || QuickBridge_Logo,
+                    productKey: connector.productKey,
+                    aliases: this.buildTileAliases(connector),
+                    hasConfig: connector.hasConfig,
+                    hasReporting: connector.hasReporting,
+                    hasMapping: connector.hasMapping,
+                    hasScheduler: connector.hasScheduler
                 }))
-                .filter(tile => tile.logoUrl);
+                .filter(tile => tile.id && tile.label);
             if (tiles.length) {
                 this.allTilesDefinition = tiles;
             }
         } catch (error) {
             console.error(error);
         }
+    }
+
+    buildTileAliases(connector) {
+        const values = [connector.connectorKey, connector.productKey];
+        if (connector.aliases) {
+            connector.aliases.split(',').forEach(aliasValue => values.push(aliasValue.trim()));
+        }
+        return [...new Set(values.filter(Boolean))];
     }
 
     handleRecoverUserIdChange(event) { this.recoverUserId = event.target.value; }
@@ -372,7 +394,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             const response = JSON.parse(responseStr);
 
             if (response.status === 'Success') {
-                sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: this.userId, isLoggedIn: true, sessionExpiresAt: response.sessionExpiresAt }));
+                sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: this.userId, isLoggedIn: true, sessionToken: response.sessionToken, sessionExpiresAt: response.sessionExpiresAt }));
                 this.selectedTile = '';
                 this.currentGatewayProperName = '';
                 this.currentScreen = 'reporting';
@@ -389,6 +411,10 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     handleLogout() {
+        const sessionToken = this.getSessionToken();
+        if (sessionToken) {
+            revokeAdminSession({ sessionToken }).catch(() => {});
+        }
         this.userId = '';
         this.currentScreen = 'login';
         sessionStorage.removeItem(SESSION_KEY);
@@ -397,6 +423,33 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             const boxes = this.template.querySelectorAll('.pin-box');
             boxes.forEach(box => { box.value = ''; });
         }, 100);
+    }
+
+    getSessionToken() {
+        try {
+            const sessionData = sessionStorage.getItem(SESSION_KEY);
+            if (!sessionData) return null;
+            const parsedSession = JSON.parse(sessionData);
+            return parsedSession.sessionToken || null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    handleSessionError(error) {
+        const message = typeof error === 'string'
+            ? error
+            : error?.body?.message || error?.message || '';
+        if (!message || !message.toLowerCase().includes('session')) {
+            return false;
+        }
+        sessionStorage.removeItem(SESSION_KEY);
+        this.userId = '';
+        this.selectedTile = '';
+        this.currentGatewayProperName = '';
+        this.currentScreen = 'login';
+        this.showToast('Session Expired', 'Please log in again to continue.', 'warning');
+        return true;
     }
 
     // --- SIDEBAR NAVIGATION METHODS ---
@@ -562,7 +615,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         this.isSavingAvailableProductsPreference = true;
 
         try {
-            const result = await updateAvailableProductsVisible({ visible: nextValue });
+            const result = await updateAvailableProductsVisible({ visible: nextValue, sessionToken: this.getSessionToken() });
             if (!result || result.success !== true) {
                 throw new Error(result?.message || 'Could not save Available Products preference.');
             }
@@ -572,6 +625,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 'success'
             );
         } catch (error) {
+            if (this.handleSessionError(error)) return;
             this.availableProductsVisible = previousValue;
             this.showToast(
                 'Error',
@@ -632,7 +686,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         try {
             const result = await sendProductRenewalRequest({
                 renewalProductKeys,
-                additionalSubscriptionProductKeys
+                additionalSubscriptionProductKeys,
+                sessionToken: this.getSessionToken()
             });
 
             if (!result || result.success !== true) {
@@ -643,6 +698,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             this.isRenewalModalOpen = false;
             this.renewalProducts = [];
         } catch (error) {
+            if (this.handleSessionError(error)) return;
             this.showToast(
                 'Request Failed',
                 error.body?.message || error.message || 'Could not send the renewal request.',
@@ -706,7 +762,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         try {
             const fieldValues = this.metadataFormValues[provider] || {};
 
-            const result = await updatePaymentMetadata({ provider: provider, fieldValuesJson: JSON.stringify(fieldValues) });
+            const result = await updatePaymentMetadata({ provider: provider, fieldValuesJson: JSON.stringify(fieldValues), sessionToken: this.getSessionToken() });
 
             if (result.success) {
                 this.showToast('Success', 'Configuration saved successfully! (Deployment in background)', 'success');
@@ -736,9 +792,11 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 this.paymentMetadataConfigs = [...this.paymentMetadataConfigs];
 
             } else {
+                if (this.handleSessionError(result.message)) return;
                 this.showToast('Error', result.message, 'error');
             }
         } catch (error) {
+            if (this.handleSessionError(error)) return;
             console.error('Apex Error:', error);
             const errorMessage = error.body?.message || error.message || 'Failed to save configuration.';
             this.showToast('Error', errorMessage, 'error');
@@ -765,7 +823,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 });
             }
 
-            const result = await updatePaymentMetadata({ provider: provider, fieldValuesJson: JSON.stringify(fieldValues) });
+            const result = await updatePaymentMetadata({ provider: provider, fieldValuesJson: JSON.stringify(fieldValues), sessionToken: this.getSessionToken() });
 
             if (result.success) {
                 this.showToast('Deleted', `${provider} configuration deleted successfully!`, 'success');
@@ -786,9 +844,11 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 this.paymentMetadataConfigs = [...this.paymentMetadataConfigs];
                 this.currentScreen = 'tiles';
             } else {
+                if (this.handleSessionError(result.message)) return;
                 this.showToast('Delete Failed', result.message, 'error');
             }
         } catch (error) {
+            if (this.handleSessionError(error)) return;
             this.showToast('Error', 'Failed to delete configuration.', 'error');
         } finally {
             this.isSaving = false;

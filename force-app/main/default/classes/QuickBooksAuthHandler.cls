@@ -1,35 +1,44 @@
 public without sharing class QuickBooksAuthHandler {
-    private static final String xvy;
-    private static final String NAMED_CREDENTIAL = 'QuickBridgeTLG__QuickBookSandbox';
+    private static final String DEFAULT_NAMED_CREDENTIAL = 'QuickBridgeTLG__QuickBookSandbox';
     private static final String QB_API_PATH = '/v3/company/';
-    private static final String MINOR_VERSION = '?minorversion=65';
-    
-    private static String getRealmId() {
-        QuickBooks_Config__mdt config = [
-            SELECT Realm_ID__c
-            FROM QuickBooks_Config__mdt
-            WHERE Realm_ID__c != null
-            LIMIT 1
-        ];
-        return config.Realm_ID__c;
+    private static final String DEFAULT_MINOR_VERSION = '65';
+
+    private class QuickBooksConnectionConfig {
+        String realmId;
+        String namedCredential;
+        String minorVersion;
     }
     
-    static {
-        QuickBooks_Config__mdt config = [
-            SELECT Realm_ID__c
+    private static QuickBooksConnectionConfig getConnectionConfig() {
+        QuickBooksConnectionConfig result = new QuickBooksConnectionConfig();
+        result.namedCredential = DEFAULT_NAMED_CREDENTIAL;
+        result.minorVersion = DEFAULT_MINOR_VERSION;
+
+        List<QuickBooks_Config__mdt> rows = [
+            SELECT Realm_ID__c, Named_Credential__c, Minor_Version__c
             FROM QuickBooks_Config__mdt
             WHERE Realm_ID__c != null
             LIMIT 1
         ];
-        xvy = config.Realm_ID__c;
+        if (!rows.isEmpty()) {
+            QuickBooks_Config__mdt config = rows[0];
+            result.realmId = config.Realm_ID__c;
+            if (String.isNotBlank(config.Named_Credential__c)) {
+                result.namedCredential = config.Named_Credential__c.trim();
+            }
+            if (String.isNotBlank(config.Minor_Version__c)) {
+                result.minorVersion = config.Minor_Version__c.trim();
+            }
+        }
+        return result;
     }
 
     public static HttpResponse makeApiCall(String method, String resource, String body) {
         HttpRequest req = new HttpRequest();
         req.setMethod(method);
         
-        String realmId = getRealmId();
-        String endpoint = 'callout:' + NAMED_CREDENTIAL + QB_API_PATH + realmId + resource + MINOR_VERSION;
+        QuickBooksConnectionConfig config = getConnectionConfig();
+        String endpoint = buildEndpoint(resource, config.realmId, config.namedCredential, config.minorVersion);
 
         req.setEndpoint(endpoint);
         System.debug('Request Method: ' + method);
@@ -75,5 +84,21 @@ public without sharing class QuickBooksAuthHandler {
         }
 
         return res;
+    }
+
+    @TestVisible
+    static String buildEndpointForTest(String resource, String realmId, String namedCredential, String minorVersion) {
+        return buildEndpoint(resource, realmId, namedCredential, minorVersion);
+    }
+
+    private static String buildEndpoint(String resource, String realmId, String namedCredential, String minorVersion) {
+        String safeNamedCredential = String.isBlank(namedCredential) ? DEFAULT_NAMED_CREDENTIAL : namedCredential.trim();
+        String safeResource = String.isBlank(resource) ? '' : resource.trim();
+        String safeMinorVersion = String.isBlank(minorVersion) ? DEFAULT_MINOR_VERSION : minorVersion.trim();
+        String endpoint = 'callout:' + safeNamedCredential + QB_API_PATH + realmId + safeResource;
+        if (String.isBlank(safeMinorVersion) || safeResource.toLowerCase().contains('minorversion=')) {
+            return endpoint;
+        }
+        return endpoint + (safeResource.contains('?') ? '&' : '?') + 'minorversion=' + EncodingUtil.urlEncode(safeMinorVersion, 'UTF-8');
     }
 }

@@ -129,6 +129,39 @@ private class IntegrationWorkWorkerCoverageTest {
     }
 
     @IsTest
+    static void processorReleasesAdditionalLocks() {
+        Integration_Work_Item__c item = new Integration_Work_Item__c(
+            Unique_Key__c = 'Usage|Aggregate|Usage|multi',
+            Status__c = IntegrationWorkService.STATUS_PROCESSING,
+            Integration__c = 'Usage',
+            Operation__c = 'Aggregate',
+            Source_Object__c = 'Usage',
+            Source_Record_Id__c = 'quickbooks',
+            Lock_Key__c = 'Usage:quickbooks',
+            Additional_Lock_Keys__c = JSON.serialize(new List<String>{ 'Account:parent', 'Order:parent' }),
+            Processor_Token__c = 'token-multi',
+            Payload__c = '{"productKey":"quickbooks"}',
+            Attempt_Count__c = 0,
+            Max_Attempts__c = 2
+        );
+        insert item;
+        insert new List<Integration_Work_Lock__c>{
+            lockRow('Usage:quickbooks', item.Id, 'token-multi'),
+            lockRow('Account:parent', item.Id, 'token-multi'),
+            lockRow('Order:parent', item.Id, 'token-multi')
+        };
+
+        new IntegrationWorkProcessor(item.Id, 'token-multi').execute(null);
+
+        System.assertEquals(3, [
+            SELECT Count()
+            FROM Integration_Work_Lock__c
+            WHERE Work_Item__c = null
+            AND Status__c = 'Released'
+        ]);
+    }
+
+    @IsTest
     static void adminActionsCoverStateTransitions() {
         Id itemId = IntegrationWorkService.enqueue(IntegrationWorkTestFactory.request('QuickBooks', 'AccountUpsert', 'Account', 'ADMIN', 'Account:ADMIN'));
 
@@ -182,6 +215,17 @@ private class IntegrationWorkWorkerCoverageTest {
             Lease_Expires_At__c = System.now().addMinutes(10)
         );
         return item;
+    }
+
+    private static Integration_Work_Lock__c lockRow(String lockKey, Id itemId, String token) {
+        return new Integration_Work_Lock__c(
+            Name = lockKey.left(80),
+            Lock_Key__c = lockKey,
+            Status__c = 'Locked',
+            Work_Item__c = itemId,
+            Processor_Token__c = token,
+            Lease_Expires_At__c = System.now().addMinutes(10)
+        );
     }
 
     private static void assertThrowsFor(Integration_Work_Item__c item) {

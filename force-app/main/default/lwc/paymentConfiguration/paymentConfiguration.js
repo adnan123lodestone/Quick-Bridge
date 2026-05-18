@@ -226,8 +226,11 @@ export default class PaymentConfiguration extends LightningElement {
           fieldValues['Active__c'] = true;
       }
 
-      const payloadObject = { provider: provider, fieldValues: fieldValues };
-      const response = await updatePaymentMetadata({ request: payloadObject });
+      const response = await updatePaymentMetadata({
+        provider,
+        fieldValuesJson: JSON.stringify(fieldValues),
+        sessionToken: null
+      });
 
       if (response && response.success) {
         this.metadataFormValues[provider] = { ...fieldValues };
@@ -281,8 +284,11 @@ export default class PaymentConfiguration extends LightningElement {
           });
       }
 
-      const payloadObject = { provider: provider, fieldValues: fieldValues };
-      const response = await updatePaymentMetadata({ request: payloadObject });
+      const response = await updatePaymentMetadata({
+        provider,
+        fieldValuesJson: JSON.stringify(fieldValues),
+        sessionToken: null
+      });
 
       if (response && response.success) {
         this.metadataFormValues[provider] = {}; 

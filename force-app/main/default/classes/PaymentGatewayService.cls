@@ -4,7 +4,7 @@ public with sharing class PaymentGatewayService {
     public static String verifyCredentialsAndGetGateways(String username, String password) {
         try {
             IntegrationEntitlementService.EntitlementResult entitlement = IntegrationEntitlementService.refreshCheckoutEntitlementForLogin(username, password);
-            String responseBody = addSessionExpiry(entitlement.responseBody);
+            String responseBody = addSessionDetails(entitlement.responseBody, username);
             HttpResponse res = new HttpResponse();
             res.setStatusCode(entitlement.active == true ? 200 : 401);
             res.setBody(responseBody);
@@ -49,6 +49,11 @@ public with sharing class PaymentGatewayService {
         }
     }
     
+    @AuraEnabled
+    public static Boolean revokeAdminSession(String sessionToken) {
+        return QuickBridgeAdminSessionService.revokeSession(sessionToken);
+    }
+
     @AuraEnabled
     public static String recoverPin(String username) {
         try {
@@ -179,18 +184,23 @@ public with sharing class PaymentGatewayService {
         return configs[0];
     }
 
-    private static String addSessionExpiry(String responseBody) {
+    private static String addSessionDetails(String responseBody, String username) {
         if (String.isBlank(responseBody)) {
             return responseBody;
         }
+        Map<String, Object> responseMap;
         try {
-            Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
-            if (String.valueOf(responseMap.get('status')) == 'Success') {
-                responseMap.put('sessionExpiresAt', System.now().addHours(8));
-            }
-            return JSON.serialize(responseMap);
+            responseMap = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
         } catch (Exception e) {
             return responseBody;
         }
+        if (String.valueOf(responseMap.get('status')) == 'Success') {
+            Datetime expiresAt = System.now().addHours(8);
+            QuickBridgeAdminSessionService.SessionCreateResult sessionResult =
+                QuickBridgeAdminSessionService.createSession(username, expiresAt);
+            responseMap.put('sessionToken', sessionResult.sessionToken);
+            responseMap.put('sessionExpiresAt', sessionResult.sessionExpiresAt);
+        }
+        return JSON.serialize(responseMap);
     }
 }

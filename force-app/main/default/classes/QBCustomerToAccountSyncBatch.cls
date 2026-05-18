@@ -36,7 +36,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                                 if (customerObj != null) {
                                     Map<String, Object> customer = (Map<String, Object>)customerObj;
                                     if (customer.containsKey('Id')) {
-                                        customerIdsList.add((String)customer.get('Id'));
+                                        customerIdsList.add(JSON.serialize(customer));
                                     }
                                 }
                             }
@@ -81,42 +81,37 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             
             for (String customerId : scope) {
                 try {
-                    HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/customer/' + customerId, null);
-                    
-                    if (response.getStatusCode() == 200) {
-                        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-                        Map<String, Object> customerData = (Map<String, Object>)responseMap.get('Customer');
-                        
-                        if (customerData != null) {
-                            customerDataMap.put(customerId, customerData);
-                            Account accountToSync = processCustomerData(customerData);
+                    Map<String, Object> customerData = hydrateCustomerData(customerId);
+                    if (customerData != null) {
+                        String resolvedCustomerId = (String) customerData.get('Id');
+                        customerDataMap.put(resolvedCustomerId, customerData);
+                        Account accountToSync = processCustomerData(customerData);
                             
-                            if (accountToSync != null) {
-                                String companyName = (String)customerData.get('CompanyName');
+                        if (accountToSync != null) {
+                            String companyName = (String)customerData.get('CompanyName');
                                 
-                                if (isPersonAccountEnabled && personAccountRecordTypeId != null && String.isBlank(companyName)) {
-                                    accountToSync.RecordTypeId = personAccountRecordTypeId;
+                            if (isPersonAccountEnabled && personAccountRecordTypeId != null && String.isBlank(companyName)) {
+                                accountToSync.RecordTypeId = personAccountRecordTypeId;
                                     
-                                    String fName = (String)customerData.get('GivenName');
-                                    String lName = (String)customerData.get('FamilyName');
+                                String fName = (String)customerData.get('GivenName');
+                                String lName = (String)customerData.get('FamilyName');
                                     
-                                    if (String.isNotBlank(lName)) {
-                                        accountToSync.put('LastName', lName);
-                                        if (String.isNotBlank(fName)) accountToSync.put('FirstName', fName);
-                                    } else if (String.isNotBlank(fName)) {
-                                        accountToSync.put('LastName', fName);
-                                    } else {
-                                        accountToSync.put('LastName', 'Unknown');
-                                    }
-                                    
-                                    Map<String, Object> primaryEmailAddr = (Map<String, Object>)customerData.get('PrimaryEmailAddr');
-                                    if (primaryEmailAddr != null && primaryEmailAddr.get('Address') != null) {
-                                        accountToSync.put('PersonEmail', (String)primaryEmailAddr.get('Address'));
-                                    }
+                                if (String.isNotBlank(lName)) {
+                                    accountToSync.put('LastName', lName);
+                                    if (String.isNotBlank(fName)) accountToSync.put('FirstName', fName);
+                                } else if (String.isNotBlank(fName)) {
+                                    accountToSync.put('LastName', fName);
+                                } else {
+                                    accountToSync.put('LastName', 'Unknown');
                                 }
-                                
-                                accountsToUpsert.add(accountToSync);
+                                    
+                                Map<String, Object> primaryEmailAddr = (Map<String, Object>)customerData.get('PrimaryEmailAddr');
+                                if (primaryEmailAddr != null && primaryEmailAddr.get('Address') != null) {
+                                    accountToSync.put('PersonEmail', (String)primaryEmailAddr.get('Address'));
+                                }
                             }
+
+                            accountsToUpsert.add(accountToSync);
                         }
                     }
                 } catch (Exception e) {
@@ -192,6 +187,22 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
         }
+    }
+
+    private Map<String, Object> hydrateCustomerData(String customerScopeValue) {
+        if (String.isBlank(customerScopeValue)) {
+            return null;
+        }
+        String trimmedValue = customerScopeValue.trim();
+        if (trimmedValue.startsWith('{')) {
+            return (Map<String, Object>) JSON.deserializeUntyped(trimmedValue);
+        }
+        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/customer/' + customerScopeValue, null);
+        if (response != null && response.getStatusCode() == 200) {
+            Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+            return (Map<String, Object>)responseMap.get('Customer');
+        }
+        return null;
     }
     
     public void finish(Database.BatchableContext bc) {

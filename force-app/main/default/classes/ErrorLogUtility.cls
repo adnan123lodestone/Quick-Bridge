@@ -215,6 +215,7 @@ public without sharing class ErrorLogUtility {
             
             Database.SaveResult result = Database.insert(errorRecord, false);
             if (result != null && result.isSuccess()) {
+                createGenericLinks(result.getId(), context);
                 IntegrationUsageService.incrementError(context.gatewayName, 1);
             } else if (result != null) {
                 System.debug(LoggingLevel.ERROR, 'Error Log Insert Failed: ' + buildDmlErrorMessage(result.getErrors()));
@@ -222,6 +223,31 @@ public without sharing class ErrorLogUtility {
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Error Log Insert Failed: ' + e.getMessage());
         }
+    }
+
+    private static void createGenericLinks(Id errorLogId, LogContext context) {
+        if (errorLogId == null || context == null) {
+            return;
+        }
+        List<Error_Log_Link__c> links = new List<Error_Log_Link__c>();
+        addLink(links, errorLogId, context.sourceObjectApiName, context.sourceRecordIdText, context.sourceRecordId, 'Source');
+        addLink(links, errorLogId, context.actionSourceObjectApiName, context.actionSourceRecordIdText, context.actionSourceRecordId, 'Action Source');
+        if (!links.isEmpty()) {
+            Database.insert(links, false);
+        }
+    }
+
+    private static void addLink(List<Error_Log_Link__c> links, Id errorLogId, String objectApiName, String recordIdText, Id recordId, String role) {
+        String resolvedRecordId = firstNonBlank(recordIdText, recordId == null ? null : String.valueOf(recordId));
+        if (String.isBlank(objectApiName) || String.isBlank(resolvedRecordId)) {
+            return;
+        }
+        links.add(new Error_Log_Link__c(
+            Error_Log__c = errorLogId,
+            Linked_Object_API_Name__c = objectApiName,
+            Linked_Record_Id__c = resolvedRecordId,
+            Relationship_Role__c = role
+        ));
     }
     
     private static void assignParentLookup(Error_Log__c errorRecord, LogContext context) {

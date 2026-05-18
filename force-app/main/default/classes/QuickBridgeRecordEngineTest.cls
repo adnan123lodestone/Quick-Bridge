@@ -97,6 +97,34 @@ private class QuickBridgeRecordEngineTest {
     }
 
     @isTest
+    static void testProcessIncomingInvoiceRoutesMappingsByTargetObject() {
+        QuickBridgeRecordEngine.testActiveMappings = new List<Invoice_Field_Mapping__mdt>{
+            new Invoice_Field_Mapping__mdt(
+                Target_Object_API_Name__c = 'Account',
+                Source_Field_API_Name__c = 'Reference_number__c',
+                Target_Field_API_Name__c = 'Name'
+            ),
+            new Invoice_Field_Mapping__mdt(
+                Target_Object_API_Name__c = 'Contact',
+                Source_Field_API_Name__c = 'Reference_number__c',
+                Target_Field_API_Name__c = 'LastName'
+            )
+        };
+
+        Map<String, Object> payload = new Map<String, Object>{
+            'Amount__c' => 55,
+            'Reference_number__c' => 'Multi Target Invoice'
+        };
+
+        Test.startTest();
+        QuickBridgeRecordEngine.processIncomingInvoice(payload);
+        Test.stopTest();
+
+        System.assertEquals(1, [SELECT Count() FROM Account WHERE Name = 'Multi Target Invoice']);
+        System.assertEquals(1, [SELECT Count() FROM Contact WHERE LastName = 'Multi Target Invoice']);
+    }
+
+    @isTest
     static void testMappedRecordFailureLogsAgainstInvoice() {
         QuickBridgeRecordEngine.testActiveMappings = new List<Invoice_Field_Mapping__mdt>{
             new Invoice_Field_Mapping__mdt(
