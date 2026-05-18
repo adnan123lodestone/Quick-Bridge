@@ -275,4 +275,58 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
             );
         }
     }
+
+    public static void syncProductFromShopify(String productId) {
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/products/' + productId + '.json');
+        req.setMethod('GET');
+        HttpResponse res = new Http().send(req);
+        if (res.getStatusCode() == 200) {
+            Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            Map<String, Object> product = (Map<String, Object>) data.get('product');
+            Product2 prod = buildProductFromShopifyProduct(product);
+            upsert prod Product2.Shopify_ID__c;
+        } else {
+            throw new CalloutException('Shopify product not found: ' + res.getBody());
+        }
+    }
+
+    private static Product2 buildProductFromShopifyProduct(Map<String, Object> productData) {
+        String shopifyId = String.valueOf(productData.get('id'));
+        String title = (String) productData.get('title');
+        String status = (String) productData.get('status');
+
+        List<Product2> existing = [SELECT Id, Shopify_ID__c FROM Product2 WHERE Shopify_ID__c = :shopifyId LIMIT 1];
+        Product2 prod = existing.isEmpty() ? new Product2() : existing[0];
+
+        Map<String, String> fieldMap = ShopifyObjectMappings.getShopifyToProductMapping();
+        for (String shopifyField : fieldMap.keySet()) {
+            String sfField = fieldMap.get(shopifyField);
+            Object val = productData.get(shopifyField);
+            if (val == null) continue;
+            if (sfField == 'IsActive') continue;
+            try {
+                prod.put(sfField, val);
+            } catch (Exception ex) { /* ignore */ }
+        }
+
+        prod.Shopify_ID__c = shopifyId;
+        prod.Name = title;
+        prod.IsActive = 'active'.equals(status);
+
+        // Handle variant (SKU and price)
+        List<Object> variants = (List<Object>) productData.get('variants');
+        if (variants != null && !variants.isEmpty()) {
+            Map<String, Object> firstVariant = (Map<String, Object>) variants[0];
+            String sku = (String) firstVariant.get('sku');
+            if (String.isNotBlank(sku)) prod.StockKeepingUnit = sku;
+            Object priceVal = firstVariant.get('price');
+            Decimal price = 0;
+            if (priceVal != null) {
+                try { price = Decimal.valueOf(String.valueOf(priceVal)); } catch (Exception e) {}
+            }
+            prod.Sale_Price__c = price;
+        }
+        return prod;
+    }
 }

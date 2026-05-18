@@ -132,6 +132,7 @@ public class QBProductService {
             }
         }
     }
+
 }
 // public class QBProductService {
 //     public static void syncProductsToQuickBooks(List<Product2> products, Boolean isInsert) {

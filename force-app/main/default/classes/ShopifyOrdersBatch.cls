@@ -1,38 +1,38 @@
 global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
-
+    
     private String endpoint;
     private String nextUrl;
-
+    
     public ShopifyOrdersBatch(String endpoint) {
         this.endpoint = endpoint;
     }
-
+    
     public ShopifyOrdersBatch() {
     }
-
+    
     global Iterable<Integer> start(Database.BatchableContext BC) {
         return new List<Integer>{1};
     }
-
+    
     global void execute(Database.BatchableContext BC, List<Integer> scope) {
-
+        
         if (!PaymentGatewayService.isClientAuthorized('Shopify')) {
             System.debug('Skipping execution. Shopify license not active.');
             return;
         }
-
+        
         IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
-
+        
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
                 System.debug('Callouts not allowed.');
                 return;
             }
-
+            
             String finalEndpoint;
             Integer daysAgo = calloutControl.Days__c != null ? Integer.valueOf(calloutControl.Days__c) : 0;
-
+            
             if (String.isBlank(this.endpoint)) {
                 finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/orders.json?status=any';
                 if (daysAgo > 0) {
@@ -45,35 +45,35 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     finalEndpoint = this.endpoint;
                 }
             }
-
+            
             HttpRequest req = new HttpRequest();
             req.setEndpoint(finalEndpoint);
             req.setMethod('GET');
-
+            
             Http http = new Http();
             HttpResponse res = http.send(req);
-
+            
             if (res.getStatusCode() != 200) {
                 System.debug('HTTP callout failed: ' + res.getStatusCode());
                 ErrorLogUtility.logCalloutFailure(
                     'Shopify',
-                    'ShopifyOrdersBatch.execute',
-                    'Shopify orders API returned HTTP ' + res.getStatusCode() + ': ' + res.getBody(),
-                    res.getStatusCode(),
-                    null,
-                    null
-                );
+                'ShopifyOrdersBatch.execute',
+                'Shopify orders API returned HTTP ' + res.getStatusCode() + ': ' + res.getBody(),
+                res.getStatusCode(),
+                null,
+                null
+                    );
                 return;
             }
-
+            
             Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
             List<Object> orders = (List<Object>) jsonResponse.get('orders');
             if (orders == null) orders = new List<Object>();
-
+            
             Set<String> emailSet      = new Set<String>();
             Set<String> shopifyIdSet  = new Set<String>();
             Set<String> locationIdSet = new Set<String>();
-
+            
             for (Object obj : orders) {
                 Map<String, Object> orderMap = (Map<String, Object>) obj;
                 Map<String, Object> customer = (Map<String, Object>) orderMap.get('customer');
@@ -86,33 +86,33 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     if (custId != null) shopifyIdSet.add(String.valueOf(custId));
                 }
             }
-
+            
             Id personAccountRTId = getPersonAccountRecordTypeId();
             Map<String, Account> existingByEmail     = new Map<String, Account>();
             Map<String, Account> existingByShopifyId = new Map<String, Account>();
             Map<String, String>  locationIdMap       = new Map<String, String>();
-
+            
             if (!locationIdSet.isEmpty()) {
                 for (Schema.Location loc : [SELECT Id, Name, Shopify_ID__c FROM Location WHERE Shopify_ID__c IN :locationIdSet]) {
                     if (loc.Shopify_ID__c != null) locationIdMap.put(loc.Shopify_ID__c, loc.Id);
                 }
             }
-
+            
             if (!emailSet.isEmpty()) {
                 for (Account acc : [SELECT Id, PersonEmail, Shopify_ID__c FROM Account WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet]) {
                     if (acc.PersonEmail != null) existingByEmail.put(acc.PersonEmail.toLowerCase(), acc);
                 }
             }
-
+            
             if (!shopifyIdSet.isEmpty()) {
                 for (Account acc : [SELECT Id, PersonEmail, Shopify_ID__c FROM Account WHERE RecordTypeId = :personAccountRTId AND Shopify_ID__c IN :shopifyIdSet]) {
                     if (acc.Shopify_ID__c != null) existingByShopifyId.put(acc.Shopify_ID__c, acc);
                 }
             }
-
+            
             List<Account> accountsToUpsert  = new List<Account>();
             Set<String>   processedShopifyIds = new Set<String>();
-
+            
             for (Object obj : orders) {
                 Map<String, Object> orderMap = (Map<String, Object>) obj;
                 Map<String, Object> customer = (Map<String, Object>) orderMap.get('customer');
@@ -139,23 +139,23 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     }
                 }
             }
-
+            
             if (!accountsToUpsert.isEmpty()) {
                 Database.UpsertResult[] accountResults = Database.upsert(accountsToUpsert, false);
                 ErrorLogUtility.logUpsertResults(
                     'Shopify',
-                    'ShopifyOrdersBatch.execute.upsertAccounts',
-                    'upsert',
-                    accountsToUpsert,
-                    accountResults,
-                    null,
-                    null
-                );
+                'ShopifyOrdersBatch.execute.upsertAccounts',
+                'upsert',
+                accountsToUpsert,
+                accountResults,
+                null,
+                null
+                    );
             }
-
+            
             Map<String, String> orderFieldMap   = ShopifyObjectMappings.getShopifyToOrderMapping();
             Map<String, String> lineItemFieldMap = ShopifyObjectMappings.getLineItemMapping();
-
+            
             List<Order> ordersToUpsert    = new List<Order>();
             Map<String, Id> emailToAccountId = new Map<String, Id>();
             for (Account acc : accountsToUpsert) {
@@ -163,7 +163,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     emailToAccountId.put(acc.PersonEmail.toLowerCase(), acc.Id);
                 }
             }
-
+            
             for (Object obj : orders) {
                 Map<String, Object> orderMap = (Map<String, Object>) obj;
                 Map<String, Object> customer = (Map<String, Object>) orderMap.get('customer');
@@ -171,12 +171,12 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                 String email     = (String) customer.get('email');
                 Id     accountId = email != null ? emailToAccountId.get(email.toLowerCase()) : null;
                 if (accountId == null) continue;
-
+                
                 Order ord = new Order();
                 ord.AccountId   = accountId;
                 ord.Status      = 'Draft';
                 ord.Pricebook2Id = getStdPricebookId();
-
+                
                 for (String shopifyField : orderFieldMap.keySet()) {
                     String sfField = orderFieldMap.get(shopifyField);
                     Object val     = orderMap.get(shopifyField);
@@ -193,10 +193,10 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                         System.debug('Order field mapping error ' + sfField + ': ' + ex.getMessage());
                     }
                 }
-
+                
                 ord.Shopify_ID__c = String.valueOf(orderMap.get('id'));
                 if (ord.EffectiveDate == null) ord.EffectiveDate = System.today();
-
+                
                 if (!orderFieldMap.containsKey('buyer_accepts_marketing'))
                     ord.Buyer_Accepts_Marketing__c = (Boolean) orderMap.get('buyer_accepts_marketing');
                 if (!orderFieldMap.containsKey('cart_token'))
@@ -243,37 +243,37 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                 if (!orderFieldMap.containsKey('processed_at') && orderMap.get('processed_at') != null) {
                     ord.Processed_At__c = Datetime.valueOfGmt(((String) orderMap.get('processed_at')).replace('T', ' ').replaceAll('[+-]\\d{2}:\\d{2}', ''));
                 }
-
+                
                 String locationId = orderMap.get('location_id') != null ? String.valueOf(orderMap.get('location_id')) : null;
                 if (locationIdMap.containsKey(locationId)) {
                     ord.Location__c = locationIdMap.get(locationId);
                 }
-
+                
                 ordersToUpsert.add(ord);
             }
-
+            
             if (!ordersToUpsert.isEmpty()) {
                 try {
                     upsert ordersToUpsert Shopify_ID__c;
                 } catch (DmlException e) {
                     logShopifyDmlException(
                         'ShopifyOrdersBatch.execute.upsertOrders',
-                        'upsert',
-                        ordersToUpsert,
-                        e,
-                        'Order'
-                    );
+                    'upsert',
+                    ordersToUpsert,
+                    e,
+                    'Order'
+                        );
                     // Do not re-throw: outer catch would create a duplicate log entry
                     return;
                 }
             }
-
+            
             // Build order lookup for OrderItem creation
             Map<String, Order> externalIdToOrder = new Map<String, Order>();
             for (Order o : ordersToUpsert) {
                 externalIdToOrder.put(o.Shopify_ID__c, o);
             }
-
+            
             // Collect product_ids referenced by line items, then look up Product2 and PricebookEntries
             Set<String> productShopifyIds = new Set<String>();
             for (Object obj : orders) {
@@ -287,14 +287,14 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     }
                 }
             }
-
+            
             Map<String, Id> shopifyIdToProductId = new Map<String, Id>();
             if (!productShopifyIds.isEmpty()) {
                 for (Product2 p : [SELECT Id, Shopify_ID__c FROM Product2 WHERE Shopify_ID__c IN :productShopifyIds]) {
                     shopifyIdToProductId.put(p.Shopify_ID__c, p.Id);
                 }
             }
-
+            
             Map<Id, Id> productToPBE = new Map<Id, Id>();
             if (!shopifyIdToProductId.isEmpty()) {
                 Set<Id> foundProductIds = new Set<Id>(shopifyIdToProductId.values());
@@ -304,33 +304,33 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     productToPBE.put(pbe.Product2Id, pbe.Id);
                 }
             }
-
+            
             List<OrderItem> orderItemsToUpsert = new List<OrderItem>();
             for (Object obj : orders) {
                 Map<String, Object> orderMap    = (Map<String, Object>) obj;
                 String              orderExtId  = String.valueOf(orderMap.get('id'));
                 Order               ord         = externalIdToOrder.get(orderExtId);
                 if (ord == null) continue;
-
+                
                 List<Object> lineItems = (List<Object>) orderMap.get('line_items');
                 if (lineItems == null) continue;
-
+                
                 for (Object itemObj : lineItems) {
                     Map<String, Object> productMap    = (Map<String, Object>) itemObj;
                     String              productShopifyId = productMap.get('product_id') != null
                         ? String.valueOf(productMap.get('product_id')) : null;
-
+                    
                     if (String.isBlank(productShopifyId) || !shopifyIdToProductId.containsKey(productShopifyId)) continue;
-
+                    
                     Id productId = shopifyIdToProductId.get(productShopifyId);
                     Id pbeId     = productToPBE.get(productId);
                     if (pbeId == null) continue;
-
+                    
                     OrderItem orderItem = new OrderItem();
                     orderItem.OrderId          = ord.Id;
                     orderItem.Product2Id       = productId;
                     orderItem.PricebookEntryId = pbeId;
-
+                    
                     for (String shopifyField : lineItemFieldMap.keySet()) {
                         String sfField = lineItemFieldMap.get(shopifyField);
                         Object val     = productMap.get(shopifyField);
@@ -347,44 +347,44 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                             System.debug('LineItem field mapping error ' + sfField + ': ' + ex.getMessage());
                         }
                     }
-
+                    
                     orderItem.Shopify_ID__c = String.valueOf(productMap.get('id'));
                     if (orderItem.Quantity  == null) orderItem.Quantity  = 1;
                     if (orderItem.UnitPrice == null) orderItem.UnitPrice = 0;
-
+                    
                     orderItemsToUpsert.add(orderItem);
                 }
             }
-
+            
             if (!orderItemsToUpsert.isEmpty()) {
                 try {
                     upsert orderItemsToUpsert Shopify_ID__c;
                 } catch (DmlException e) {
                     logShopifyDmlException(
                         'ShopifyOrdersBatch.execute.upsertOrderItems',
-                        'upsert',
-                        orderItemsToUpsert,
-                        e,
-                        'OrderItem'
-                    );
+                    'upsert',
+                    orderItemsToUpsert,
+                    e,
+                    'OrderItem'
+                        );
                     // Do not re-throw: outer catch would create a duplicate log entry
                     return;
                 }
             }
-
+            
             this.nextUrl = getNextPageUrl(res);
-
+            
         } catch (Exception e) {
             ErrorLogUtility.logException(
                 'Shopify',
-                'ShopifyOrdersBatch.execute',
-                e,
-                null,
-                null
-            );
+            'ShopifyOrdersBatch.execute',
+            e,
+            null,
+            null
+                );
         }
     }
-
+    
     global void finish(Database.BatchableContext BC) {
         if (String.isNotBlank(this.nextUrl)) {
             Database.executeBatch(new ShopifyOrdersBatch(this.nextUrl), 1);
@@ -392,24 +392,24 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             System.debug('No nextUrl. All Shopify orders processed.');
         }
     }
-
+    
     private API_Callout_Control__mdt getCalloutControl() {
         return [SELECT Allow_Callouts__c, Days__c FROM API_Callout_Control__mdt WHERE MasterLabel = 'Shopify - Order' AND Endpoint__c = 'order' LIMIT 1];
     }
-
+    
     private Id getPersonAccountRecordTypeId() {
         return [SELECT Id FROM RecordType WHERE SobjectType = 'Account' AND Name = 'Person Account' LIMIT 1].Id;
     }
-
+    
     private static Id getStdPricebookId() {
         if (Test.isRunningTest()) return Test.getStandardPricebookId();
         return [SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1].Id;
     }
-
+    
     private static String getPastDateTimeFormatted(Integer daysAgo) {
         return Datetime.now().addDays(-daysAgo).formatGmt('yyyy-MM-dd\'T\'HH:mm:ssZ');
     }
-
+    
     private static String getNextPageUrl(HttpResponse response) {
         String linkHeader = response.getHeader('link');
         if (linkHeader != null) {
@@ -421,13 +421,13 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
         }
         return null;
     }
-
+    
     private static void logShopifyDmlException(
         String classMethodName,
-        String operation,
-        List<SObject> records,
-        DmlException exceptionRecord,
-        String fallbackObjectApiName
+    String operation,
+    List<SObject> records,
+    DmlException exceptionRecord,
+    String fallbackObjectApiName
     ) {
         Integer failureCount = exceptionRecord == null ? 0 : exceptionRecord.getNumDml();
         for (Integer index = 0; index < failureCount; index++) {
@@ -441,14 +441,124 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                 : failedRecord.getSObjectType().getDescribe().getName();
             ErrorLogUtility.logDmlFailure(
                 'Shopify',
-                classMethodName,
-                operation,
-                objectApiName,
-                failedRecordId,
-                exceptionRecord.getDmlMessage(index),
-                null,
-                null
-            );
+            classMethodName,
+            operation,
+            objectApiName,
+            failedRecordId,
+            exceptionRecord.getDmlMessage(index),
+            null,
+            null
+                );
         }
+    }
+    
+    public static void syncOrderFromShopify(String orderId) {
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/orders/' + orderId + '.json');
+        req.setMethod('GET');
+        HttpResponse res = new Http().send(req);
+        if (res.getStatusCode() == 200) {
+            Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            Map<String, Object> order = (Map<String, Object>) data.get('order');
+            Order ord = buildOrderFromShopifyOrder(order);
+            upsert ord Order.Shopify_ID__c;
+        } else {
+            throw new CalloutException('Shopify order not found: ' + res.getBody());
+        }
+    }
+
+    private static Order buildOrderFromShopifyOrder(Map<String, Object> orderData) {
+        Map<String, Object> customer = (Map<String, Object>) orderData.get('customer');
+        String email = (String) customer.get('email');
+        Id accountId = null;
+        if (String.isNotBlank(email)) {
+            List<Account> acc = [SELECT Id FROM Account WHERE PersonEmail = :email LIMIT 1];
+            if (!acc.isEmpty()) accountId = acc[0].Id;
+        }
+        if (accountId == null) {
+            throw new CalloutException('No matching Salesforce Account found for email: ' + email);
+        }
+
+        Order ord = new Order();
+        ord.AccountId = accountId;
+        ord.Status = 'Draft';
+        ord.Pricebook2Id = getStdPricebookIdStatic();
+
+        Map<String, String> fieldMap = ShopifyObjectMappings.getShopifyToOrderMapping();
+        for (String shopifyField : fieldMap.keySet()) {
+            String sfField = fieldMap.get(shopifyField);
+            Object val = orderData.get(shopifyField);
+            if (val == null) continue;
+            try {
+                if (sfField == 'EffectiveDate') {
+                    ord.EffectiveDate = Date.valueOf(String.valueOf(val).substring(0, 10));
+                } else if (sfField == 'Total_Amount__c' || sfField == 'Total_Tax__c' || sfField == 'Total_Discounts__c') {
+                    ord.put(sfField, Decimal.valueOf(String.valueOf(val)));
+                } else {
+                    ord.put(sfField, val);
+                }
+            } catch (Exception ex) { /* ignore */ }
+        }
+
+        // Additional fields from your execute method
+        if (!fieldMap.containsKey('buyer_accepts_marketing'))
+            ord.Buyer_Accepts_Marketing__c = (Boolean) orderData.get('buyer_accepts_marketing');
+        if (!fieldMap.containsKey('cart_token'))
+            ord.Cart_Token__c = (String) orderData.get('cart_token');
+        if (!fieldMap.containsKey('checkout_id') && orderData.get('checkout_id') != null)
+            ord.Checkout_Id__c = String.valueOf(orderData.get('checkout_id'));
+        if (!fieldMap.containsKey('confirmation_number'))
+            ord.Confirmation_Number__c = (String) orderData.get('confirmation_number');
+        if (!fieldMap.containsKey('estimated_taxes'))
+            ord.Estimated_Taxes__c = (Boolean) orderData.get('estimated_taxes');
+        if (!fieldMap.containsKey('order_status_url'))
+            ord.Order_Status_Url__c = (String) orderData.get('order_status_url');
+        if (!fieldMap.containsKey('po_number'))
+            ord.PoNumber = (String) orderData.get('po_number');
+        if (!fieldMap.containsKey('presentment_currency'))
+            ord.Currency__c = (String) orderData.get('presentment_currency');
+        if (!fieldMap.containsKey('reference'))
+            ord.Reference__c = (String) orderData.get('reference');
+        if (!fieldMap.containsKey('referring_site'))
+            ord.Referring_Site__c = (String) orderData.get('referring_site');
+        if (!fieldMap.containsKey('source_name'))
+            ord.Source_Name__c = (String) orderData.get('source_name');
+        if (!fieldMap.containsKey('source_url'))
+            ord.Source_Url__c = (String) orderData.get('source_url');
+        if (!fieldMap.containsKey('order_number') && orderData.get('order_number') != null)
+            ord.Order_Number__c = Integer.valueOf(String.valueOf(orderData.get('order_number')));
+        if (!fieldMap.containsKey('tags'))
+            ord.Order_Tags__c = (String) orderData.get('tags');
+        if (!fieldMap.containsKey('tax_exempt'))
+            ord.Order_Tax_Exempt__c = (Boolean) orderData.get('tax_exempt');
+        if (!fieldMap.containsKey('taxes_included'))
+            ord.Taxes_Included__c = (Boolean) orderData.get('taxes_included');
+        if (!fieldMap.containsKey('total_tip_received') && orderData.get('total_tip_received') != null)
+            ord.Total_Tip__c = Decimal.valueOf(String.valueOf(orderData.get('total_tip_received')));
+        if (!fieldMap.containsKey('total_weight') && orderData.get('total_weight') != null)
+            ord.Total_Weight__c = Integer.valueOf(String.valueOf(orderData.get('total_weight')));
+        if (!fieldMap.containsKey('payment_gateway_names')) {
+            List<Object> gateways = (List<Object>) orderData.get('payment_gateway_names');
+            ord.Payment_Gateway__c = (gateways != null && !gateways.isEmpty()) ? (String) gateways[0] : null;
+        }
+        if (!fieldMap.containsKey('cancelled_at') && orderData.get('cancelled_at') != null) {
+            ord.Cancelled_At__c = Datetime.valueOfGmt(((String) orderData.get('cancelled_at')).replace('T', ' ').replaceAll('[+-]\\d{2}:\\d{2}', ''));
+        }
+        if (!fieldMap.containsKey('processed_at') && orderData.get('processed_at') != null) {
+            ord.Processed_At__c = Datetime.valueOfGmt(((String) orderData.get('processed_at')).replace('T', ' ').replaceAll('[+-]\\d{2}:\\d{2}', ''));
+        }
+
+        String locationId = orderData.get('location_id') != null ? String.valueOf(orderData.get('location_id')) : null;
+        if (locationId != null) {
+            List<Schema.Location> loc = [SELECT Id FROM Location WHERE Shopify_ID__c = :locationId LIMIT 1];
+            if (!loc.isEmpty()) ord.Location__c = loc[0].Id;
+        }
+
+        ord.Shopify_ID__c = String.valueOf(orderData.get('id'));
+        return ord;
+    }
+
+    private static Id getStdPricebookIdStatic() {
+        return [SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1].Id;
     }
 }
