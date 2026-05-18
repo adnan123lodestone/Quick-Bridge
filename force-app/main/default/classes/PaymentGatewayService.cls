@@ -1,40 +1,18 @@
 public with sharing class PaymentGatewayService {
     
     @AuraEnabled
-    public static String verifyCredentialsAndGetGateways() {
+    public static String verifyCredentialsAndGetGateways(String username, String password) {
         try {
-            List<Quickbridge_Config__mdt> configs = [
-                SELECT Company_Name__c, Username__c, Password__c 
-                FROM Quickbridge_Config__mdt 
-                WHERE Username__c != null AND Password__c != null AND Company_Name__c != null
-                LIMIT 1
-            ];
-            
-            if (configs.isEmpty()) {
-                throw new AuraHandledException('No valid credentials found in QuickBridge Metadata.');
-            }
-            
-            Quickbridge_Config__mdt config = configs[0];
-            
-            Map<String, String> requestBody = new Map<String, String>();
-            requestBody.put('companyName', config.Company_Name__c != null ? config.Company_Name__c.trim() : '');
-            requestBody.put('username', config.Username__c != null ? config.Username__c.trim() : '');
-            requestBody.put('password', config.Password__c != null ? config.Password__c.trim() : '');
-            
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/validateClient/');
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'application/json');
-            req.setBody(JSON.serialize(requestBody));
-            
-            Http http = new Http();
-            HttpResponse res = http.send(req);
+            IntegrationEntitlementService.EntitlementResult entitlement = IntegrationEntitlementService.refreshCheckoutEntitlementForLogin(username, password);
+            String responseBody = addSessionExpiry(entitlement.responseBody);
+            HttpResponse res = new HttpResponse();
+            res.setStatusCode(entitlement.active == true ? 200 : 401);
+            res.setBody(responseBody);
             logServerOrgFailureIfNeeded(
                 'PaymentGatewayService.verifyCredentialsAndGetGateways',
                 res
             );
-            
-            return res.getBody();
+            return responseBody;
             
         } catch(Exception e) {
             ErrorLogUtility.logException(
@@ -51,38 +29,13 @@ public with sharing class PaymentGatewayService {
     @AuraEnabled
     public static String getActiveGatewaysForCheckout() {
         try {
-            List<Quickbridge_Config__mdt> configs = [
-                SELECT Company_Name__c, Username__c, Password__c 
-                FROM Quickbridge_Config__mdt 
-                WHERE Username__c != null AND Password__c != null AND Label = 'Default'
-                LIMIT 1
-            ];
-            
-            if (configs.isEmpty()) {
-                throw new AuraHandledException('No valid credentials found in QuickBridge Metadata.');
+            IntegrationEntitlementService.EntitlementResult entitlement = IntegrationEntitlementService.getCheckoutEntitlement();
+            if (entitlement != null && String.isNotBlank(entitlement.responseBody)) {
+                return entitlement.responseBody;
             }
-            
-            Quickbridge_Config__mdt config = configs[0];
-            
-            Map<String, String> requestBody = new Map<String, String>();
-            requestBody.put('companyName', config.Company_Name__c != null ? config.Company_Name__c.trim() : '');
-            requestBody.put('username', config.Username__c != null ? config.Username__c.trim() : '');
-            requestBody.put('password', config.Password__c != null ? config.Password__c.trim() : '');
-            
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/validateClient/');
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'application/json');
-            req.setBody(JSON.serialize(requestBody));
-            
-            Http http = new Http();
-            HttpResponse res = http.send(req);
-            logServerOrgFailureIfNeeded(
-                'PaymentGatewayService.getActiveGatewaysForCheckout',
-                res
-            );
-            
-            return res.getBody();
+            throw new AuraHandledException(String.isBlank(entitlement == null ? null : entitlement.message)
+                ? 'No valid entitlement cache or credentials found.'
+                : entitlement.message);
             
         } catch(Exception e) {
             ErrorLogUtility.logException(
@@ -97,15 +50,21 @@ public with sharing class PaymentGatewayService {
     }
     
     @AuraEnabled
-    public static String recoverPin() {
+    public static String recoverPin(String username) {
         try {
-            List<Quickbridge_Config__mdt> configs = [SELECT Username__c FROM Quickbridge_Config__mdt WHERE Username__c != null LIMIT 1];
-            if (configs.isEmpty()) {
+            String recoveryUsername = username;
+            if (String.isBlank(recoveryUsername)) {
+                List<Quickbridge_Config__mdt> configs = [SELECT Username__c FROM Quickbridge_Config__mdt WHERE Username__c != null LIMIT 1];
+                if (!configs.isEmpty()) {
+                    recoveryUsername = configs[0].Username__c;
+                }
+            }
+            if (String.isBlank(recoveryUsername)) {
                 throw new AuraHandledException('No Username found in metadata.');
             }
             
             Map<String, String> requestBody = new Map<String, String>();
-            requestBody.put('username', configs[0].Username__c.trim());
+            requestBody.put('username', recoveryUsername.trim());
             
             HttpRequest req = new HttpRequest();
             req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/recoverPin/');
@@ -137,62 +96,7 @@ public with sharing class PaymentGatewayService {
     @AuraEnabled
     public static Boolean isClientAuthorized(String gatewayName) { // QuickBooks, Shopify
         try {
-            List<Quickbridge_Config__mdt> configs = [
-                SELECT Company_Name__c, Username__c, Password__c 
-                FROM Quickbridge_Config__mdt 
-                WHERE Username__c != null AND Password__c != null AND Company_Name__c != null
-                LIMIT 1
-            ];
-            
-            if (configs.isEmpty()) {
-                System.debug(gatewayName + ' Validation Failed: No valid credentials found in QuickBridge Metadata.');
-                return false;
-            }
-            
-            Quickbridge_Config__mdt config = configs[0];
-            
-            Map<String, String> requestBody = new Map<String, String>();
-            requestBody.put('companyName', config.Company_Name__c.trim());
-            requestBody.put('username', config.Username__c.trim());
-            requestBody.put('password', config.Password__c.trim());
-            
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/validateClient/');
-            req.setMethod('POST');
-            req.setHeader('Content-Type', 'application/json');
-            req.setBody(JSON.serialize(requestBody));
-            
-            Http http = new Http();
-            HttpResponse res = http.send(req);
-            
-            if (res.getStatusCode() == 200) {
-                Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-                String status = (String) responseMap.get('status');
-                
-                if (status == 'Success') {
-                    List<Object> activeGatewaysObj = (List<Object>) responseMap.get('activeGateways');
-                    if (activeGatewaysObj != null) {
-                        for (Object gatewayObj : activeGatewaysObj) {
-                            String gateway = (String) gatewayObj;
-                            if (gateway != null && gateway.equalsIgnoreCase(gatewayName)) {
-                                return true;
-                            }
-                        }
-                    }
-                    System.debug(gatewayName + ' Validation Failed: ' + gatewayName + ' license is not active for this client.');
-                    return false;
-                } else {
-                    System.debug('Server Org Validation Failed: ' + (String)responseMap.get('message'));
-                    return false;
-                }
-            } else {
-                System.debug('Server Org API call failed with status: ' + res.getStatusCode());
-                logServerOrgFailureIfNeeded(
-                    'PaymentGatewayService.isClientAuthorized',
-                    res
-                );
-                return false;
-            }
+            return IntegrationEntitlementService.isGatewayAuthorized(gatewayName);
             
         } catch(Exception e) {
             System.debug('Exception in isClientAuthorized (' + gatewayName + '): ' + e.getMessage());
@@ -228,5 +132,65 @@ public with sharing class PaymentGatewayService {
             null,
             null
         );
+    }
+
+    public static HttpResponse callServerOrgValidation(String username, String password, Boolean useSuppliedCredentials) {
+        Quickbridge_Config__mdt config = loadServerOrgConfig(useSuppliedCredentials == true);
+
+        Map<String, String> requestBody = new Map<String, String>();
+        requestBody.put('companyName', config != null && config.Company_Name__c != null ? config.Company_Name__c.trim() : '');
+        requestBody.put('username', useSuppliedCredentials == true ? username.trim() : config.Username__c.trim());
+        requestBody.put('password', useSuppliedCredentials == true ? password.trim() : config.Password__c.trim());
+
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/validateClient/');
+        req.setMethod('POST');
+        req.setHeader('Content-Type', 'application/json');
+        req.setBody(JSON.serialize(requestBody));
+
+        HttpResponse res = new Http().send(req);
+        logServerOrgFailureIfNeeded('PaymentGatewayService.callServerOrgValidation', res);
+        return res;
+    }
+
+    private static Quickbridge_Config__mdt loadServerOrgConfig(Boolean allowCompanyOnly) {
+        List<Quickbridge_Config__mdt> configs;
+        if (allowCompanyOnly == true) {
+            configs = [
+                SELECT Company_Name__c, Username__c, Password__c
+                FROM Quickbridge_Config__mdt
+                WHERE Company_Name__c != null
+                LIMIT 1
+            ];
+        } else {
+            configs = [
+                SELECT Company_Name__c, Username__c, Password__c
+                FROM Quickbridge_Config__mdt
+                WHERE Username__c != null AND Password__c != null AND Company_Name__c != null
+                LIMIT 1
+            ];
+        }
+        if (configs.isEmpty()) {
+            if (allowCompanyOnly == true) {
+                return null;
+            }
+            throw new AuraHandledException('No valid credentials found in QuickBridge Metadata.');
+        }
+        return configs[0];
+    }
+
+    private static String addSessionExpiry(String responseBody) {
+        if (String.isBlank(responseBody)) {
+            return responseBody;
+        }
+        try {
+            Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
+            if (String.valueOf(responseMap.get('status')) == 'Success') {
+                responseMap.put('sessionExpiresAt', System.now().addHours(8));
+            }
+            return JSON.serialize(responseMap);
+        } catch (Exception e) {
+            return responseBody;
+        }
     }
 }

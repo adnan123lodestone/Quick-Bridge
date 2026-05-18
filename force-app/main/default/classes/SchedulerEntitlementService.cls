@@ -67,6 +67,7 @@ public with sharing class SchedulerEntitlementService {
         trackedJob.Scheduler_Name__c = logicalKey;
         trackedJob.Cron_Job_Ids__c = String.join(cronIdStrings, ',');
         trackedJob.Status__c = 'Active';
+        trackedJob.Next_Run_At__c = calculateNextRun(parseDecimal(frequencyValue), frequencyType, Datetime.now());
         trackedJob.Created_By_User__c = UserInfo.getUserId();
         trackedJob.Created_DateTime__c = Datetime.now();
         trackedJob.Deleted_DateTime__c = null;
@@ -230,5 +231,26 @@ public with sharing class SchedulerEntitlementService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public static Datetime calculateNextRun(Decimal frequencyValue, String frequencyType, Datetime fromValue) {
+        Integer safeValue = frequencyValue == null || frequencyValue <= 0 ? 1 : frequencyValue.intValue();
+        Datetime baseValue = fromValue == null ? Datetime.now() : fromValue;
+        if (frequencyType == 'Minutes') {
+            return baseValue.addMinutes(safeValue);
+        }
+        if (frequencyType == 'Hours') {
+            return baseValue.addHours(safeValue);
+        }
+        if (frequencyType == 'Days') {
+            return baseValue.addDays(safeValue);
+        }
+        if (frequencyType == 'Weeks') {
+            return baseValue.addDays(7 * safeValue);
+        }
+        if (frequencyType == 'Months') {
+            return baseValue.addMonths(safeValue);
+        }
+        return baseValue.addHours(1);
     }
 }

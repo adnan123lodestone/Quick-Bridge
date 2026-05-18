@@ -4,31 +4,29 @@ public with sharing class QBSchedulerController {
     public static List<Map<String, Object>> getScheduledJobs() {
         List<Map<String, Object>> jobList = new List<Map<String, Object>>();
         
-        List<CronTrigger> jobs = [SELECT Id, CronJobDetail.Name, NextFireTime, PreviousFireTime, State, CreatedDate, CreatedBy.Name, CronExpression 
-                                FROM CronTrigger WHERE CronJobDetail.Name LIKE 'QBO Sync%'
-                                ORDER BY CreatedDate DESC 
-                                LIMIT 50];
-        
-        for (CronTrigger job : jobs) {
+        List<Scheduled_Integration_Job__c> jobs = [
+            SELECT Id, Logical_Job_Key__c, Scheduler_Name__c, Source_Object__c, Status__c, Next_Run_At__c,
+                Last_Run_At__c, Created_DateTime__c, Created_By_User__r.Name, Frequency_Value__c, Frequency_Type__c
+            FROM Scheduled_Integration_Job__c
+            WHERE Integration_Type__c = 'QuickBooks'
+            AND Status__c = 'Active'
+            ORDER BY Created_DateTime__c DESC
+            LIMIT 50
+        ];
+
+        for (Scheduled_Integration_Job__c job : jobs) {
             Map<String, Object> jobMap = new Map<String, Object>();
+            String fullName = String.isBlank(job.Scheduler_Name__c) ? job.Logical_Job_Key__c : job.Scheduler_Name__c;
+            String syncObjectName = String.isBlank(job.Source_Object__c) ? 'Unknown' : job.Source_Object__c;
             jobMap.put('id', job.Id);
-            jobMap.put('status', job.State);
-            String fullName = job.CronJobDetail.Name;
-            String syncObjectName = 'Unknown';
-            if (String.isNotBlank(fullName) && fullName.contains(' - ')) {
-                List<String> parts = fullName.split(' - ');
-                if (parts.size() > 1 && String.isNotBlank(parts[1])) {
-                    syncObjectName = parts[1];
-                }
-            }
-            
+            jobMap.put('status', job.Status__c);
             jobMap.put('syncObject', syncObjectName);
             jobMap.put('name', fullName);
-            jobMap.put('nextRun', job.NextFireTime != null ? job.NextFireTime.format() : 'Not Scheduled');
-            jobMap.put('lastRun', job.PreviousFireTime != null ? job.PreviousFireTime.format() : 'N/A');
-            jobMap.put('createdBy', job.CreatedBy != null ? job.CreatedBy.Name : 'System');
-            jobMap.put('createdDate', job.CreatedDate != null ? job.CreatedDate.format() : 'N/A');
-            jobMap.put('frequencyText', decodeCron(job.CronExpression));
+            jobMap.put('nextRun', job.Next_Run_At__c != null ? job.Next_Run_At__c.format() : 'Not Scheduled');
+            jobMap.put('lastRun', job.Last_Run_At__c != null ? job.Last_Run_At__c.format() : 'N/A');
+            jobMap.put('createdBy', job.Created_By_User__r != null ? job.Created_By_User__r.Name : 'System');
+            jobMap.put('createdDate', job.Created_DateTime__c != null ? job.Created_DateTime__c.format() : 'N/A');
+            jobMap.put('frequencyText', formatFrequency(job.Frequency_Value__c, job.Frequency_Type__c));
             jobList.add(jobMap);
         }
         return jobList;
@@ -39,39 +37,8 @@ public with sharing class QBSchedulerController {
         try {
             SchedulerEntitlementService.assertCanCreateSchedule();
             Integer safeValue = Integer.valueOf(freqValue.trim());
-            QBSyncScheduler scheduler = new QBSyncScheduler(selectedObject);
             String uniqueJobName = 'QBO Sync - ' + selectedObject + ' - ' + Datetime.now().format('MM/dd/yyyy hh:mm a');
-            Id newJobId;
-            List<Id> cronJobIds = new List<Id>();
-
-            if (freqType == 'Minutes') {
-                for (Integer i = 0; i < 60; i += safeValue) {
-                    String cronExp = '0 ' + i + ' * * * ?';
-                    Id jobId = System.schedule(uniqueJobName + ' (' + i + 'm)', cronExp, scheduler);
-                    cronJobIds.add(jobId);
-                    if (newJobId == null) {
-                        newJobId = jobId;
-                    }
-                }
-            } else {
-                String cronExp = '';
-                if (freqType == 'Hours') cronExp = '0 0 0/' + safeValue + ' * * ?';
-                else if (freqType == 'Days') cronExp = '0 0 0 1/' + safeValue + ' * ?';
-                else if (freqType == 'Weeks') cronExp = '0 0 0 ? * MON'; 
-                else if (freqType == 'Months') cronExp = '0 0 0 1 1/' + safeValue + ' ?';
-                
-                newJobId = System.schedule(uniqueJobName, cronExp, scheduler);
-                cronJobIds.add(newJobId);
-            }
-
-            SchedulerEntitlementService.recordScheduleCreated(
-                'QuickBooks',
-                selectedObject,
-                freqValue,
-                freqType,
-                uniqueJobName,
-                cronJobIds
-            );
+            Id newJobId = createLogicalSchedule('QuickBooks', selectedObject, freqValue, freqType, uniqueJobName, null);
             IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
             
             return (String)newJobId; 
@@ -100,11 +67,24 @@ public with sharing class QBSchedulerController {
     private static Boolean abortExistingJobs(String baseJobName) {
         String searchName = baseJobName + '%';
         List<CronTrigger> existingJobs = [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name LIKE :searchName];
-        
         if (!existingJobs.isEmpty()) {
             for (CronTrigger ct : existingJobs) {
                 System.abortJob(ct.Id);
             }
+            return true;
+        }
+        List<Scheduled_Integration_Job__c> logicalJobs = [
+            SELECT Id, Status__c, Deleted_DateTime__c
+            FROM Scheduled_Integration_Job__c
+            WHERE Logical_Job_Key__c LIKE :searchName
+            AND Status__c = 'Active'
+        ];
+        for (Scheduled_Integration_Job__c logicalJob : logicalJobs) {
+            logicalJob.Status__c = 'Deleted';
+            logicalJob.Deleted_DateTime__c = Datetime.now();
+        }
+        if (!logicalJobs.isEmpty()) {
+            update logicalJobs;
             return true;
         }
         return false;
@@ -187,6 +167,47 @@ public with sharing class QBSchedulerController {
         
         return 'Frequent Interval (Minutes)';
     }
+
+    private static String formatFrequency(Decimal frequencyValue, String frequencyType) {
+        Integer safeValue = frequencyValue == null ? 1 : frequencyValue.intValue();
+        if (String.isBlank(frequencyType)) {
+            return 'Dynamic Schedule';
+        }
+        return 'Every ' + safeValue + ' ' + frequencyType;
+    }
+
+    private static Id createLogicalSchedule(
+        String integrationType,
+        String selectedObject,
+        String freqValue,
+        String freqType,
+        String logicalJobName,
+        String direction
+    ) {
+        SchedulerEntitlementService.recordScheduleCreated(
+            integrationType,
+            selectedObject,
+            freqValue,
+            freqType,
+            logicalJobName,
+            new List<Id>()
+        );
+
+        ScheduledIntegrationHeartbeat.ensureScheduled();
+
+        String logicalKey = SchedulerEntitlementService.normalizeLogicalJobName(logicalJobName);
+        Scheduled_Integration_Job__c trackedJob = [
+            SELECT Id, Direction__c
+            FROM Scheduled_Integration_Job__c
+            WHERE Logical_Job_Key__c = :logicalKey
+            LIMIT 1
+        ];
+        if (String.isNotBlank(direction)) {
+            trackedJob.Direction__c = direction;
+            update trackedJob;
+        }
+        return trackedJob.Id;
+    }
     
     @AuraEnabled
     public static void togglePauseStatus(Boolean pauseIt) {
@@ -212,10 +233,7 @@ public with sharing class QBSchedulerController {
             SchedulerEntitlementService.markScheduleDeleted(jobName);
             String searchName = SchedulerEntitlementService.normalizeLogicalJobName(jobName) + '%';
             List<CronTrigger> existingJobs = [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name LIKE :searchName];
-            
-            for (CronTrigger ct : existingJobs) {
-                System.abortJob(ct.Id);
-            }
+            for (CronTrigger ct : existingJobs) System.abortJob(ct.Id);
         } catch (Exception e) {
             logSchedulerException('QuickBooks', 'QBSchedulerController.deleteSpecificJob', e);
             throw new AuraHandledException('Error deleting job: ' + e.getMessage());
@@ -230,30 +248,10 @@ public with sharing class QBSchedulerController {
             String selectedObject = (nameParts.size() > 1) ? nameParts[1] : 'Account';
 
             Integer safeValue = Integer.valueOf(freqValue.trim());
-            QBSyncScheduler scheduler = new QBSyncScheduler(selectedObject);
             String logicalJobName = SchedulerEntitlementService.normalizeLogicalJobName(jobName);
-            List<Id> cronJobIds = new List<Id>();
-
-            if (freqType == 'Minutes') {
-                for (Integer i = 0; i < 60; i += safeValue) {
-                    String cronExp = '0 ' + i + ' * * * ?';
-                    cronJobIds.add(System.schedule(logicalJobName + ' (' + i + 'm)', cronExp, scheduler));
-                }
-                SchedulerEntitlementService.recordScheduleCreated('QuickBooks', selectedObject, freqValue, freqType, logicalJobName, cronJobIds);
-                IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
-                return 'Success: Job updated for every ' + safeValue + ' Minutes';
-            } else {
-                String cronExp = '';
-                if (freqType == 'Hours') cronExp = '0 0 0/' + safeValue + ' * * ?';
-                else if (freqType == 'Days') cronExp = '0 0 0 1/' + safeValue + ' * ?';
-                else if (freqType == 'Weeks') cronExp = '0 0 0 ? * MON';
-                else if (freqType == 'Months') cronExp = '0 0 0 1 1/' + safeValue + ' ?';
-
-                cronJobIds.add(System.schedule(logicalJobName, cronExp, scheduler));
-                SchedulerEntitlementService.recordScheduleCreated('QuickBooks', selectedObject, freqValue, freqType, logicalJobName, cronJobIds);
-                IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
-                return 'Success: Job updated for every ' + safeValue + ' ' + freqType;
-            }
+            createLogicalSchedule('QuickBooks', selectedObject, freqValue, freqType, logicalJobName, null);
+            IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
+            return 'Success: Job updated for every ' + safeValue + ' ' + freqType;
         } catch (Exception e) {
             logSchedulerException('QuickBooks', 'QBSchedulerController.editSpecificJob', e);
             throw new AuraHandledException('Error updating job: ' + e.getMessage());
@@ -266,33 +264,29 @@ public with sharing class QBSchedulerController {
     public static List<Map<String, Object>> getShopifyScheduledJobs() {
         List<Map<String, Object>> jobList = new List<Map<String, Object>>();
 
-        List<CronTrigger> jobs = [
-            SELECT Id, CronJobDetail.Name, NextFireTime, PreviousFireTime, State, CreatedDate, CreatedBy.Name, CronExpression
-            FROM CronTrigger
-            WHERE CronJobDetail.Name LIKE 'Shopify Sync%'
-            ORDER BY CreatedDate DESC
+        List<Scheduled_Integration_Job__c> jobs = [
+            SELECT Id, Logical_Job_Key__c, Scheduler_Name__c, Source_Object__c, Status__c, Next_Run_At__c,
+                Last_Run_At__c, Created_DateTime__c, Created_By_User__r.Name, Frequency_Value__c, Frequency_Type__c
+            FROM Scheduled_Integration_Job__c
+            WHERE Integration_Type__c = 'Shopify'
+            AND Status__c = 'Active'
+            ORDER BY Created_DateTime__c DESC
             LIMIT 50
         ];
 
-        for (CronTrigger job : jobs) {
+        for (Scheduled_Integration_Job__c job : jobs) {
             Map<String, Object> jobMap = new Map<String, Object>();
+            String fullName = String.isBlank(job.Scheduler_Name__c) ? job.Logical_Job_Key__c : job.Scheduler_Name__c;
+            String syncObjectName = String.isBlank(job.Source_Object__c) ? 'Unknown' : job.Source_Object__c;
             jobMap.put('id', job.Id);
-            jobMap.put('status', job.State);
-            String fullName = job.CronJobDetail.Name;
-            String syncObjectName = 'Unknown';
-            if (String.isNotBlank(fullName) && fullName.contains(' - ')) {
-                List<String> parts = fullName.split(' - ');
-                if (parts.size() > 1 && String.isNotBlank(parts[1])) {
-                    syncObjectName = parts[1];
-                }
-            }
+            jobMap.put('status', job.Status__c);
             jobMap.put('syncObject', syncObjectName);
             jobMap.put('name', fullName);
-            jobMap.put('nextRun', job.NextFireTime != null ? job.NextFireTime.format() : 'Not Scheduled');
-            jobMap.put('lastRun', job.PreviousFireTime != null ? job.PreviousFireTime.format() : 'N/A');
-            jobMap.put('createdBy', job.CreatedBy != null ? job.CreatedBy.Name : 'System');
-            jobMap.put('createdDate', job.CreatedDate != null ? job.CreatedDate.format() : 'N/A');
-            jobMap.put('frequencyText', decodeCron(job.CronExpression));
+            jobMap.put('nextRun', job.Next_Run_At__c != null ? job.Next_Run_At__c.format() : 'Not Scheduled');
+            jobMap.put('lastRun', job.Last_Run_At__c != null ? job.Last_Run_At__c.format() : 'N/A');
+            jobMap.put('createdBy', job.Created_By_User__r != null ? job.Created_By_User__r.Name : 'System');
+            jobMap.put('createdDate', job.Created_DateTime__c != null ? job.Created_DateTime__c.format() : 'N/A');
+            jobMap.put('frequencyText', formatFrequency(job.Frequency_Value__c, job.Frequency_Type__c));
             jobList.add(jobMap);
         }
         return jobList;
@@ -303,37 +297,9 @@ public with sharing class QBSchedulerController {
         try {
             SchedulerEntitlementService.assertCanCreateSchedule();
             Integer safeValue = Integer.valueOf(freqValue.trim());
-            ShopifySyncScheduler scheduler = new ShopifySyncScheduler(selectedObject, isSfToShopify);
             String directionTag = (isSfToShopify == true) ? ' [Out]' : ' [In]';
             String uniqueJobName = 'Shopify Sync - ' + selectedObject + directionTag + ' - ' + Datetime.now().format('MM/dd/yyyy hh:mm a');
-            Id newJobId;
-            List<Id> cronJobIds = new List<Id>();
-
-            if (freqType == 'Minutes') {
-                for (Integer i = 0; i < 60; i += safeValue) {
-                    String cronExp = '0 ' + i + ' * * * ?';
-                    Id jobId = System.schedule(uniqueJobName + ' (' + i + 'm)', cronExp, scheduler);
-                    cronJobIds.add(jobId);
-                    if (newJobId == null) newJobId = jobId;
-                }
-            } else {
-                String cronExp = '';
-                if (freqType == 'Hours')  cronExp = '0 0 0/' + safeValue + ' * * ?';
-                else if (freqType == 'Days')   cronExp = '0 0 0 1/' + safeValue + ' * ?';
-                else if (freqType == 'Weeks')  cronExp = '0 0 0 ? * MON';
-                else if (freqType == 'Months') cronExp = '0 0 0 1 1/' + safeValue + ' ?';
-                newJobId = System.schedule(uniqueJobName, cronExp, scheduler);
-                cronJobIds.add(newJobId);
-            }
-
-            SchedulerEntitlementService.recordScheduleCreated(
-                'Shopify',
-                selectedObject,
-                freqValue,
-                freqType,
-                uniqueJobName,
-                cronJobIds
-            );
+            Id newJobId = createLogicalSchedule('Shopify', selectedObject, freqValue, freqType, uniqueJobName, isSfToShopify == true ? 'Out' : 'In');
             IntegrationUsageService.incrementTaskUsage('Shopify', 1);
 
             return (String) newJobId;
@@ -380,29 +346,10 @@ public with sharing class QBSchedulerController {
             if (String.isBlank(selectedObject)) selectedObject = 'Customers';
 
             Integer safeValue = Integer.valueOf(freqValue.trim());
-            ShopifySyncScheduler scheduler = new ShopifySyncScheduler(selectedObject, isSfToShopify);
             String logicalJobName = SchedulerEntitlementService.normalizeLogicalJobName(jobName);
-            List<Id> cronJobIds = new List<Id>();
-
-            if (freqType == 'Minutes') {
-                for (Integer i = 0; i < 60; i += safeValue) {
-                    String cronExp = '0 ' + i + ' * * * ?';
-                    cronJobIds.add(System.schedule(logicalJobName + ' (' + i + 'm)', cronExp, scheduler));
-                }
-                SchedulerEntitlementService.recordScheduleCreated('Shopify', selectedObject, freqValue, freqType, logicalJobName, cronJobIds);
-                IntegrationUsageService.incrementTaskUsage('Shopify', 1);
-                return 'Success: Shopify job updated for every ' + safeValue + ' Minutes';
-            } else {
-                String cronExp = '';
-                if (freqType == 'Hours')  cronExp = '0 0 0/' + safeValue + ' * * ?';
-                else if (freqType == 'Days')   cronExp = '0 0 0 1/' + safeValue + ' * ?';
-                else if (freqType == 'Weeks')  cronExp = '0 0 0 ? * MON';
-                else if (freqType == 'Months') cronExp = '0 0 0 1 1/' + safeValue + ' ?';
-                cronJobIds.add(System.schedule(logicalJobName, cronExp, scheduler));
-                SchedulerEntitlementService.recordScheduleCreated('Shopify', selectedObject, freqValue, freqType, logicalJobName, cronJobIds);
-                IntegrationUsageService.incrementTaskUsage('Shopify', 1);
-                return 'Success: Shopify job updated for every ' + safeValue + ' ' + freqType;
-            }
+            createLogicalSchedule('Shopify', selectedObject, freqValue, freqType, logicalJobName, isSfToShopify ? 'Out' : 'In');
+            IntegrationUsageService.incrementTaskUsage('Shopify', 1);
+            return 'Success: Shopify job updated for every ' + safeValue + ' ' + freqType;
         } catch (Exception e) {
             logSchedulerException('Shopify', 'QBSchedulerController.editShopifyJob', e);
             throw new AuraHandledException('Error updating Shopify job: ' + e.getMessage());

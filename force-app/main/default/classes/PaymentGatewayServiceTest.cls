@@ -33,7 +33,7 @@ private class PaymentGatewayServiceTest {
 
         Test.startTest();
         try {
-            String response = PaymentGatewayService.verifyCredentialsAndGetGateways();
+            String response = PaymentGatewayService.verifyCredentialsAndGetGateways('admin@example.com', '1234');
             
             // Assertions
             System.assertNotEquals(null, response, 'Response should not be null.');
@@ -77,7 +77,7 @@ private class PaymentGatewayServiceTest {
 
         Test.startTest();
         try {
-            String response = PaymentGatewayService.recoverPin();
+            String response = PaymentGatewayService.recoverPin('admin@example.com');
             
             // Assertions
             System.assertNotEquals(null, response, 'Response should not be null.');
@@ -103,6 +103,97 @@ private class PaymentGatewayServiceTest {
             System.assert(e != null, 'An exception should be thrown either for HTTP error or missing metadata.');
         }
         Test.stopTest();
+    }
+
+    @IsTest
+    static void testVerifyCredentialsRequiresTypedCredentials() {
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            PaymentGatewayService.verifyCredentialsAndGetGateways('', '');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assertEquals(true, threw, 'Typed config-panel credentials should be required.');
+    }
+
+    @IsTest
+    static void testCheckoutUsesFreshEntitlementCache() {
+        insert new Integration_Entitlement__c(
+            Name = 'Checkout Entitlement',
+            Cache_Key__c = 'checkout',
+            Product_Key__c = 'checkout',
+            Status__c = 'Active',
+            Active_Gateways_JSON__c = '["Stripe"]',
+            Raw_Response__c = '{"status":"Success","activeGateways":["Stripe"]}',
+            Expires_At__c = System.now().addMinutes(15),
+            TTL_Minutes__c = 15,
+            Refresh_Status__c = 'Success',
+            Fail_Policy__c = 'Fail Closed'
+        );
+
+        Test.startTest();
+        String response = PaymentGatewayService.getActiveGatewaysForCheckout();
+        Boolean authorized = PaymentGatewayService.isClientAuthorized('Stripe');
+        Test.stopTest();
+
+        System.assert(response.contains('Stripe'));
+        System.assertEquals(true, authorized);
+    }
+
+    @IsTest
+    static void testRecoverPinWithoutUsernameUsesMetadataOrThrows() {
+        Test.setMock(HttpCalloutMock.class, new GatewayApiCalloutMock(200, '{"status":"Success","message":"PIN sent"}'));
+        Test.startTest();
+        try {
+            String response = PaymentGatewayService.recoverPin(null);
+            System.assert(response.contains('PIN'));
+        } catch (AuraHandledException e) {
+            System.assert(e.getMessage().contains('Username'));
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void testRecentErrorLogsQueryPath() {
+        insert new Error_Log__c(
+            Gateway_Name__c = 'Stripe',
+            Class_Method_Name__c = 'PaymentGatewayServiceTest',
+            Error_Message__c = 'Test'
+        );
+
+        Test.startTest();
+        List<Error_Log__c> rows = PaymentGatewayService.getRecentErrorLogs('Stripe');
+        Test.stopTest();
+
+        System.assertEquals(1, rows.size());
+    }
+
+    @IsTest
+    static void testDirectValidationHelperMissingStoredCredentialsPath() {
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            PaymentGatewayService.callServerOrgValidation(null, null, false);
+        } catch (Exception e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assertEquals(true, threw);
+    }
+
+    @IsTest
+    static void testCheckoutNoCacheFailurePathReturnsHandledError() {
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            PaymentGatewayService.getActiveGatewaysForCheckout();
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assertEquals(true, threw);
     }
 
     @IsTest

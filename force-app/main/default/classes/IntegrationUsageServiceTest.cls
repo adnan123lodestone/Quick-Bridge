@@ -112,4 +112,22 @@ private class IntegrationUsageServiceTest {
 
         System.assertEquals(false, threw, 'assertCanConsumeTask with null product should not throw');
     }
+
+    @IsTest
+    static void aggregatorHandlesNoPendingAndManualExecution() {
+        Test.startTest();
+        new IntegrationUsageAggregator().execute(null);
+        IntegrationUsageAggregator.requestAggregation();
+        IntegrationUsageService.incrementTaskUsage('PayPal', 2);
+        IntegrationUsageAggregator.aggregatePendingEvents();
+        Test.stopTest();
+
+        Integration_Usage_Summary__c summary = [
+            SELECT Task_Usage_Count__c
+            FROM Integration_Usage_Summary__c
+            WHERE Product_Key__c = 'paypal'
+            LIMIT 1
+        ];
+        System.assertEquals(2, summary.Task_Usage_Count__c.intValue());
+    }
 }

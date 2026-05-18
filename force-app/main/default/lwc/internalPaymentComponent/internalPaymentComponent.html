@@ -22,35 +22,13 @@
                         <div class="provider-section-badge">{selectedProviderLabel}</div>
                     </div>
                     <div class="provider-grid">
-                        <template if:true={isAuthorizeNetActive}>
-                            <div class="provider-tile-wrap">
-                                <button type="button" class={authorizeNetTileClass} data-provider="authorizenet"
+                        <template for:each={paymentProviderTiles} for:item="provider">
+                            <div key={provider.key} class="provider-tile-wrap">
+                                <button type="button" class={provider.tileClass} data-provider={provider.key}
                                     onclick={handleProviderSelection}>
-                                    <span class="tile-logo tile-logo-authorize">AN</span>
-                                    <span class="tile-name">Authorize.Net</span>
-                                    <span class="tile-status">{authorizeNetStatusText}</span>
-                                </button>
-                            </div>
-                        </template>
-
-                        <template if:true={isStripeActive}>
-                            <div class="provider-tile-wrap">
-                                <button type="button" class={stripeTileClass} data-provider="stripe"
-                                    onclick={handleProviderSelection}>
-                                    <span class="tile-logo tile-logo-stripe">S</span>
-                                    <span class="tile-name">Stripe</span>
-                                    <span class="tile-status">{stripeStatusText}</span>
-                                </button>
-                            </div>
-                        </template>
-
-                        <template if:true={isPayPalActive}>
-                            <div class="provider-tile-wrap">
-                                <button type="button" class={paypalTileClass} data-provider="paypal"
-                                    onclick={handleProviderSelection}>
-                                    <span class="tile-logo tile-logo-paypal">P</span>
-                                    <span class="tile-name">PayPal</span>
-                                    <span class="tile-status">{paypalStatusText}</span>
+                                    <span class={provider.logoClass}>{provider.logoText}</span>
+                                    <span class="tile-name">{provider.label}</span>
+                                    <span class="tile-status">{provider.statusText}</span>
                                 </button>
                             </div>
                         </template>

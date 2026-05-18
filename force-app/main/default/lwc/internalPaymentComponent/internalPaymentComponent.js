@@ -8,12 +8,19 @@ import createPayPalOrder from "@salesforce/apex/PayPalPaymentService.createOrder
 import capturePayPalOrder from "@salesforce/apex/PayPalPaymentService.captureOrder";
 import CardPayment_lables from "@salesforce/label/c.CardPayment_lables";
 import getActiveGatewaysForCheckout from "@salesforce/apex/PaymentGatewayService.getActiveGatewaysForCheckout";
+import getConnectorDescriptors from "@salesforce/apex/IntegrationConnectorRegistry.getConnectorDescriptors";
 
 let acceptJsPromise;
 let stripeJsPromise;
 let paypalJsPromise;
 
 const FORM_CACHE_KEY = 'QuickBridge_Payment_Form_Data';
+const CHECKOUT_PROVIDER_ORDER = ["authorizenet", "stripe", "paypal"];
+const FALLBACK_PAYMENT_PROVIDERS = [
+  { connectorKey: "authorizenet", label: "Authorize.Net", hasPayment: true, hasCheckout: true },
+  { connectorKey: "stripe", label: "Stripe", hasPayment: true, hasCheckout: true },
+  { connectorKey: "paypal", label: "PayPal", hasPayment: true, hasCheckout: true },
+];
 
 export default class PaymentComponent extends LightningElement {
   selectedProvider = null; 
@@ -60,6 +67,7 @@ export default class PaymentComponent extends LightningElement {
   paypalButtonsInstance;
   isPaypalInitializing = false;
   isSubmitting = false;
+  paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
 
   CardPayment_lables = Object.fromEntries(
     CardPayment_lables.split("|").map((v, i) => [`index${i}`, v])
@@ -121,12 +129,18 @@ export default class PaymentComponent extends LightningElement {
   get hasAvailableProviders() { return this.availableProviderCount > 0; }
   get showUnavailableState() { return !this.hasAvailableProviders; }
 
-  get availableProviderCount() {
-    let count = 0;
-    if (this.isAuthorizeNetActive) count += 1;
-    if (this.isStripeActive) count += 1;
-    if (this.isPayPalActive) count += 1;
-    return count;
+  get availableProviderCount() { return this.paymentProviderTiles.length; }
+  get paymentProviderTiles() {
+    return this.paymentProviderDescriptors
+      .filter((provider) => this.isProviderSelectable(provider.connectorKey))
+      .map((provider) => ({
+        key: provider.connectorKey,
+        label: provider.label,
+        logoText: this.getProviderLogoText(provider.connectorKey),
+        logoClass: `tile-logo tile-logo-${provider.connectorKey === "authorizenet" ? "authorize" : provider.connectorKey}`,
+        tileClass: this.getProviderTileClass(provider.connectorKey),
+        statusText: this.getProviderStatusText(this.getProviderConfig(provider.connectorKey)),
+      }));
   }
 
   get authorizeNetTileClass() { return this.getProviderTileClass("authorizenet"); }
@@ -155,9 +169,7 @@ export default class PaymentComponent extends LightningElement {
 
   get selectedProviderLabel() {
     if (!this.hasAvailableProviders) return "No Active Gateway";
-    if (this.selectedProvider === "stripe") return "Stripe Selected";
-    if (this.selectedProvider === "paypal") return "PayPal Selected";
-    return "Authorize.Net Selected";
+    return `${this.getProviderLabel(this.selectedProvider)} Selected`;
   }
 
   get authorizeNetStatusText() { return this.getProviderStatusText(this.authorizeNetConfig); }
@@ -198,6 +210,7 @@ export default class PaymentComponent extends LightningElement {
 
   async initializeProviderConfigs() {
     try {
+      await this.loadPaymentProviderDescriptors();
       const serverResponseStr = await getActiveGatewaysForCheckout();
       const serverResponse = JSON.parse(serverResponseStr);
 
@@ -249,6 +262,19 @@ export default class PaymentComponent extends LightningElement {
     }
   }
 
+  async loadPaymentProviderDescriptors() {
+    try {
+      const descriptors = await getConnectorDescriptors();
+      const paymentProviders = (descriptors || [])
+        .filter((provider) => provider.hasPayment || provider.hasCheckout)
+        .filter((provider) => CHECKOUT_PROVIDER_ORDER.includes(provider.connectorKey))
+        .sort((a, b) => CHECKOUT_PROVIDER_ORDER.indexOf(a.connectorKey) - CHECKOUT_PROVIDER_ORDER.indexOf(b.connectorKey));
+      this.paymentProviderDescriptors = paymentProviders.length ? paymentProviders : FALLBACK_PAYMENT_PROVIDERS;
+    } catch (error) {
+      this.paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
+    }
+  }
+
   buildUnavailableProviderConfig(message, error) {
     return {
       active: false,
@@ -258,10 +284,26 @@ export default class PaymentComponent extends LightningElement {
   }
 
   isProviderSelectable(providerName) {
-    if (providerName === "authorizenet") return this.isAuthorizeNetActive;
-    if (providerName === "stripe") return this.isStripeActive;
-    if (providerName === "paypal") return this.isPayPalActive;
-    return false;
+    return this.getProviderConfig(providerName)?.active === true;
+  }
+
+  getProviderConfig(providerName) {
+    if (providerName === "authorizenet") return this.authorizeNetConfig;
+    if (providerName === "stripe") return this.stripeConfig;
+    if (providerName === "paypal") return this.paypalConfig;
+    return null;
+  }
+
+  getProviderLabel(providerName) {
+    const descriptor = this.paymentProviderDescriptors.find((provider) => provider.connectorKey === providerName);
+    return descriptor?.label || (providerName === "authorizenet" ? "Authorize.Net" : providerName || "Provider");
+  }
+
+  getProviderLogoText(providerName) {
+    if (providerName === "authorizenet") return "AN";
+    if (providerName === "stripe") return "S";
+    if (providerName === "paypal") return "P";
+    return (this.getProviderLabel(providerName) || "?").slice(0, 2).toUpperCase();
   }
 
   getDisabledProviderMessage(config) {

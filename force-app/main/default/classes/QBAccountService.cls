@@ -1,4 +1,6 @@
 public class QBAccountService {
+
+    private Id defaultAccountRecordTypeId;
     public class SyncResult {
         public Id accountId { get; set; }
         public Boolean created { get; set; }
@@ -14,11 +16,11 @@ public class QBAccountService {
                 System.debug(e.getStackTraceString());
                 ErrorLogUtility.logException(
                     'QuickBooks',
-                    'QBAccountService.syncAccountsToQuickBooks',
-                    e,
-                    'Account',
-                    acc == null ? null : acc.Id
-                );
+                'QBAccountService.syncAccountsToQuickBooks',
+                e,
+                'Account',
+                acc == null ? null : acc.Id
+                    );
             }
         }
     }
@@ -41,20 +43,20 @@ public class QBAccountService {
                 try {
                     update new Account(
                         Id = acc.Id,
-                        QuickbookID__c = qbCustomerId
-                    );
+                    QuickbookID__c = qbCustomerId
+                        );
                 } catch (DmlException e) {
                     for (Integer i = 0; i < e.getNumDml(); i++) {
                         ErrorLogUtility.logDmlFailure(
                             'QuickBooks',
-                            'QBAccountService.syncAccountToQuickBooks.updateAccountQuickBooksId',
-                            'update',
-                            'Account',
-                            acc.Id,
-                            e.getDmlMessage(i),
-                            null,
-                            null
-                        );
+                        'QBAccountService.syncAccountToQuickBooks.updateAccountQuickBooksId',
+                        'update',
+                        'Account',
+                        acc.Id,
+                        e.getDmlMessage(i),
+                        null,
+                        null
+                            );
                     }
                     throw e;
                 } finally {
@@ -105,7 +107,7 @@ public class QBAccountService {
         }
         
         String endpoint = '/customer'; // Default
-        String recordTypeName = 'Customer'; 
+        String recordTypeName = 'Customer';
         
         if (acc.RecordTypeId != null) {
             recordTypeName = Schema.SObjectType.Account.getRecordTypeInfosById().get(acc.RecordTypeId).getName();
@@ -161,19 +163,19 @@ public class QBAccountService {
         } else {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'QBAccountService.createCustomerInQuickBooks',
-                'Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody(),
-                res.getStatusCode(),
-                'Account',
-                acc == null ? null : acc.Id
-            );
+            'QBAccountService.createCustomerInQuickBooks',
+            'Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody(),
+            res.getStatusCode(),
+            'Account',
+            acc == null ? null : acc.Id
+                );
             throw new QBIntegrationException('Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody());
         }
     }
     
     private static void updateCustomerInQuickBooks(Account acc) {
         String endpoint = '/customer';
-        String recordTypeName = 'Customer'; 
+        String recordTypeName = 'Customer';
         
         if (acc.RecordTypeId != null) {
             recordTypeName = Schema.SObjectType.Account.getRecordTypeInfosById().get(acc.RecordTypeId).getName();
@@ -187,12 +189,12 @@ public class QBAccountService {
         if (queryRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'QBAccountService.updateCustomerInQuickBooks.query',
-                'Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody(),
-                queryRes.getStatusCode(),
-                'Account',
-                acc == null ? null : acc.Id
-            );
+            'QBAccountService.updateCustomerInQuickBooks.query',
+            'Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody(),
+            queryRes.getStatusCode(),
+            'Account',
+            acc == null ? null : acc.Id
+                );
             throw new QBIntegrationException('Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody());
         }
         
@@ -271,12 +273,12 @@ public class QBAccountService {
         if (updateRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'QBAccountService.updateCustomerInQuickBooks.update',
-                'Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody(),
-                updateRes.getStatusCode(),
-                'Account',
-                acc == null ? null : acc.Id
-            );
+            'QBAccountService.updateCustomerInQuickBooks.update',
+            'Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody(),
+            updateRes.getStatusCode(),
+            'Account',
+            acc == null ? null : acc.Id
+                );
             throw new QBIntegrationException('Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody());
         }
     }

@@ -366,4 +366,16 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         
         return value;
     }
+
+    public void processSingleCustomer(String qboCustomerId) {
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/customer/' + qboCustomerId, null);
+        if (res.getStatusCode() == 200) {
+            Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            Map<String, Object> customer = (Map<String, Object>) data.get('Customer');
+            Account acc = processCustomerData(customer);
+            upsert acc Account.QuickbookID__c;
+        } else {
+            throw new CalloutException('Unable to fetch customer: ' + res.getBody());
+        }
+    }
 }

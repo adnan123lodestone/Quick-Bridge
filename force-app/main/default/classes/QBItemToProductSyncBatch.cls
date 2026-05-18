@@ -295,4 +295,16 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
 
         return value;
     }
+
+    public void syncItemFromQBO(String itemId) {
+    HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + itemId, null);
+    if (res.getStatusCode() == 200) {
+        Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+        Map<String, Object> item = (Map<String, Object>) data.get('Item');
+        Product2 prod = processItemData(item);
+        upsert prod Product2.QuickbookID__c;
+    } else {
+        throw new CalloutException('Unable to fetch item from QBO: ' + res.getBody());
+    }
+}
 }

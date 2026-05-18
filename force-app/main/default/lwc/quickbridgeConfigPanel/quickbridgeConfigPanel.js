@@ -6,6 +6,7 @@ import getConfigPanelPreferences from '@salesforce/apex/PaymentMetadataService.g
 import updateAvailableProductsVisible from '@salesforce/apex/PaymentMetadataService.updateAvailableProductsVisible';
 import checkIntegrationExpiry from '@salesforce/apex/PaymentMetadataService.checkIntegrationExpiry';
 import sendProductRenewalRequest from '@salesforce/apex/PaymentMetadataService.sendProductRenewalRequest';
+import getConnectorDescriptors from '@salesforce/apex/IntegrationConnectorRegistry.getConnectorDescriptors';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import Authorize_Net_logo from '@salesforce/resourceUrl/Authorize_Net_logo';
 import QuickBridge_Logo from '@salesforce/resourceUrl/QuickBridge_Logo';
@@ -255,10 +256,16 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     connectedCallback() {
+        this.loadConnectorTiles();
         const sessionData = sessionStorage.getItem(SESSION_KEY);
         if (sessionData) {
             try {
                 const parsedSession = JSON.parse(sessionData);
+                const expiresAt = parsedSession.sessionExpiresAt ? new Date(parsedSession.sessionExpiresAt) : null;
+                if (expiresAt && expiresAt.getTime() <= Date.now()) {
+                    sessionStorage.removeItem(SESSION_KEY);
+                    return;
+                }
                 if (parsedSession.isLoggedIn && parsedSession.userId) {
                     this.userId = parsedSession.userId;
                     this.currentScreen = 'reporting';
@@ -272,6 +279,34 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     handleUserIdChange(event) { this.userId = event.target.value; }
+
+    async loadConnectorTiles() {
+        try {
+            const logoById = {
+                qbo: QB_Logo,
+                shopify: 'https://cdn.worldvectorlogo.com/logos/shopify.svg',
+                stripe: 'https://cdn.worldvectorlogo.com/logos/stripe-4.svg',
+                authorizenet: Authorize_Net_logo,
+                paypal: 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg',
+                fedex: FedEx_Logo,
+                ups: 'https://cdn.worldvectorlogo.com/logos/ups-1.svg'
+            };
+            const descriptors = await getConnectorDescriptors();
+            const tiles = (descriptors || [])
+                .filter(connector => connector.hasConfig || connector.hasReporting || connector.hasMapping)
+                .map(connector => ({
+                    id: connector.connectorKey,
+                    label: connector.label,
+                    logoUrl: logoById[connector.connectorKey]
+                }))
+                .filter(tile => tile.logoUrl);
+            if (tiles.length) {
+                this.allTilesDefinition = tiles;
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    }
 
     handleRecoverUserIdChange(event) { this.recoverUserId = event.target.value; }
 
@@ -337,7 +372,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             const response = JSON.parse(responseStr);
 
             if (response.status === 'Success') {
-                sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: this.userId, isLoggedIn: true }));
+                sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: this.userId, isLoggedIn: true, sessionExpiresAt: response.sessionExpiresAt }));
                 this.selectedTile = '';
                 this.currentGatewayProperName = '';
                 this.currentScreen = 'reporting';

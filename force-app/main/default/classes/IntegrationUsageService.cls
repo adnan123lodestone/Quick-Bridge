@@ -1,17 +1,7 @@
 public without sharing class IntegrationUsageService {
     private static final Integer EXPIRING_SOON_DAYS = 7;
-    private static final List<String> PRODUCT_KEYS = new List<String>{
-        'quickbooks', 'shopify', 'stripe', 'authorizenet', 'paypal', 'fedex', 'ups'
-    };
-    private static final Map<String, ProductInfo> PRODUCT_INFO_BY_KEY = new Map<String, ProductInfo>{
-        'quickbooks' => new ProductInfo('quickbooks', 'QuickBooks', 'QuickBooks', 'QuickBooks_Is_Active__c', 'QuickBooks_End_Date__c'),
-        'shopify' => new ProductInfo('shopify', 'Shopify', 'Shopify', 'Shopify_Is_Active__c', 'Shopify_End_Date__c'),
-        'stripe' => new ProductInfo('stripe', 'Stripe', 'Stripe', 'Stripe_Active__c', 'Stripe_End_Date__c'),
-        'authorizenet' => new ProductInfo('authorizenet', 'Authorize.Net', 'AuthorizeNet', 'AuthorizeNet_Active__c', 'AuthorizeNet_End_Date__c'),
-        'paypal' => new ProductInfo('paypal', 'PayPal', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c'),
-        'fedex' => new ProductInfo('fedex', 'FedEx', 'FedEx', 'FedEx_Active__c', 'FedEx_End_Date__c'),
-        'ups' => new ProductInfo('ups', 'UPS', 'UPS', 'UPS_Active__c', 'UPS_End_Date__c')
-    };
+    private static final List<String> PRODUCT_KEYS = registryProductKeys();
+    private static final Map<String, ProductInfo> PRODUCT_INFO_BY_KEY = registryProductInfo();
 
     private class ProductInfo {
         String key;
@@ -180,6 +170,7 @@ public without sharing class IntegrationUsageService {
 
     @AuraEnabled(cacheable=false)
     public static List<ReportingProductSummary> getReportingSummary() {
+        IntegrationUsageAggregator.aggregatePendingEvents();
         syncActiveScheduleCount();
         refreshSubscriptionStatuses();
 
@@ -252,14 +243,42 @@ public without sharing class IntegrationUsageService {
                 return;
             }
 
-            Integration_Usage_Summary__c summary = getOrCreateSummary(info);
-            Integer currentValue = toInt((Decimal) summary.get(fieldApiName));
-            summary.put(fieldApiName, currentValue + count);
-            summary.Last_Updated_At__c = Datetime.now();
-            update summary;
+            insert new Integration_Usage_Event__c(
+                Product_Key__c = info.key,
+                Event_Type__c = fieldApiNameToEventType(fieldApiName),
+                Summary_Field__c = fieldApiName,
+                Count__c = count,
+                Occurred_At__c = Datetime.now(),
+                Processed__c = false
+            );
+            if (Test.isRunningTest()) {
+                IntegrationUsageAggregator.aggregatePendingEvents();
+            } else {
+                IntegrationUsageAggregator.requestAggregation();
+            }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'IntegrationUsageService.incrementMetric exception: ' + e.getMessage());
         }
+    }
+
+    private static String fieldApiNameToEventType(String fieldApiName) {
+        if (fieldApiName == 'Record_Sync_Count__c') {
+            return 'Record Sync';
+        }
+        if (fieldApiName == 'Endpoint_Usage_Count__c') {
+            return 'Endpoint Usage';
+        }
+        if (fieldApiName == 'Task_Usage_Count__c') {
+            return 'Task Usage';
+        }
+        if (fieldApiName == 'Error_Count__c') {
+            return 'Error';
+        }
+        return fieldApiName;
+    }
+
+    public static Map<String, Integration_Usage_Summary__c> getOrCreateSummariesByKeyForAggregation() {
+        return getOrCreateSummariesByKey();
     }
 
     private static Map<String, Integration_Usage_Summary__c> getOrCreateSummariesByKey() {
@@ -367,13 +386,43 @@ public without sharing class IntegrationUsageService {
         if (String.isBlank(product)) {
             return null;
         }
-        String normalized = product.toLowerCase().replaceAll('[^a-z0-9]', '');
-        if (normalized == 'qbo' || normalized == 'quickbooksonline') {
-            normalized = 'quickbooks';
-        } else if (normalized == 'authnet' || normalized == 'authorizenet') {
-            normalized = 'authorizenet';
+        String normalized = IntegrationConnectorRegistry.normalizeProductKey(product);
+        if (String.isBlank(normalized)) {
+            normalized = product.toLowerCase().replaceAll('[^a-z0-9]', '');
+            if (normalized == 'qbo' || normalized == 'quickbooksonline') {
+                normalized = 'quickbooks';
+            } else if (normalized == 'authnet' || normalized == 'authorizenet') {
+                normalized = 'authorizenet';
+            }
         }
         return PRODUCT_INFO_BY_KEY.get(normalized);
+    }
+
+    private static List<String> registryProductKeys() {
+        List<String> keys = IntegrationConnectorRegistry.productKeys();
+        return keys.isEmpty()
+            ? new List<String>{ 'quickbooks', 'shopify', 'stripe', 'authorizenet', 'paypal', 'fedex', 'ups' }
+            : keys;
+    }
+
+    private static Map<String, ProductInfo> registryProductInfo() {
+        Map<String, ProductInfo> result = new Map<String, ProductInfo>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.connectors()) {
+            result.put(
+                connector.productKey,
+                new ProductInfo(connector.productKey, connector.label, connector.configRecordName, connector.activeField, connector.expiryField)
+            );
+        }
+        if (result.isEmpty()) {
+            result.put('quickbooks', new ProductInfo('quickbooks', 'QuickBooks', 'QuickBooks', 'QuickBooks_Is_Active__c', 'QuickBooks_End_Date__c'));
+            result.put('shopify', new ProductInfo('shopify', 'Shopify', 'Shopify', 'Shopify_Is_Active__c', 'Shopify_End_Date__c'));
+            result.put('stripe', new ProductInfo('stripe', 'Stripe', 'Stripe', 'Stripe_Active__c', 'Stripe_End_Date__c'));
+            result.put('authorizenet', new ProductInfo('authorizenet', 'Authorize.Net', 'AuthorizeNet', 'AuthorizeNet_Active__c', 'AuthorizeNet_End_Date__c'));
+            result.put('paypal', new ProductInfo('paypal', 'PayPal', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c'));
+            result.put('fedex', new ProductInfo('fedex', 'FedEx', 'FedEx', 'FedEx_Active__c', 'FedEx_End_Date__c'));
+            result.put('ups', new ProductInfo('ups', 'UPS', 'UPS', 'UPS_Active__c', 'UPS_End_Date__c'));
+        }
+        return result;
     }
 
     private static Integer toInt(Decimal value) {

@@ -274,4 +274,16 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
 
         return value;
     }
+
+    public void syncVendorFromQBO(String vendorId) {
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/vendor/' + vendorId, null);
+        if (res.getStatusCode() == 200) {
+            Map<String, Object> resp = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            Map<String, Object> vendorData = (Map<String, Object>) resp.get('Vendor');
+            Account acc = processVendorData(vendorData, getVendorAccountRecordTypeId()); 
+            upsert acc Account.QuickbookID__c;
+        } else {
+            throw new CalloutException('Unable to fetch vendor from QBO: ' + res.getBody());
+        }
+    }
 }

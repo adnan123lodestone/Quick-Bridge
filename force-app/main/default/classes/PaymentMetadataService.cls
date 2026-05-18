@@ -33,35 +33,10 @@ public with sharing class PaymentMetadataService {
 
     private class ProductRenewalRequestException extends Exception {}
 
-    private static final Map<String, List<String>> PROVIDER_FIELDS = new Map<String, List<String>>{
-        'authorizenet' => new List<String>{ 'Company_Name__c', 'AuthorizeNet_API_Login_ID__c', 'AuthorizeNet_Public_Client_Key__c', 'AuthorizeNet_Webhook_Signing_Key__c', 'AuthorizeNet_Active__c', 'AuthorizeNet_Use_Sandbox__c', 'AuthorizeNet_Start_Date__c', 'AuthorizeNet_End_Date__c' },
-        'stripe' => new List<String>{ 'Company_Name__c', 'Stripe_Publishable_Key__c', 'Stripe_Webhook_Signing_Secret__c', 'Stripe_Active__c', 'Stripe_Use_Sandbox__c', 'Stripe_Start_Date__c', 'Stripe_End_Date__c' },
-        'paypal' => new List<String>{ 'Company_Name__c', 'PayPal_ClientId__c', 'PayPal_Active__c', 'PayPal_UseSandbox__c', 'PayPal_StartDate__c', 'PayPal_EndDate__c' },
-        'shopify' => new List<String>{ 'Company_Name__c', 'Shopify_Store_URL__c', 'Shopify_Access_Token__c', 'Shopify_API_Key__c', 'Shopify_API_Secret__c', 'Shopify_Is_Active__c', 'Shopify_Start_Date__c', 'Shopify_End_Date__c' },
-        'qbo' => new List<String>{ 'Company_Name__c', 'QuickBooks_Realm_ID__c', 'QuickBooks_Is_Active__c', 'QuickBooks_Start_Date__c', 'QuickBooks_End_Date__c' },
-        'fedex' => new List<String>{ 'FedEx_Client_Id__c', 'FedEx_Client_Secret__c', 'FedEx_Account_Number__c', 'FedEx_Environment__c', 'FedEx_Default_Service_Type__c', 'FedEx_Default_Packaging_Type__c', 'FedEx_Default_Pickup_Type__c', 'FedEx_Active__c', 'FedEx_Start_Date__c', 'FedEx_End_Date__c' },
-        'ups' => new List<String>{ 'UPS_Client_Id__c', 'UPS_Client_Secret__c', 'UPS_Account_Number__c', 'UPS_Environment__c', 'UPS_Default_Service_Code__c', 'UPS_Active__c', 'UPS_Start_Date__c', 'UPS_End_Date__c' }
-    };
-
-    private static final Map<String, String> PROVIDER_LABELS = new Map<String, String>{
-        'authorizenet' => 'Authorize.Net', 'stripe' => 'Stripe', 'paypal' => 'PayPal', 'shopify' => 'Shopify', 'qbo' => 'QuickBooks',
-        'fedex' => 'FedEx', 'ups' => 'UPS'
-    };
-
-    private static final Map<String, String> PROVIDER_RECORD_NAMES = new Map<String, String>{
-        'authorizenet' => 'AuthorizeNet', 'stripe' => 'Stripe', 'paypal' => 'PayPal', 'shopify' => 'Shopify', 'qbo' => 'QuickBooks',
-        'fedex' => 'FedEx', 'ups' => 'UPS'
-    };
-
-    private static final Map<String, String> PROVIDER_EXPIRY_FIELDS = new Map<String, String>{
-        'authorizenet' => 'AuthorizeNet_End_Date__c',
-        'stripe' => 'Stripe_End_Date__c',
-        'paypal' => 'PayPal_EndDate__c',
-        'shopify' => 'Shopify_End_Date__c',
-        'qbo' => 'QuickBooks_End_Date__c',
-        'fedex' => 'FedEx_End_Date__c',
-        'ups' => 'UPS_End_Date__c'
-    };
+    private static final Map<String, List<String>> PROVIDER_FIELDS = providerFieldsFromRegistry();
+    private static final Map<String, String> PROVIDER_LABELS = providerLabelsFromRegistry();
+    private static final Map<String, String> PROVIDER_RECORD_NAMES = providerRecordNamesFromRegistry();
+    private static final Map<String, String> PROVIDER_EXPIRY_FIELDS = providerExpiryFieldsFromRegistry();
 
     private static final String METADATA_TYPE_NAME = 'Quickbridge_Config__mdt';
     private static final Integer EXPIRY_WARNING_DAYS = 7;
@@ -443,6 +418,38 @@ public with sharing class PaymentMetadataService {
             lines.add('- ' + productLabel);
         }
         return lines;
+    }
+
+    private static Map<String, List<String>> providerFieldsFromRegistry() {
+        Map<String, List<String>> result = new Map<String, List<String>>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.connectors()) {
+            result.put(connector.connectorKey, connector.editableFields);
+        }
+        return result;
+    }
+
+    private static Map<String, String> providerLabelsFromRegistry() {
+        Map<String, String> result = new Map<String, String>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.connectors()) {
+            result.put(connector.connectorKey, connector.label);
+        }
+        return result;
+    }
+
+    private static Map<String, String> providerRecordNamesFromRegistry() {
+        Map<String, String> result = new Map<String, String>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.connectors()) {
+            result.put(connector.connectorKey, connector.configRecordName);
+        }
+        return result;
+    }
+
+    private static Map<String, String> providerExpiryFieldsFromRegistry() {
+        Map<String, String> result = new Map<String, String>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.connectors()) {
+            result.put(connector.connectorKey, connector.expiryField);
+        }
+        return result;
     }
 
     @TestVisible

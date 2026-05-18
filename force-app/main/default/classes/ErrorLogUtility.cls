@@ -19,7 +19,7 @@ public without sharing class ErrorLogUtility {
         'Purchase_Order__c' => 'Purchase_Order__c',
         'Item_Sales_Tax__c' => 'Item_Sales_Tax__c'
     };
-
+    
     public class LogContext {
         public String gatewayName;
         public String classMethodName;
@@ -36,7 +36,7 @@ public without sharing class ErrorLogUtility {
         public Integer httpStatusCode;
         public String externalReference;
     }
-
+    
     public static void logPaymentError(String gatewayName, String classMethodName, String errorMessage, String orderId) {
         LogContext context = new LogContext();
         context.gatewayName = gatewayName;
@@ -48,13 +48,13 @@ public without sharing class ErrorLogUtility {
         context.sourceRecordId = parseId(orderId);
         logError(context);
     }
-
+    
     public static void logException(
         String gatewayName,
-        String classMethodName,
-        Exception exceptionRecord,
-        String sourceObjectApiName,
-        Id sourceRecordId
+    String classMethodName,
+    Exception exceptionRecord,
+    String sourceObjectApiName,
+    Id sourceRecordId
     ) {
         LogContext context = new LogContext();
         context.gatewayName = gatewayName;
@@ -67,14 +67,14 @@ public without sharing class ErrorLogUtility {
         context.errorCategory = 'Code Exception';
         logError(context);
     }
-
+    
     public static void logCalloutFailure(
         String gatewayName,
-        String classMethodName,
-        String errorMessage,
-        Integer httpStatusCode,
-        String sourceObjectApiName,
-        Id sourceRecordId
+    String classMethodName,
+    String errorMessage,
+    Integer httpStatusCode,
+    String sourceObjectApiName,
+    Id sourceRecordId
     ) {
         LogContext context = new LogContext();
         context.gatewayName = gatewayName;
@@ -87,16 +87,16 @@ public without sharing class ErrorLogUtility {
         context.errorCategory = 'Callout Failure';
         logError(context);
     }
-
+    
     public static void logDmlFailure(
         String gatewayName,
-        String classMethodName,
-        String dmlOperation,
-        String sourceObjectApiName,
-        Id sourceRecordId,
-        String errorMessage,
-        String actionSourceObjectApiName,
-        Id actionSourceRecordId
+    String classMethodName,
+    String dmlOperation,
+    String sourceObjectApiName,
+    Id sourceRecordId,
+    String errorMessage,
+    String actionSourceObjectApiName,
+    Id actionSourceRecordId
     ) {
         LogContext context = new LogContext();
         context.gatewayName = gatewayName;
@@ -112,84 +112,84 @@ public without sharing class ErrorLogUtility {
         context.dmlOperation = dmlOperation;
         logError(context);
     }
-
+    
     public static void logDmlResults(
         String gatewayName,
-        String classMethodName,
-        String dmlOperation,
-        List<SObject> records,
-        List<Database.SaveResult> results,
-        String actionSourceObjectApiName,
-        Id actionSourceRecordId
+    String classMethodName,
+    String dmlOperation,
+    List<SObject> records,
+    List<Database.SaveResult> results,
+    String actionSourceObjectApiName,
+    Id actionSourceRecordId
     ) {
         if (records == null || results == null) {
             return;
         }
-
+        
         Integer limitSize = records.size() < results.size() ? records.size() : results.size();
         for (Integer index = 0; index < limitSize; index++) {
             if (results[index] == null || results[index].isSuccess()) {
                 continue;
             }
-
+            
             SObject failedRecord = records[index];
             Id failedRecordId = failedRecord == null ? null : (Id) failedRecord.get('Id');
             String objectApiName = failedRecord == null ? null : failedRecord.getSObjectType().getDescribe().getName();
             String message = buildDmlErrorMessage(results[index].getErrors());
             logDmlFailure(
                 gatewayName,
-                classMethodName,
-                dmlOperation,
-                objectApiName,
-                failedRecordId,
-                message,
-                actionSourceObjectApiName,
-                actionSourceRecordId
-            );
+            classMethodName,
+            dmlOperation,
+            objectApiName,
+            failedRecordId,
+            message,
+            actionSourceObjectApiName,
+            actionSourceRecordId
+                );
         }
     }
-
+    
     public static void logUpsertResults(
         String gatewayName,
-        String classMethodName,
-        String dmlOperation,
-        List<SObject> records,
-        List<Database.UpsertResult> results,
-        String actionSourceObjectApiName,
-        Id actionSourceRecordId
+    String classMethodName,
+    String dmlOperation,
+    List<SObject> records,
+    List<Database.UpsertResult> results,
+    String actionSourceObjectApiName,
+    Id actionSourceRecordId
     ) {
         if (records == null || results == null) {
             return;
         }
-
+        
         Integer limitSize = records.size() < results.size() ? records.size() : results.size();
         for (Integer index = 0; index < limitSize; index++) {
             if (results[index] == null || results[index].isSuccess()) {
                 continue;
             }
-
+            
             SObject failedRecord = records[index];
             Id failedRecordId = failedRecord == null ? null : (Id) failedRecord.get('Id');
             String objectApiName = failedRecord == null ? null : failedRecord.getSObjectType().getDescribe().getName();
             String message = buildDmlErrorMessage(results[index].getErrors());
             logDmlFailure(
                 gatewayName,
-                classMethodName,
-                dmlOperation,
-                objectApiName,
-                failedRecordId,
-                message,
-                actionSourceObjectApiName,
-                actionSourceRecordId
-            );
+            classMethodName,
+            dmlOperation,
+            objectApiName,
+            failedRecordId,
+            message,
+            actionSourceObjectApiName,
+            actionSourceRecordId
+                );
         }
     }
-
+    
     public static void logError(LogContext context) {
         if (context == null) {
             return;
         }
-
+        
         try {
             Error_Log__c errorRecord = new Error_Log__c();
             errorRecord.Gateway_Name__c = context.gatewayName;
@@ -198,7 +198,9 @@ public without sharing class ErrorLogUtility {
             errorRecord.Order_Id__c = context.sourceObjectApiName == 'Order'
                 ? firstNonBlank(context.sourceRecordIdText, context.sourceRecordId == null ? null : String.valueOf(context.sourceRecordId))
                 : null;
-
+            errorRecord.Is_Retryable__c = isRetryableError(context);
+            errorRecord.Retry_Status__c = 'Pending';
+            errorRecord.Retry_Count__c = 0;
             putIfPresent(errorRecord, 'Source_Object__c', context.sourceObjectApiName);
             putIfPresent(errorRecord, 'Source_Record_Id__c', firstNonBlank(context.sourceRecordIdText, context.sourceRecordId == null ? null : String.valueOf(context.sourceRecordId)));
             putIfPresent(errorRecord, 'Action_Source_Object__c', context.actionSourceObjectApiName);
@@ -208,9 +210,9 @@ public without sharing class ErrorLogUtility {
             putIfPresent(errorRecord, 'Http_Status_Code__c', context.httpStatusCode);
             putIfPresent(errorRecord, 'External_Reference__c', context.externalReference);
             putIfPresent(errorRecord, 'Stack_Trace__c', abbreviate(context.stackTrace, STACK_TRACE_MAX_LENGTH));
-
+            
             assignParentLookup(errorRecord, context);
-
+            
             Database.SaveResult result = Database.insert(errorRecord, false);
             if (result != null && result.isSuccess()) {
                 IntegrationUsageService.incrementError(context.gatewayName, 1);
@@ -221,11 +223,11 @@ public without sharing class ErrorLogUtility {
             System.debug(LoggingLevel.ERROR, 'Error Log Insert Failed: ' + e.getMessage());
         }
     }
-
+    
     private static void assignParentLookup(Error_Log__c errorRecord, LogContext context) {
         Id parentId = context.sourceRecordId;
         String objectApiName = context.sourceObjectApiName;
-
+        
         if (parentId == null && context.actionSourceRecordId != null) {
             parentId = context.actionSourceRecordId;
             objectApiName = context.actionSourceObjectApiName;
@@ -233,12 +235,12 @@ public without sharing class ErrorLogUtility {
         if (parentId == null) {
             return;
         }
-
+        
         try {
             String describedObjectApiName = parentId.getSObjectType().getDescribe().getName();
             for (String supportedObjectApiName : PARENT_LOOKUP_FIELD_BY_OBJECT.keySet()) {
                 if (objectApiNameMatches(objectApiName, supportedObjectApiName) ||
-                    objectApiNameMatches(describedObjectApiName, supportedObjectApiName)) {
+                objectApiNameMatches(describedObjectApiName, supportedObjectApiName)) {
                     putIfPresent(errorRecord, PARENT_LOOKUP_FIELD_BY_OBJECT.get(supportedObjectApiName), parentId);
                     return;
                 }
@@ -247,7 +249,7 @@ public without sharing class ErrorLogUtility {
             System.debug(LoggingLevel.WARN, 'Error Log parent lookup assignment skipped: ' + e.getMessage());
         }
     }
-
+    
     private static Boolean objectApiNameMatches(String actualObjectApiName, String supportedObjectApiName) {
         if (String.isBlank(actualObjectApiName) || String.isBlank(supportedObjectApiName)) {
             return false;
@@ -255,7 +257,7 @@ public without sharing class ErrorLogUtility {
         return actualObjectApiName == supportedObjectApiName ||
             actualObjectApiName.endsWith('__' + supportedObjectApiName);
     }
-
+    
     private static Id parseId(String rawId) {
         if (String.isBlank(rawId)) {
             return null;
@@ -266,7 +268,7 @@ public without sharing class ErrorLogUtility {
             return null;
         }
     }
-
+    
     private static void putIfPresent(SObject targetRecord, String fieldApiName, Object value) {
         if (targetRecord == null || String.isBlank(fieldApiName) || value == null) {
             return;
@@ -277,23 +279,23 @@ public without sharing class ErrorLogUtility {
             System.debug(LoggingLevel.WARN, 'Error Log field skipped: ' + fieldApiName + ' - ' + e.getMessage());
         }
     }
-
+    
     private static String firstNonBlank(String firstValue, String secondValue) {
         return String.isBlank(firstValue) ? secondValue : firstValue;
     }
-
+    
     private static String abbreviate(String value, Integer maxLength) {
         if (value == null || maxLength == null || value.length() <= maxLength) {
             return value;
         }
         return value.substring(0, maxLength);
     }
-
+    
     private static String buildDmlErrorMessage(Database.Error[] errors) {
         if (errors == null || errors.size() == 0) {
             return 'Unknown DML error.';
         }
-
+        
         List<String> messages = new List<String>();
         for (Database.Error error : errors) {
             if (error == null) {
@@ -303,12 +305,12 @@ public without sharing class ErrorLogUtility {
         }
         return messages.isEmpty() ? 'Unknown DML error.' : String.join(messages, ' | ');
     }
-
+    
     @AuraEnabled(cacheable=true)
     public static Map<String, Object> getDynamicLogs(String gatewayName) {
         Map<String, Object> result = new Map<String, Object>();
         List<Map<String, Object>> columns = new List<Map<String, Object>>();
-        List<String> queryFields = new List<String>{'Id', 'Name'}; 
+        List<String> queryFields = new List<String>{'Id', 'Name'};
         
         Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
         Schema.SObjectType sObjType = globalDescribe.get('QuickBridgeTLG__Error_Log__c');
@@ -341,10 +343,10 @@ public without sharing class ErrorLogUtility {
                 col.put('type', 'date');
                 col.put('fieldName', fieldPath);
                 col.put('typeAttributes', new Map<String, Object>{
-                    'year' => 'numeric', 'month' => 'short', 'day' => '2-digit', 
+                    'year' => 'numeric', 'month' => 'short', 'day' => '2-digit',
                     'hour' => '2-digit', 'minute' => '2-digit'
                 });
-            } 
+            }
             // B) Handle Clickable Lookups & ID Text Fields
             else if (sfType == Schema.DisplayType.REFERENCE || fieldPath.contains('Source_Record_Id__c') || fieldPath.contains('Action_Source_Record_Id__c')) {
                 col.put('type', 'url');
@@ -372,15 +374,55 @@ public without sharing class ErrorLogUtility {
         // 4. Build and Execute Dynamic SOQL
         String objectName = sObjType.getDescribe().getName();
         String gatewayField = objectName.contains('QuickBridgeTLG__') ? 'QuickBridgeTLG__Gateway_Name__c' : 'Gateway_Name__c';
+        queryFields.add('QuickBridgeTLG__Is_Retryable__c');
+        queryFields.add('QuickBridgeTLG__Retry_Count__c');
+        queryFields.add('QuickBridgeTLG__Retry_Status__c');
         
-        String query = 'SELECT ' + String.join(queryFields, ', ') + 
-                       ' FROM ' + objectName + 
-                       ' WHERE ' + gatewayField + ' = :gatewayName ' +
-                       ' ORDER BY CreatedDate DESC LIMIT 500';
-                       
+        String query = 'SELECT ' + String.join(queryFields, ', ') +
+            ' FROM ' + objectName +
+            ' WHERE ' + gatewayField + ' = :gatewayName ' +
+            ' ORDER BY CreatedDate DESC LIMIT 500';
+        
         result.put('columns', columns);
         result.put('records', Database.query(query));
         
         return result;
+    }
+    
+    private static Boolean isRetryableError(LogContext ctx) {
+        // Layer 1: HTTP status code
+        if (ctx.httpStatusCode != null) {
+            if (ctx.httpStatusCode == 408 || ctx.httpStatusCode == 429 ||
+            (ctx.httpStatusCode >= 500 && ctx.httpStatusCode <= 504)) {
+                return true;
+            }
+            return false;
+        }
+        
+        // Layer 2: Exception message keywords
+        String msg = ctx.errorMessage?.toLowerCase();
+        if (msg != null) {
+            if (msg.contains('timeout') || msg.contains('read timed out') ||
+                msg.contains('connection reset') || msg.contains('rate limit') ||
+            msg.contains('unable to lock row')) {
+                return true;
+            }
+            if (msg.contains('invalid') || msg.contains('required field') ||
+                msg.contains('mismatch') || msg.contains('not found') ||
+            msg.contains('duplicate')) {
+                return false;
+            }
+        }
+        
+        // Default – false (safety)
+        return false;
+    }
+    
+    @AuraEnabled
+    public static void updateRetryCount(Id errorLogId) {
+        Error_Log__c log = [SELECT Id, Retry_Count__c FROM Error_Log__c WHERE Id = :errorLogId LIMIT 1];
+        Integer newCount = (Integer) (log.Retry_Count__c == null ? 0 : log.Retry_Count__c) + 1;
+        log.Retry_Count__c = newCount;
+        update log;
     }
 }

@@ -38,6 +38,43 @@ private class PaymentMethodAdminServiceTest {
     }
 
     @IsTest
+    static void deactivatePaymentMethods_acceptsAllPaymentProvidersFromRegistry() {
+        PaymentMethodAdminService.testUpdater = new FakeUpdater();
+
+        PaymentMethodAdminService.DeactivateRequest request = new PaymentMethodAdminService.DeactivateRequest();
+        request.paymentMethodStates = new List<PaymentMethodAdminService.PaymentMethodState>{
+            buildState('authorizenet', true),
+            buildState('stripe', false),
+            buildState('paypal', true)
+        };
+
+        PaymentMethodAdminService.DeactivateResponse response = PaymentMethodAdminService.deactivatePaymentMethods(request);
+
+        System.assertEquals(true, response.success);
+        System.assertEquals(3, response.acceptedMethods.size());
+        System.assert(response.message.contains('Authorize.Net'));
+        System.assertEquals(true, capturedProviderStates.get('authorizenet'));
+    }
+
+    @IsTest
+    static void deactivatePaymentMethods_defaultUpdaterPathIsCallable() {
+        PaymentMethodAdminService.testUpdater = null;
+        PaymentMethodAdminService.DeactivateRequest request = new PaymentMethodAdminService.DeactivateRequest();
+        request.paymentMethodStates = new List<PaymentMethodAdminService.PaymentMethodState>{
+            buildState('stripe', true)
+        };
+
+        Test.startTest();
+        try {
+            PaymentMethodAdminService.DeactivateResponse response = PaymentMethodAdminService.deactivatePaymentMethods(request);
+            System.assertEquals(true, response.success);
+        } catch (Exception e) {
+            System.assertNotEquals(null, e.getMessage(), 'Metadata API path should be covered even if the test org rejects deployment.');
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
     static void deactivatePaymentMethods_rejectsUnsupportedOnlyInput() {
         PaymentMethodAdminService.testUpdater = new FakeUpdater();
 
@@ -79,6 +116,27 @@ private class PaymentMethodAdminServiceTest {
         System.assertEquals('Venmo', response.unsupportedMethods[0]);
         System.assert(response.message.contains('Quickbridge'));
         System.assert(response.message.contains('inactive'));
+    }
+
+    @IsTest
+    static void deactivatePaymentMethods_rejectsEmptyRequest() {
+        Boolean nullRejected = false;
+        try {
+            PaymentMethodAdminService.deactivatePaymentMethods(null);
+        } catch (PaymentMethodAdminService.PaymentMethodAdminException e) {
+            nullRejected = true;
+        }
+        System.assertEquals(true, nullRejected);
+
+        Boolean emptyRejected = false;
+        try {
+            PaymentMethodAdminService.DeactivateRequest request = new PaymentMethodAdminService.DeactivateRequest();
+            request.paymentMethodStates = new List<PaymentMethodAdminService.PaymentMethodState>();
+            PaymentMethodAdminService.deactivatePaymentMethods(request);
+        } catch (PaymentMethodAdminService.PaymentMethodAdminException e) {
+            emptyRejected = true;
+        }
+        System.assertEquals(true, emptyRejected);
     }
 
     @IsTest

@@ -689,4 +689,15 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
 
         return value;
     }
+
+    public static void processSingleInvoice(String invoiceId) {
+    HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + invoiceId, null);
+    if (res.getStatusCode() != 200) {
+        throw new CalloutException('Unable to fetch invoice: ' + res.getBody());
+    }
+    Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+    Map<String, Object> invoice = (Map<String, Object>) data.get('Invoice');
+    QBInvoiceToOrderSyncBatch batch = new QBInvoiceToOrderSyncBatch();
+    batch.execute(null, new List<String>{ JSON.serialize(invoice) });
+}
 }

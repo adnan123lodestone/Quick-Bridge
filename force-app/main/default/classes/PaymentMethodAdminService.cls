@@ -26,17 +26,13 @@ public with sharing class PaymentMethodAdminService {
     @TestVisible
     private static MetadataUpdater testUpdater;
 
-    private static final Map<String, String> PROVIDER_TO_LABEL = new Map<String, String>{
-        'authorizenet' => 'Authorize.Net',
-        'stripe' => 'Stripe',
-        'paypal' => 'PayPal'
-    };
-
     private static final Map<String, String> PROVIDER_TO_METADATA_RECORD = new Map<String, String>{
         'authorizenet' => 'AuthorizeNet_Config__mdt.Default',
         'stripe' => 'Stripe_Config__mdt.Default',
         'paypal' => 'PayPal_Config__mdt.Default'
     };
+
+    private static final Map<String, String> PROVIDER_TO_LABEL = paymentProviderLabels();
 
     public static DeactivateResponse deactivatePaymentMethods(DeactivateRequest request) {
         try {
@@ -160,5 +156,20 @@ public with sharing class PaymentMethodAdminService {
                 throw e;
             }
         }
+    }
+
+    private static Map<String, String> paymentProviderLabels() {
+        Map<String, String> labels = new Map<String, String>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.paymentConnectors()) {
+            if (PROVIDER_TO_METADATA_RECORD.containsKey(connector.connectorKey)) {
+                labels.put(connector.connectorKey, connector.label);
+            }
+        }
+        if (labels.isEmpty()) {
+            labels.put('authorizenet', 'Authorize.Net');
+            labels.put('stripe', 'Stripe');
+            labels.put('paypal', 'PayPal');
+        }
+        return labels;
     }
 }
