@@ -10,46 +10,14 @@ public with sharing class QBSchedulerController {
         try {
             return GenericSchedulerController.scheduleJob('qbo', freqValue, freqType, selectedObject, null);
             
-        } catch (Exception e) {
-            logSchedulerException('QuickBooks', 'QBSchedulerController.scheduleJob', e);
-            throw new AuraHandledException('Error: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.scheduleJob', e, 'Error: '); }
     }
     
     @AuraEnabled
     public static String stopJob() {
         try {
             return GenericSchedulerController.stopConnectorSchedules('qbo');
-        } catch (Exception e) {
-            logSchedulerException('QuickBooks', 'QBSchedulerController.stopJob', e);
-            throw new AuraHandledException('Error stopping job: ' + e.getMessage());
-        }
-    }
-    
-    private static Boolean abortExistingJobs(String baseJobName) {
-        String searchName = baseJobName + '%';
-        List<CronTrigger> existingJobs = [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name LIKE :searchName];
-        if (!existingJobs.isEmpty()) {
-            for (CronTrigger ct : existingJobs) {
-                System.abortJob(ct.Id);
-            }
-            return true;
-        }
-        List<Scheduled_Integration_Job__c> logicalJobs = [
-            SELECT Id, Status__c, Deleted_DateTime__c
-            FROM Scheduled_Integration_Job__c
-            WHERE Logical_Job_Key__c LIKE :searchName
-            AND Status__c = 'Active'
-        ];
-        for (Scheduled_Integration_Job__c logicalJob : logicalJobs) {
-            logicalJob.Status__c = 'Deleted';
-            logicalJob.Deleted_DateTime__c = Datetime.now();
-        }
-        if (!logicalJobs.isEmpty()) {
-            update logicalJobs;
-            return true;
-        }
-        return false;
+        } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.stopJob', e, 'Error stopping job: '); }
     }
     
     @AuraEnabled(cacheable=true)
@@ -116,28 +84,6 @@ public with sharing class QBSchedulerController {
         return runList;
     }
     
-    private static String decodeCron(String cronExp) {
-        if (String.isBlank(cronExp)) return 'Dynamic Schedule';
-        
-        List<String> parts = cronExp.split(' ');
-        if (parts.size() >= 6) {
-            if (parts[2].contains('/')) return 'Every ' + parts[2].split('/')[1] + ' Hours';
-            if (parts[3].contains('/')) return 'Every ' + parts[3].split('/')[1] + ' Days';
-            if (parts[4].contains('/')) return 'Every ' + parts[4].split('/')[1] + ' Months';
-            if (parts[5] != '?') return 'Every Week';
-        }
-        
-        return 'Frequent Interval (Minutes)';
-    }
-
-    private static String formatFrequency(Decimal frequencyValue, String frequencyType) {
-        Integer safeValue = frequencyValue == null ? 1 : frequencyValue.intValue();
-        if (String.isBlank(frequencyType)) {
-            return 'Dynamic Schedule';
-        }
-        return 'Every ' + safeValue + ' ' + frequencyType;
-    }
-
     private static Id createLogicalSchedule(
         String integrationType,
         String selectedObject,
@@ -179,10 +125,7 @@ public with sharing class QBSchedulerController {
             settings.Is_Paused__c = pauseIt;
             upsert settings;
             QuickBridgeAdminGuard.audit('SCHEDULE_PAUSE_TOGGLE', 'qbo', 'Success', 'paused=' + String.valueOf(pauseIt == true), null);
-        } catch (Exception e) {
-            logSchedulerException('QuickBooks', 'QBSchedulerController.togglePauseStatus', e);
-            throw new AuraHandledException('Setting update failed: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.togglePauseStatus', e, 'Setting update failed: '); }
     }
     
     @AuraEnabled(cacheable=true)
@@ -196,20 +139,14 @@ public with sharing class QBSchedulerController {
     public static void deleteSpecificJob(String jobName) {
         try {
             GenericSchedulerController.deleteJob(jobName);
-        } catch (Exception e) {
-            logSchedulerException('QuickBooks', 'QBSchedulerController.deleteSpecificJob', e);
-            throw new AuraHandledException('Error deleting job: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.deleteSpecificJob', e, 'Error deleting job: '); }
     }
 
     @AuraEnabled
     public static String editSpecificJob(String jobName, String freqValue, String freqType) {
         try {
             return GenericSchedulerController.editJob('qbo', jobName, freqValue, freqType);
-        } catch (Exception e) {
-            logSchedulerException('QuickBooks', 'QBSchedulerController.editSpecificJob', e);
-            throw new AuraHandledException('Error updating job: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.editSpecificJob', e, 'Error updating job: '); }
     }
 
     // ─── Shopify Scheduler Methods ───────────────────────────────────────────
@@ -223,10 +160,7 @@ public with sharing class QBSchedulerController {
     public static String scheduleShopifyJob(String freqValue, String freqType, String selectedObject, Boolean isSfToShopify) {
         try {
             return GenericSchedulerController.scheduleJob('shopify', freqValue, freqType, selectedObject, isSfToShopify == true ? 'Out' : 'In');
-        } catch (Exception e) {
-            logSchedulerException('Shopify', 'QBSchedulerController.scheduleShopifyJob', e);
-            throw new AuraHandledException('Error scheduling Shopify job: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('Shopify', 'QBSchedulerController.scheduleShopifyJob', e, 'Error scheduling Shopify job: '); }
     }
 
     @AuraEnabled
@@ -234,26 +168,20 @@ public with sharing class QBSchedulerController {
         try {
             String response = GenericSchedulerController.stopConnectorSchedules('shopify');
             return response.startsWith('Success') ? 'Success: Shopify schedule stopped.' : 'Notice: No active Shopify schedule found.';
-        } catch (Exception e) {
-            logSchedulerException('Shopify', 'QBSchedulerController.stopShopifyJob', e);
-            throw new AuraHandledException('Error stopping Shopify job: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('Shopify', 'QBSchedulerController.stopShopifyJob', e, 'Error stopping Shopify job: '); }
     }
 
     @AuraEnabled
     public static void deleteShopifyJob(String jobName) {
         try {
             GenericSchedulerController.deleteJob(jobName);
-        } catch (Exception e) {
-            logSchedulerException('Shopify', 'QBSchedulerController.deleteShopifyJob', e);
-            throw new AuraHandledException('Error deleting Shopify job: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('Shopify', 'QBSchedulerController.deleteShopifyJob', e, 'Error deleting job: '); }
     }
 
     @AuraEnabled
     public static String editShopifyJob(String jobName, String freqValue, String freqType) {
         try {
-            markLogicalJobsDeletedByPrefix(jobName);
+            GenericSchedulerController.deleteJob(jobName);
             List<String> nameParts = jobName.split(' - ');
             String objectAndDir = (nameParts.size() > 1) ? nameParts[1] : 'Customers [In]';
             Boolean isSfToShopify = objectAndDir.contains('[Out]');
@@ -266,10 +194,7 @@ public with sharing class QBSchedulerController {
             IntegrationUsageService.incrementTaskUsage('Shopify', 1);
             QuickBridgeAdminGuard.audit('SCHEDULE_EDIT', 'shopify', 'Success', jobName, null);
             return 'Success: Shopify job updated for every ' + safeValue + ' ' + freqType;
-        } catch (Exception e) {
-            logSchedulerException('Shopify', 'QBSchedulerController.editShopifyJob', e);
-            throw new AuraHandledException('Error updating Shopify job: ' + e.getMessage());
-        }
+        } catch (Exception e) { throw schedulerException('Shopify', 'QBSchedulerController.editShopifyJob', e, 'Error updating Shopify job: '); }
     }
 
     @AuraEnabled(cacheable=true)
@@ -303,23 +228,8 @@ public with sharing class QBSchedulerController {
         ErrorLogUtility.logException(gatewayName, classMethodName, exceptionRecord, null, null);
     }
 
-    private static void markLogicalJobsDeletedByPrefix(String jobName) {
-        if (String.isBlank(jobName)) {
-            return;
-        }
-        String searchName = SchedulerEntitlementService.normalizeLogicalJobName(jobName) + '%';
-        List<Scheduled_Integration_Job__c> logicalJobs = [
-            SELECT Id, Status__c, Deleted_DateTime__c
-            FROM Scheduled_Integration_Job__c
-            WHERE Logical_Job_Key__c LIKE :searchName
-            AND Status__c = 'Active'
-        ];
-        for (Scheduled_Integration_Job__c logicalJob : logicalJobs) {
-            logicalJob.Status__c = 'Deleted';
-            logicalJob.Deleted_DateTime__c = Datetime.now();
-        }
-        if (!logicalJobs.isEmpty()) {
-            update logicalJobs;
-        }
+    private static AuraHandledException schedulerException(String gatewayName, String classMethodName, Exception exceptionRecord, String prefix) {
+        logSchedulerException(gatewayName, classMethodName, exceptionRecord);
+        return new AuraHandledException(prefix + exceptionRecord.getMessage());
     }
 }

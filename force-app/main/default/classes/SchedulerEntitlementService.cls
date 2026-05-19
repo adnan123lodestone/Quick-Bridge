@@ -50,7 +50,7 @@ public with sharing class SchedulerEntitlementService {
         }
 
         List<Scheduled_Integration_Job__c> existingJobs = [
-            SELECT Id
+            SELECT Id, Logical_Job_Key__c
             FROM Scheduled_Integration_Job__c
             WHERE Logical_Job_Key__c = :logicalKey
             LIMIT 1

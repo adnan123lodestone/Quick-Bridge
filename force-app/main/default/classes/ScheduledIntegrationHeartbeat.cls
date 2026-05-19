@@ -1,12 +1,13 @@
 global with sharing class ScheduledIntegrationHeartbeat implements Schedulable {
     public static final String JOB_NAME = 'QuickBridge Integration Heartbeat';
+    @TestVisible private static Boolean skipSchedulingForTests = true;
 
     global void execute(SchedulableContext context) {
         GenericScheduleDispatcher.dispatchDue();
     }
 
     public static void ensureScheduled() {
-        if (Test.isRunningTest()) {
+        if (Test.isRunningTest() && skipSchedulingForTests == true) {
             return;
         }
         List<CronTrigger> existing = [
@@ -17,7 +18,7 @@ global with sharing class ScheduledIntegrationHeartbeat implements Schedulable {
             LIMIT 1
         ];
         if (existing.isEmpty()) {
-            System.schedule(JOB_NAME, '0 0/5 * * * ?', new ScheduledIntegrationHeartbeat());
+            System.schedule(JOB_NAME, '0 0 * * * ?', new ScheduledIntegrationHeartbeat());
         }
     }
 
