@@ -253,7 +253,19 @@ public with sharing class QBSchedulerController {
     @AuraEnabled
     public static String editShopifyJob(String jobName, String freqValue, String freqType) {
         try {
-            return GenericSchedulerController.editJob('shopify', jobName, freqValue, freqType).replace('Success: Job', 'Success: Shopify job');
+            markLogicalJobsDeletedByPrefix(jobName);
+            List<String> nameParts = jobName.split(' - ');
+            String objectAndDir = (nameParts.size() > 1) ? nameParts[1] : 'Customers [In]';
+            Boolean isSfToShopify = objectAndDir.contains('[Out]');
+            String selectedObject = objectAndDir.replace(' [Out]', '').replace(' [In]', '').trim();
+            if (String.isBlank(selectedObject)) selectedObject = 'Customers';
+
+            Integer safeValue = Integer.valueOf(freqValue.trim());
+            String logicalJobName = SchedulerEntitlementService.normalizeLogicalJobName(jobName);
+            createLogicalSchedule('Shopify', selectedObject, freqValue, freqType, logicalJobName, isSfToShopify ? 'Out' : 'In');
+            IntegrationUsageService.incrementTaskUsage('Shopify', 1);
+            QuickBridgeAdminGuard.audit('SCHEDULE_EDIT', 'shopify', 'Success', jobName, null);
+            return 'Success: Shopify job updated for every ' + safeValue + ' ' + freqType;
         } catch (Exception e) {
             logSchedulerException('Shopify', 'QBSchedulerController.editShopifyJob', e);
             throw new AuraHandledException('Error updating Shopify job: ' + e.getMessage());
@@ -289,5 +301,25 @@ public with sharing class QBSchedulerController {
 
     private static void logSchedulerException(String gatewayName, String classMethodName, Exception exceptionRecord) {
         ErrorLogUtility.logException(gatewayName, classMethodName, exceptionRecord, null, null);
+    }
+
+    private static void markLogicalJobsDeletedByPrefix(String jobName) {
+        if (String.isBlank(jobName)) {
+            return;
+        }
+        String searchName = SchedulerEntitlementService.normalizeLogicalJobName(jobName) + '%';
+        List<Scheduled_Integration_Job__c> logicalJobs = [
+            SELECT Id, Status__c, Deleted_DateTime__c
+            FROM Scheduled_Integration_Job__c
+            WHERE Logical_Job_Key__c LIKE :searchName
+            AND Status__c = 'Active'
+        ];
+        for (Scheduled_Integration_Job__c logicalJob : logicalJobs) {
+            logicalJob.Status__c = 'Deleted';
+            logicalJob.Deleted_DateTime__c = Datetime.now();
+        }
+        if (!logicalJobs.isEmpty()) {
+            update logicalJobs;
+        }
     }
 }

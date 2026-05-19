@@ -49,6 +49,7 @@ public with sharing class GenericSchedulerController {
     public static void deleteJob(String jobName) {
         QuickBridgeAdminGuard.requireRunSync();
         SchedulerEntitlementService.markScheduleDeleted(jobName);
+        markLogicalSchedulesDeletedByPrefix(jobName);
         QuickBridgeAdminGuard.audit('SCHEDULE_DELETE', null, 'Success', jobName, null);
     }
 
@@ -116,6 +117,26 @@ public with sharing class GenericSchedulerController {
         Integer safeValue = frequencyValue == null ? 1 : frequencyValue.intValue();
         if (String.isBlank(frequencyType)) return 'Dynamic Schedule';
         return 'Every ' + safeValue + ' ' + frequencyType;
+    }
+
+    private static void markLogicalSchedulesDeletedByPrefix(String jobName) {
+        if (String.isBlank(jobName)) {
+            return;
+        }
+        String searchName = SchedulerEntitlementService.normalizeLogicalJobName(jobName) + '%';
+        List<Scheduled_Integration_Job__c> jobs = [
+            SELECT Id, Status__c, Deleted_DateTime__c
+            FROM Scheduled_Integration_Job__c
+            WHERE Logical_Job_Key__c LIKE :searchName
+            AND Status__c = 'Active'
+        ];
+        for (Scheduled_Integration_Job__c job : jobs) {
+            job.Status__c = 'Deleted';
+            job.Deleted_DateTime__c = Datetime.now();
+        }
+        if (!jobs.isEmpty()) {
+            update jobs;
+        }
     }
 
     private static ParsedJobName parseJobName(String jobName, String connectorKey) {
