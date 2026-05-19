@@ -3,63 +3,36 @@ public with sharing class IntegrationWorkRouter {
         if (item == null) {
             throw new IntegrationWorkRouteException('Work item is required.');
         }
-        String integration = normalize(item.Integration__c);
-        String operation = normalize(item.Operation__c);
-
-        if (integration == 'quickbooks') {
-            processQuickBooks(operation, item);
-            return;
+        IntegrationWorkHandler handler = handlerFor(item.Integration__c, item.Operation__c);
+        if (handler == null) {
+            throw new IntegrationWorkRouteException('Unsupported integration operation: ' + item.Integration__c + '.' + item.Operation__c);
         }
-        if (integration == 'shopify') {
-            ShopifyIntegrationWorker.process(item);
-            return;
-        }
-        if (integration == 'carrier') {
-            CarrierIntegrationWorker.process(item);
-            return;
-        }
-        if (integration == 'payment') {
-            PaymentIntegrationWorker.process(item);
-            return;
-        }
-        if (integration == 'qr') {
-            QRIntegrationWorker.process(item);
-            return;
-        }
-        if (integration == 'usage') {
-            UsageIntegrationWorker.process(item);
-            return;
-        }
-
-        throw new IntegrationWorkRouteException('Unsupported integration: ' + item.Integration__c);
+        handler.handle(item);
     }
 
-    private static void processQuickBooks(String operation, Integration_Work_Item__c item) {
-        if (operation == 'accountupsert') {
-            QBAccountWorker.process(item);
-            return;
+    public static String handlerClassFor(String integrationKey, String operationKey) {
+        ConnectorRegistryService.ConnectorDescriptor connector = ConnectorRegistryService.byKey(integrationKey);
+        String connectorKey = connector == null ? integrationKey : connector.connectorKey;
+        String className = connector == null ? null : ConnectorRegistryService.adapterClassFor(connector.connectorKey, 'work.' + operationKey);
+        if (String.isBlank(className)) {
+            className = LegacyConnectorRegistryFallback.workHandlerClassFor(connectorKey, operationKey);
         }
-        if (operation == 'productupsert') {
-            QBProductWorker.process(item);
-            return;
+        if (String.isBlank(className)) {
+            className = LegacyConnectorRegistryFallback.workHandlerClassFor(integrationKey, operationKey);
         }
-        if (operation == 'invoiceupsert') {
-            QBInvoiceWorker.process(item);
-            return;
-        }
-        if (operation == 'creditmemoupsert') {
-            QBCreditMemoWorker.process(item);
-            return;
-        }
-        if (operation == 'purchaseorderupsert') {
-            QBPurchaseOrderWorker.process(item);
-            return;
-        }
-        throw new IntegrationWorkRouteException('Unsupported QuickBooks operation: ' + item.Operation__c);
+        return className;
     }
 
-    private static String normalize(String value) {
-        return String.isBlank(value) ? '' : value.toLowerCase().replaceAll('[^a-z0-9]', '');
+    private static IntegrationWorkHandler handlerFor(String integrationKey, String operationKey) {
+        String className = handlerClassFor(integrationKey, operationKey);
+        if (String.isBlank(className)) {
+            return null;
+        }
+        Type handlerType = Type.forName(className);
+        if (handlerType == null) {
+            handlerType = Type.forName('QuickBridgeTLG', className);
+        }
+        return handlerType == null ? null : (IntegrationWorkHandler)handlerType.newInstance();
     }
 
     public class IntegrationWorkRouteException extends Exception {}

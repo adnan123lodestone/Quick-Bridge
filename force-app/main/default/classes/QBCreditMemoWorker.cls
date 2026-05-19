@@ -1,4 +1,8 @@
-public with sharing class QBCreditMemoWorker {
+public with sharing class QBCreditMemoWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         Id creditMemoId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
         if (creditMemoId == null) {

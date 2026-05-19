@@ -1,4 +1,8 @@
-public with sharing class QBAccountWorker {
+public with sharing class QBAccountWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         Id accountId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
         if (accountId == null) {

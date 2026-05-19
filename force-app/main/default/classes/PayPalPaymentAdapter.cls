@@ -1,7 +1,7 @@
 public with sharing class PayPalPaymentAdapter implements PaymentProviderAdapter {
     public PaymentCheckoutController.ProviderDescriptor describe(ConnectorRegistryService.ConnectorDescriptor connector, Set<String> activeGatewayNames) {
         PayPalPaymentService.ClientConfigResponse config = PayPalPaymentService.getClientConfig();
-        PaymentCheckoutController.ProviderDescriptor descriptor = baseDescriptor(connector, config.active == true && activeGatewayNames.contains('paypal'), config.configured, config.message);
+        PaymentCheckoutController.ProviderDescriptor descriptor = baseDescriptor(connector, config.active == true && activeGatewayNames.contains('paypal'), config.configured, config.message, 'paypalButtons', new List<String>());
         descriptor.clientScriptUrl = config.payPalJsUrl;
         descriptor.config.put('clientId', config.clientId);
         descriptor.config.put('useSandbox', config.useSandbox);
@@ -36,7 +36,7 @@ public with sharing class PayPalPaymentAdapter implements PaymentProviderAdapter
         return copyResponse(response.success, response.message, response.transId, response.resultCode, response.authCode, response.status, null, response.paypalOrderId, response.approveLink);
     }
 
-    private static PaymentCheckoutController.ProviderDescriptor baseDescriptor(ConnectorRegistryService.ConnectorDescriptor connector, Boolean active, Boolean configured, String message) {
+    private static PaymentCheckoutController.ProviderDescriptor baseDescriptor(ConnectorRegistryService.ConnectorDescriptor connector, Boolean active, Boolean configured, String message, String actionType, List<String> requiredInputFields) {
         PaymentCheckoutController.ProviderDescriptor descriptor = new PaymentCheckoutController.ProviderDescriptor();
         descriptor.connectorKey = connector.connectorKey;
         descriptor.label = connector.label;
@@ -44,6 +44,10 @@ public with sharing class PayPalPaymentAdapter implements PaymentProviderAdapter
         descriptor.configured = configured;
         descriptor.message = message;
         descriptor.config = new Map<String, Object>();
+        descriptor.displayOrder = connector.sortOrder;
+        descriptor.capabilities = connector.capabilities == null ? new List<String>() : new List<String>(connector.capabilities);
+        descriptor.requiredInputFields = requiredInputFields == null ? new List<String>() : requiredInputFields;
+        descriptor.actionType = actionType;
         return descriptor;
     }
 

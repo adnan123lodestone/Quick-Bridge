@@ -1,4 +1,8 @@
-public with sharing class CarrierIntegrationWorker {
+public with sharing class CarrierIntegrationWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         String operation = normalize(item.Operation__c);
         if (operation == 'trackingsync' || operation == 'trackingupdate') {

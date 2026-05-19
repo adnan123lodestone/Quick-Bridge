@@ -1,4 +1,8 @@
-public with sharing class QBInvoiceWorker {
+public with sharing class QBInvoiceWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         Id invoiceId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
         if (invoiceId == null) {

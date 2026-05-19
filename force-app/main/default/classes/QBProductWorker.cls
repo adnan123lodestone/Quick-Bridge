@@ -1,4 +1,8 @@
-public with sharing class QBProductWorker {
+public with sharing class QBProductWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         Id productId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
         if (productId == null) {

@@ -235,6 +235,21 @@ public with sharing class CarrierRecordActionController {
     }
 
     private static String resolveCarrierType(Id recordId, String objectApiName) {
+        if (stripNamespace(objectApiName) == 'Carrier_Shipment__c') {
+            Carrier_Shipment__c shipment = [
+                SELECT Integration_Type__c
+                FROM Carrier_Shipment__c
+                WHERE Id = :recordId
+                LIMIT 1
+            ];
+            if (String.isBlank(shipment.Integration_Type__c)) {
+                throw new AuraHandledException(
+                    'Integration_Type__c is not set on this shipment. Please select a supported carrier before running carrier actions.'
+                );
+            }
+            return shipment.Integration_Type__c;
+        }
+
         String fieldName = 'Carrier_Type__c';
         String queryText = 'SELECT ' + fieldName + ' FROM ' + objectApiName + ' WHERE Id = :recordId LIMIT 1';
         SObject record;
@@ -243,14 +258,14 @@ public with sharing class CarrierRecordActionController {
         } catch (Exception e) {
             throw new AuraHandledException(
                 'Object "' + objectApiName + '" does not have a Carrier_Type__c field. ' +
-                'Add Carrier_Type__c (picklist: FedEx, UPS) to this object to enable carrier actions.'
+                'Add Carrier_Type__c (picklist: ' + String.join(CarrierAdapterFactory.supportedCarrierLabels(), ', ') + ') to this object to enable carrier actions.'
             );
         }
 
         Object carrierTypeValue = record.get(fieldName);
         if (carrierTypeValue == null || String.isBlank(String.valueOf(carrierTypeValue))) {
             throw new AuraHandledException(
-                'Carrier_Type__c is not set on this record. Please select FedEx or UPS before running carrier actions.'
+                'Carrier_Type__c is not set on this record. Please select a supported carrier before running carrier actions.'
             );
         }
 
@@ -263,6 +278,16 @@ public with sharing class CarrierRecordActionController {
         }
 
         return carrierType;
+    }
+
+    private static String stripNamespace(String objectApiName) {
+        if (String.isBlank(objectApiName)) {
+            return objectApiName;
+        }
+        if (objectApiName.endsWith('__c') && objectApiName.indexOf('__') != objectApiName.lastIndexOf('__')) {
+            return objectApiName.substringAfter('__');
+        }
+        return objectApiName;
     }
 
     private static Id resolveShipmentId(Id recordId, String objectApiName, String integration) {

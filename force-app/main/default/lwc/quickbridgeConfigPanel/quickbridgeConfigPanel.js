@@ -15,7 +15,6 @@ import QB_Logo from '@salesforce/resourceUrl/QB_Logo';
 import FedEx_Logo from '@salesforce/resourceUrl/FedEx_Logo';
 import recoverPin from '@salesforce/apex/PaymentGatewayService.recoverPin';
 
-const SESSION_KEY = 'qb_auth_session';
 const TILE_PROVIDER_ALIASES = {
     qbo: ['qbo', 'quickbooks', 'quickbooksonline', 'quickbooks online'],
     shopify: ['shopify'],
@@ -34,16 +33,6 @@ const TILE_EXPIRY_FIELDS = {
     fedex: ['FedEx_End_Date__c'],
     ups: ['UPS_End_Date__c']
 };
-const REPORTING_PRODUCT_KEYS = {
-    qbo: 'quickbooks',
-    shopify: 'shopify',
-    stripe: 'stripe',
-    authorizenet: 'authorizenet',
-    paypal: 'paypal',
-    fedex: 'fedex',
-    ups: 'ups'
-};
-
 const TILE_START_FIELDS = {
     qbo: ['QuickBooks_Start_Date__c'],
     stripe: ['Stripe_Start_Date__c'],
@@ -68,6 +57,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     userId = '';
     recoverUserId = '';
+    adminSessionToken = '';
+    adminSessionExpiresAt = null;
     @track selectedTile = '';
     quickBridgeLogo = QuickBridge_Logo;
 
@@ -102,7 +93,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     get isUPSSelected() { return this.selectedTile === 'ups'; }
     get isQboOrShopify() { return this.selectedTile === 'qbo' || this.selectedTile === 'shopify'; }
     get isSchedulerScreen() { return this.currentScreen === 'scheduler'; }
-    get isSchedulerUnavailable() { return !this.isQboSelected && !this.isShopify; }
+    get isSchedulerUnavailable() { return this.getTileDefinition(this.selectedTile)?.hasScheduler !== true; }
 
     get navHomeClass() { return this.currentScreen === 'tiles' ? 'nav-button active' : 'nav-button'; }
     get navDashboardClass() { return this.currentScreen === 'dashboard' ? 'nav-button active' : 'nav-button'; }
@@ -130,15 +121,15 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     get selectedReportingProductKey() {
         const tile = this.getTileDefinition(this.selectedTile);
-        return tile?.productKey || REPORTING_PRODUCT_KEYS[this.selectedTile] || '';
+        return tile?.productKey || this.selectedTile || '';
     }
 
     get subscribedReportingProductKeys() {
-        return this.subscribedTiles.map(tile => tile.productKey || REPORTING_PRODUCT_KEYS[tile.id]).filter(Boolean);
+        return this.subscribedTiles.map(tile => tile.productKey || tile.id).filter(Boolean);
     }
 
     get availableReportingProductKeys() {
-        return this.availableTiles.map(tile => tile.productKey || REPORTING_PRODUCT_KEYS[tile.id]).filter(Boolean);
+        return this.availableTiles.map(tile => tile.productKey || tile.id).filter(Boolean);
     }
 
     navigateToScheduler() {
@@ -220,7 +211,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         }
 
         const fields = config.fields || config.formValues || {};
-        const expiryFields = TILE_EXPIRY_FIELDS[tileId] || [];
+        const tile = this.getTileDefinition(tileId);
+        const expiryFields = tile?.expiryField ? [tile.expiryField] : (TILE_EXPIRY_FIELDS[tileId] || []);
         const expiryValue = expiryFields.map(field => fields[field]).find(value => value);
         if (!expiryValue) {
             return false;
@@ -242,8 +234,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         }
 
         const fields = config.fields || config.formValues || {};
-        const startFields = TILE_START_FIELDS[tileId] || [];
-        const expiryFields = TILE_EXPIRY_FIELDS[tileId] || [];
+        const tile = this.getTileDefinition(tileId);
+        const startFields = tile?.startField ? [tile.startField] : (TILE_START_FIELDS[tileId] || []);
+        const expiryFields = tile?.expiryField ? [tile.expiryField] : (TILE_EXPIRY_FIELDS[tileId] || []);
 
         const startValue = startFields.map(field => fields[field]).find(value => value);
         const endValue = expiryFields.map(field => fields[field]).find(value => value);
@@ -264,25 +257,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     connectedCallback() {
         this.loadConnectorTiles();
-        const sessionData = sessionStorage.getItem(SESSION_KEY);
-        if (sessionData) {
-            try {
-                const parsedSession = JSON.parse(sessionData);
-                const expiresAt = parsedSession.sessionExpiresAt ? new Date(parsedSession.sessionExpiresAt) : null;
-                if (!parsedSession.sessionToken || (expiresAt && expiresAt.getTime() <= Date.now())) {
-                    sessionStorage.removeItem(SESSION_KEY);
-                    return;
-                }
-                if (parsedSession.isLoggedIn && parsedSession.userId) {
-                    this.userId = parsedSession.userId;
-                    this.currentScreen = 'reporting';
-                    this.loadMetadataConfigs();
-                    this.loadConfigPanelPreferences();
-                }
-            } catch (e) {
-                sessionStorage.removeItem(SESSION_KEY);
-            }
-        }
     }
 
     handleUserIdChange(event) { this.userId = event.target.value; }
@@ -308,6 +282,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                     logoUrl: connector.logoUrl || logoById[connector.connectorKey] || QuickBridge_Logo,
                     productKey: connector.productKey,
                     aliases: this.buildTileAliases(connector),
+                    activeField: connector.activeField,
+                    expiryField: connector.expiryField,
+                    startField: this.deriveStartField(connector.expiryField),
                     hasConfig: connector.hasConfig,
                     hasReporting: connector.hasReporting,
                     hasMapping: connector.hasMapping,
@@ -328,6 +305,13 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             connector.aliases.split(',').forEach(aliasValue => values.push(aliasValue.trim()));
         }
         return [...new Set(values.filter(Boolean))];
+    }
+
+    deriveStartField(expiryField) {
+        if (!expiryField) return null;
+        if (expiryField.includes('End_Date__c')) return expiryField.replace('End_Date__c', 'Start_Date__c');
+        if (expiryField.includes('EndDate__c')) return expiryField.replace('EndDate__c', 'StartDate__c');
+        return null;
     }
 
     handleRecoverUserIdChange(event) { this.recoverUserId = event.target.value; }
@@ -394,7 +378,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             const response = JSON.parse(responseStr);
 
             if (response.status === 'Success') {
-                sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId: this.userId, isLoggedIn: true, sessionToken: response.sessionToken, sessionExpiresAt: response.sessionExpiresAt }));
+                this.adminSessionToken = response.sessionToken || '';
+                this.adminSessionExpiresAt = response.sessionExpiresAt || null;
                 this.selectedTile = '';
                 this.currentGatewayProperName = '';
                 this.currentScreen = 'reporting';
@@ -416,8 +401,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             revokeAdminSession({ sessionToken }).catch(() => {});
         }
         this.userId = '';
+        this.adminSessionToken = '';
+        this.adminSessionExpiresAt = null;
         this.currentScreen = 'login';
-        sessionStorage.removeItem(SESSION_KEY);
 
         setTimeout(() => {
             const boxes = this.template.querySelectorAll('.pin-box');
@@ -426,14 +412,16 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     getSessionToken() {
-        try {
-            const sessionData = sessionStorage.getItem(SESSION_KEY);
-            if (!sessionData) return null;
-            const parsedSession = JSON.parse(sessionData);
-            return parsedSession.sessionToken || null;
-        } catch (error) {
+        if (!this.adminSessionToken) {
             return null;
         }
+        const expiresAt = this.adminSessionExpiresAt ? new Date(this.adminSessionExpiresAt) : null;
+        if (expiresAt && expiresAt.getTime() <= Date.now()) {
+            this.adminSessionToken = '';
+            this.adminSessionExpiresAt = null;
+            return null;
+        }
+        return this.adminSessionToken;
     }
 
     handleSessionError(error) {
@@ -443,8 +431,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         if (!message || !message.toLowerCase().includes('session')) {
             return false;
         }
-        sessionStorage.removeItem(SESSION_KEY);
         this.userId = '';
+        this.adminSessionToken = '';
+        this.adminSessionExpiresAt = null;
         this.selectedTile = '';
         this.currentGatewayProperName = '';
         this.currentScreen = 'login';
@@ -579,7 +568,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                         const isReadOnlyDate = fieldName.includes('Date');
                         const isTrue = formValues[fieldName] === 'true' || formValues[fieldName] === true;
 
-                        const properLabel = fieldLabels[fieldName] || fieldName.replace('__c', '').replace(/_/g, ' ');
+                        const properLabel = config.fieldLabels?.[fieldName] || fieldLabels[fieldName] || fieldName.replace('__c', '').replace(/_/g, ' ');
 
                         return {
                             name: fieldName,

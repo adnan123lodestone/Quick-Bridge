@@ -1,4 +1,8 @@
-public with sharing class ShopifyIntegrationWorker {
+public with sharing class ShopifyIntegrationWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         String operation = normalize(item.Operation__c);
         Id sourceId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);

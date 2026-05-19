@@ -130,6 +130,9 @@ public with sharing class ConnectorConfigService {
     }
 
     private static void hydrateFromLegacyConfig(ConnectorConfig config, ConnectorRegistryService.ConnectorDescriptor descriptor) {
+        // Deprecated compatibility path for the legacy wide Quickbridge_Config__mdt model.
+        // New connector config should use Connector_Instance__c, Connector_Config_Value__c,
+        // and Named/External Credential references for secret material.
         Quickbridge_Config__mdt legacy = legacyConfig(descriptor.configRecordName);
         if (legacy == null) {
             config.active = false;

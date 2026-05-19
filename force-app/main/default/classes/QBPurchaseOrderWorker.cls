@@ -1,4 +1,8 @@
-public with sharing class QBPurchaseOrderWorker {
+public with sharing class QBPurchaseOrderWorker implements IntegrationWorkHandler {
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
+    }
+
     public static void process(Integration_Work_Item__c item) {
         Id purchaseOrderId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
         if (purchaseOrderId == null) {

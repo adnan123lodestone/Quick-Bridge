@@ -6,6 +6,7 @@ public with sharing class PaymentMetadataService {
         @AuraEnabled public Boolean active { get; set; }
         @AuraEnabled public Map<String, String> fields { get; set; }
         @AuraEnabled public List<String> editableFields { get; set; }
+        @AuraEnabled public Map<String, String> fieldLabels { get; set; }
     }
 
     public class MetadataUpdateResponse {
@@ -306,6 +307,7 @@ public with sharing class PaymentMetadataService {
         config.provider = provider;
         config.label = PROVIDER_LABELS.get(provider);
         config.fields = new Map<String, String>();
+        config.fieldLabels = fieldLabelsFor(provider);
         config.editableFields = PROVIDER_FIELDS.get(provider);
         if (config.editableFields == null) {
             config.editableFields = new List<String>();
@@ -445,9 +447,30 @@ public with sharing class PaymentMetadataService {
     private static Map<String, List<String>> providerFieldsFromRegistry() {
         Map<String, List<String>> result = new Map<String, List<String>>();
         for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.connectors()) {
-            result.put(connector.connectorKey, connector.editableFields);
+            List<String> fieldNames = new List<String>();
+            for (ConnectorRegistryService.ConfigFieldDescriptor field : ConnectorRegistryService.configFieldsFor(connector.connectorKey)) {
+                if (field.secret == true) {
+                    continue;
+                }
+                String fieldName = String.isBlank(field.legacyFieldApiName) ? field.fieldKey : field.legacyFieldApiName;
+                if (String.isNotBlank(fieldName)) {
+                    fieldNames.add(fieldName);
+                }
+            }
+            result.put(connector.connectorKey, fieldNames);
         }
         return result;
+    }
+
+    private static Map<String, String> fieldLabelsFor(String connectorKey) {
+        Map<String, String> labels = new Map<String, String>();
+        for (ConnectorRegistryService.ConfigFieldDescriptor field : ConnectorRegistryService.configFieldsFor(connectorKey)) {
+            String fieldName = String.isBlank(field.legacyFieldApiName) ? field.fieldKey : field.legacyFieldApiName;
+            if (String.isNotBlank(fieldName)) {
+                labels.put(fieldName, field.label);
+            }
+        }
+        return labels;
     }
 
     private static Map<String, String> providerLabelsFromRegistry() {

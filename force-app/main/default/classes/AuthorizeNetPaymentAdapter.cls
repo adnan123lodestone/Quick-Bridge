@@ -1,7 +1,7 @@
 public with sharing class AuthorizeNetPaymentAdapter implements PaymentProviderAdapter {
     public PaymentCheckoutController.ProviderDescriptor describe(ConnectorRegistryService.ConnectorDescriptor connector, Set<String> activeGatewayNames) {
         AuthorizeNetPaymentService.ClientConfigResponse config = AuthorizeNetPaymentService.getClientConfig();
-        PaymentCheckoutController.ProviderDescriptor descriptor = baseDescriptor(connector, config.active == true && activeGatewayNames.contains('authorize.net'), config.configured, config.message);
+        PaymentCheckoutController.ProviderDescriptor descriptor = baseDescriptor(connector, config.active == true && activeGatewayNames.contains('authorize.net'), config.configured, config.message, 'acceptJs', new List<String>{ 'cardName', 'cardNumber', 'securityCode', 'cardMonth', 'cardYear', 'billingAddress' });
         descriptor.clientScriptUrl = config.acceptJsUrl;
         descriptor.config.put('apiLoginId', config.apiLoginId);
         descriptor.config.put('publicClientKey', config.publicClientKey);
@@ -33,7 +33,7 @@ public with sharing class AuthorizeNetPaymentAdapter implements PaymentProviderA
         return copyResponse(response.success, response.message, response.transId, response.resultCode, response.authCode, null, null, null, null);
     }
 
-    private static PaymentCheckoutController.ProviderDescriptor baseDescriptor(ConnectorRegistryService.ConnectorDescriptor connector, Boolean active, Boolean configured, String message) {
+    private static PaymentCheckoutController.ProviderDescriptor baseDescriptor(ConnectorRegistryService.ConnectorDescriptor connector, Boolean active, Boolean configured, String message, String actionType, List<String> requiredInputFields) {
         PaymentCheckoutController.ProviderDescriptor descriptor = new PaymentCheckoutController.ProviderDescriptor();
         descriptor.connectorKey = connector.connectorKey;
         descriptor.label = connector.label;
@@ -41,6 +41,10 @@ public with sharing class AuthorizeNetPaymentAdapter implements PaymentProviderA
         descriptor.configured = configured;
         descriptor.message = message;
         descriptor.config = new Map<String, Object>();
+        descriptor.displayOrder = connector.sortOrder;
+        descriptor.capabilities = connector.capabilities == null ? new List<String>() : new List<String>(connector.capabilities);
+        descriptor.requiredInputFields = requiredInputFields == null ? new List<String>() : requiredInputFields;
+        descriptor.actionType = actionType;
         return descriptor;
     }
 

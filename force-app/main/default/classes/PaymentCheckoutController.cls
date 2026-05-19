@@ -7,6 +7,10 @@ public with sharing class PaymentCheckoutController {
         @AuraEnabled public String message { get; set; }
         @AuraEnabled public String clientScriptUrl { get; set; }
         @AuraEnabled public Map<String, Object> config { get; set; }
+        @AuraEnabled public Integer displayOrder { get; set; }
+        @AuraEnabled public List<String> capabilities { get; set; }
+        @AuraEnabled public List<String> requiredInputFields { get; set; }
+        @AuraEnabled public String actionType { get; set; }
     }
 
     public class PaymentRequest {
@@ -51,6 +55,7 @@ public with sharing class PaymentCheckoutController {
                 result.add(adapter.describe(connector, activeGateways));
             }
         }
+        sortProviderDescriptors(result);
         return result;
     }
 
@@ -78,5 +83,31 @@ public with sharing class PaymentCheckoutController {
         } catch (Exception ignored) {
         }
         return activeGateways;
+    }
+
+    private static void sortProviderDescriptors(List<ProviderDescriptor> descriptors) {
+        if (descriptors == null || descriptors.size() < 2) {
+            return;
+        }
+        for (Integer i = 0; i < descriptors.size() - 1; i++) {
+            for (Integer j = i + 1; j < descriptors.size(); j++) {
+                if (compareProviderDescriptors(descriptors[j], descriptors[i]) < 0) {
+                    ProviderDescriptor current = descriptors[i];
+                    descriptors[i] = descriptors[j];
+                    descriptors[j] = current;
+                }
+            }
+        }
+    }
+
+    private static Integer compareProviderDescriptors(ProviderDescriptor left, ProviderDescriptor right) {
+        Integer leftOrder = left == null || left.displayOrder == null ? 999 : left.displayOrder;
+        Integer rightOrder = right == null || right.displayOrder == null ? 999 : right.displayOrder;
+        if (leftOrder != rightOrder) {
+            return leftOrder < rightOrder ? -1 : 1;
+        }
+        String leftLabel = left == null || left.label == null ? '' : left.label;
+        String rightLabel = right == null || right.label == null ? '' : right.label;
+        return leftLabel.compareTo(rightLabel);
     }
 }

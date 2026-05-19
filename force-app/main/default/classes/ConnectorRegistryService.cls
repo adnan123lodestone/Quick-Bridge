@@ -159,7 +159,7 @@ public with sharing class ConnectorRegistryService {
             descriptors = loadMetadataDescriptors();
         }
         if (descriptors.isEmpty()) {
-            descriptors = fallbackDescriptors();
+            descriptors = LegacyConnectorRegistryFallback.connectors();
         }
         hydrateCapabilities(descriptors);
         hydrateConfigFields(descriptors);
@@ -299,22 +299,33 @@ public with sharing class ConnectorRegistryService {
         }
 
         for (ConnectorDescriptor descriptor : descriptors) {
-            if (descriptor.configFields.isEmpty()) {
-                Integer orderValue = 0;
-                for (String fieldName : descriptor.editableFields == null ? new List<String>() : descriptor.editableFields) {
-                    ConfigFieldDescriptor field = new ConfigFieldDescriptor();
-                    field.connectorKey = descriptor.connectorKey;
-                    field.fieldKey = fieldName;
-                    field.label = fieldName.replace('__c', '').replace('_', ' ');
-                    field.dataType = 'Legacy';
-                    field.required = false;
-                    field.secret = isSecretField(fieldName);
-                    field.legacyFieldApiName = fieldName;
-                    field.sortOrder = orderValue++;
-                    descriptor.configFields.add(field);
+            Integer orderValue = descriptor.configFields.size();
+            for (String fieldName : descriptor.editableFields == null ? new List<String>() : descriptor.editableFields) {
+                if (hasConfigField(descriptor, fieldName)) {
+                    continue;
                 }
+                ConfigFieldDescriptor field = new ConfigFieldDescriptor();
+                field.connectorKey = descriptor.connectorKey;
+                field.fieldKey = fieldName;
+                field.label = fieldName.replace('__c', '').replace('_', ' ');
+                field.dataType = 'Legacy';
+                field.required = false;
+                field.secret = isSecretField(fieldName);
+                field.legacyFieldApiName = fieldName;
+                field.sortOrder = orderValue++;
+                descriptor.configFields.add(field);
             }
         }
+    }
+
+    private static Boolean hasConfigField(ConnectorDescriptor descriptor, String fieldName) {
+        String normalized = normalize(fieldName);
+        for (ConfigFieldDescriptor field : descriptor.configFields == null ? new List<ConfigFieldDescriptor>() : descriptor.configFields) {
+            if (normalize(field.fieldKey) == normalized || normalize(field.legacyFieldApiName) == normalized) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void hydrateObjectMaps(List<ConnectorDescriptor> descriptors) {
@@ -415,43 +426,11 @@ public with sharing class ConnectorRegistryService {
     }
 
     private static String defaultAdapterClass(String connectorKey, String capabilityKey) {
-        String normalizedConnector = normalize(connectorKey);
-        String normalizedCapability = normalizeCapability(capabilityKey);
-        if (normalizedCapability == 'paymentcheckout' || normalizedCapability == 'paymentprovider') {
-            if (normalizedConnector == 'stripe') return 'StripePaymentAdapter';
-            if (normalizedConnector == 'paypal') return 'PayPalPaymentAdapter';
-            if (normalizedConnector == 'authorizenet') return 'AuthorizeNetPaymentAdapter';
-        }
-        if (normalizedCapability == 'scheduleroperation') {
-            if (normalizedConnector == 'qbo' || normalizedConnector == 'quickbooks') return 'QuickBooksScheduledOperationAdapter';
-            if (normalizedConnector == 'shopify') return 'ShopifyScheduledOperationAdapter';
-        }
-        return null;
+        return LegacyConnectorRegistryFallback.defaultAdapterClass(connectorKey, capabilityKey);
     }
 
     private static void addFallbackObjectMaps(ConnectorDescriptor descriptor) {
-        String normalized = normalize(descriptor.connectorKey);
-        if (normalized == 'qbo' || normalized == 'quickbooks') {
-            addObjectMap(descriptor, 'Account', 'Customer');
-            addObjectMap(descriptor, 'Product2', 'Item');
-            addObjectMap(descriptor, 'Order', 'Invoice');
-            addObjectMap(descriptor, 'Invoice__c', 'Invoice');
-        } else if (normalized == 'shopify') {
-            addObjectMap(descriptor, 'Account', 'Customer');
-            addObjectMap(descriptor, 'Product2', 'Product');
-            addObjectMap(descriptor, 'Order', 'Order');
-            addObjectMap(descriptor, 'OrderItem', 'LineItem');
-        }
-    }
-
-    private static void addObjectMap(ConnectorDescriptor descriptor, String salesforceObject, String externalObject) {
-        ObjectMapDescriptor mapRow = new ObjectMapDescriptor();
-        mapRow.connectorKey = descriptor.connectorKey;
-        mapRow.salesforceObject = salesforceObject;
-        mapRow.externalObject = externalObject;
-        mapRow.direction = 'Both';
-        mapRow.operationKey = null;
-        descriptor.objectMappings.add(mapRow);
+        descriptor.objectMappings.addAll(LegacyConnectorRegistryFallback.objectMapsFor(descriptor.connectorKey));
     }
 
     private static Map<String, ConnectorDescriptor> byConnectorKey(List<ConnectorDescriptor> descriptors) {
@@ -489,18 +468,6 @@ public with sharing class ConnectorRegistryService {
         return normalized.contains('secret') || normalized.contains('token') || normalized.contains('password') || normalized.contains('privatekey') || normalized.contains('clientsecret');
     }
 
-    private static List<ConnectorDescriptor> fallbackDescriptors() {
-        return new List<ConnectorDescriptor>{
-            baseDescriptor('qbo', 'quickbooks', 'QuickBooks', 'qbo,quickbooks,quickbooksonline,quickbooks online', 'Accounting', 'QuickBooks', 'QuickBooks_Is_Active__c', 'QuickBooks_End_Date__c', 'Company_Name__c,QuickBooks_Realm_ID__c,QuickBooks_Is_Active__c,QuickBooks_Start_Date__c,QuickBooks_End_Date__c', 10, true, true, true, true, false, false, false),
-            baseDescriptor('shopify', 'shopify', 'Shopify', 'shopify', 'Commerce', 'Shopify', 'Shopify_Is_Active__c', 'Shopify_End_Date__c', 'Company_Name__c,Shopify_Store_URL__c,Shopify_Access_Token__c,Shopify_API_Key__c,Shopify_API_Secret__c,Shopify_Is_Active__c,Shopify_Start_Date__c,Shopify_End_Date__c', 20, true, true, true, true, false, false, false),
-            baseDescriptor('stripe', 'stripe', 'Stripe', 'stripe', 'Payment', 'Stripe', 'Stripe_Active__c', 'Stripe_End_Date__c', 'Company_Name__c,Stripe_Publishable_Key__c,Stripe_Webhook_Signing_Secret__c,Stripe_Active__c,Stripe_Use_Sandbox__c,Stripe_Start_Date__c,Stripe_End_Date__c', 30, true, true, false, false, true, true, false),
-            baseDescriptor('authorizenet', 'authorizenet', 'Authorize.Net', 'authorizenet,authorize.net,authorize net,authnet', 'Payment', 'AuthorizeNet', 'AuthorizeNet_Active__c', 'AuthorizeNet_End_Date__c', 'Company_Name__c,AuthorizeNet_API_Login_ID__c,AuthorizeNet_Public_Client_Key__c,AuthorizeNet_Webhook_Signing_Key__c,AuthorizeNet_Active__c,AuthorizeNet_Use_Sandbox__c,AuthorizeNet_Start_Date__c,AuthorizeNet_End_Date__c', 40, true, true, false, false, true, true, false),
-            baseDescriptor('paypal', 'paypal', 'PayPal', 'paypal,pay pal', 'Payment', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c', 'Company_Name__c,PayPal_ClientId__c,PayPal_Active__c,PayPal_UseSandbox__c,PayPal_StartDate__c,PayPal_EndDate__c', 50, true, true, false, false, true, true, false),
-            baseDescriptor('fedex', 'fedex', 'FedEx', 'fedex', 'Carrier', 'FedEx', 'FedEx_Active__c', 'FedEx_End_Date__c', 'FedEx_Client_Id__c,FedEx_Client_Secret__c,FedEx_Account_Number__c,FedEx_Environment__c,FedEx_Default_Service_Type__c,FedEx_Default_Packaging_Type__c,FedEx_Default_Pickup_Type__c,FedEx_Active__c,FedEx_Start_Date__c,FedEx_End_Date__c', 60, true, true, false, false, false, false, true),
-            baseDescriptor('ups', 'ups', 'UPS', 'ups', 'Carrier', 'UPS', 'UPS_Active__c', 'UPS_End_Date__c', 'UPS_Client_Id__c,UPS_Client_Secret__c,UPS_Account_Number__c,UPS_Environment__c,UPS_Default_Service_Code__c,UPS_Active__c,UPS_Start_Date__c,UPS_End_Date__c', 70, true, true, false, false, false, false, true)
-        };
-    }
-
     private static List<String> splitList(String rawValue) {
         List<String> values = new List<String>();
         if (String.isBlank(rawValue)) return values;
@@ -518,7 +485,7 @@ public with sharing class ConnectorRegistryService {
 
     private static ConnectorDescriptor cloneConnector(ConnectorDescriptor source) {
         ConnectorDescriptor descriptor = baseDescriptor(source.connectorKey, source.productKey, source.label, source.aliases, source.category, source.configRecordName, source.activeField, source.expiryField, String.join(source.editableFields == null ? new List<String>() : source.editableFields, ','), source.sortOrder, source.hasConfig, source.hasReporting, source.hasMapping, source.hasScheduler, source.hasCheckout, source.hasPayment, source.hasCarrier);
-        descriptor.iconName = source.iconName;
+        descriptor.iconName = String.isBlank(source.iconName) ? descriptor.iconName : source.iconName;
         descriptor.logoUrl = source.logoUrl;
         descriptor.entitlementKey = source.entitlementKey;
         descriptor.configSchemaKey = source.configSchemaKey;
