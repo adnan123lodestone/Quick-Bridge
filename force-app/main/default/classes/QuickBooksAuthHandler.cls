@@ -86,6 +86,45 @@ public without sharing class QuickBooksAuthHandler {
         return res;
     }
 
+    public static HttpResponse makeBinaryApiCall(String resource) {
+        HttpRequest req = new HttpRequest();
+        req.setMethod('GET');
+
+        QuickBooksConnectionConfig config = getConnectionConfig();
+        String endpoint = buildEndpoint(resource, config.realmId, config.namedCredential, config.minorVersion);
+
+        req.setEndpoint(endpoint);
+        req.setHeader('Content-Type', 'application/pdf');
+        req.setHeader('Accept', 'application/pdf');
+
+        Http http = new Http();
+        HttpResponse res;
+        try {
+            res = http.send(req);
+            if (res.getStatusCode() < 200 || res.getStatusCode() >= 300) {
+                ErrorLogUtility.logCalloutFailure(
+                    'QuickBooks',
+                    'QuickBooksAuthHandler.makeBinaryApiCall',
+                    'GET ' + resource + ' failed with HTTP ' + res.getStatusCode() + ': ' + res.getStatus(),
+                    res.getStatusCode(),
+                    null,
+                    null
+                );
+            }
+        } catch (Exception e) {
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QuickBooksAuthHandler.makeBinaryApiCall',
+                e,
+                null,
+                null
+            );
+            throw e;
+        }
+
+        return res;
+    }
+
     @TestVisible
     static String buildEndpointForTest(String resource, String realmId, String namedCredential, String minorVersion) {
         return buildEndpoint(resource, realmId, namedCredential, minorVersion);
