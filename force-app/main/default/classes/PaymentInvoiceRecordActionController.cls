@@ -856,9 +856,12 @@ public with sharing class PaymentInvoiceRecordActionController {
         return true;
     }
 
+    private static final String GATEWAY_ANET = 'authorizenet';
+    private static final Set<String> SUPPORTED_INVOICE_GATEWAYS = new Set<String>{ GATEWAY_STRIPE, GATEWAY_ANET };
+
     private static String normalizeGateway(String gateway) {
         String normalized = String.isBlank(gateway) ? GATEWAY_STRIPE : gateway.trim().toLowerCase();
-        if (normalized != GATEWAY_STRIPE) {
+        if (!SUPPORTED_INVOICE_GATEWAYS.contains(normalized)) {
             throw new InvoiceException('Unsupported invoice gateway: ' + gateway);
         }
         return normalized;
@@ -1038,5 +1041,129 @@ public with sharing class PaymentInvoiceRecordActionController {
             names.add(referenceType.getDescribe().getName());
         }
         return names;
+    }
+
+    // ─── Authorize.Net dynamic webhook transaction insertion ──────────────────
+
+    public static Id insertAuthorizeNetWebhookTransaction(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new InvoiceException('Authorize.Net webhook payload is required.');
+        }
+
+        Map<String, Object> innerPayload = getNestedMap(payload, 'payload');
+
+        // Resolve the Order (source record) from merchantReferenceId
+        String merchantRefId = firstNonBlankStr(
+            getStrPayload(innerPayload, 'merchantReferenceId'),
+            getStrPayload(payload, 'merchantReferenceId')
+        );
+        if (String.isBlank(merchantRefId)) {
+            throw new InvoiceException('Authorize.Net webhook payload does not contain merchantReferenceId. Cannot link transaction to a source record.');
+        }
+
+        Id sourceRecordId;
+        try {
+            sourceRecordId = Id.valueOf(merchantRefId.trim());
+        } catch (Exception e) {
+            throw new InvoiceException('merchantReferenceId is not a valid Salesforce record Id: ' + merchantRefId);
+        }
+
+        String sourceObjectApiName = sourceRecordId.getSObjectType().getDescribe().getName();
+        MappingConfig config = loadMappingConfig('authorizenet', sourceObjectApiName);
+
+        // Parse eventDate (ISO 8601)
+        String eventDateStr = getStrPayload(payload, 'eventDate');
+        Datetime gatewayEventDate = null;
+        if (String.isNotBlank(eventDateStr)) {
+            Matcher m = Pattern.compile('^(\\d{4}-\\d{2}-\\d{2})[T ](\\d{2}:\\d{2}:\\d{2})').matcher(eventDateStr.trim());
+            if (m.find()) {
+                try { gatewayEventDate = Datetime.valueOfGmt(m.group(1) + ' ' + m.group(2)); } catch (Exception e) { }
+            }
+        }
+
+        Map<String, Object> txnValues = new Map<String, Object>{
+            'gatewayEventId'        => getStrPayload(payload, 'notificationId'),
+            'gatewayEventType'      => getStrPayload(payload, 'eventType'),
+            'gatewayEventDate'      => gatewayEventDate,
+            'gatewayAmount'         => getDecPayload(innerPayload, 'authAmount'),
+            'gatewayCurrency'       => null,
+            'gatewayReferenceNumber'=> merchantRefId,
+            'gatewayTransactionId'  => firstNonBlankStr(getStrPayload(innerPayload, 'id'), getStrPayload(payload, 'id')),
+            'paymentType'           => 'Authorize.Net',
+            'authNetWebhookId'      => getStrPayload(payload, 'webhookId'),
+            'authNetResponseCode'   => getStrPayload(innerPayload, 'responseCode'),
+            'authNetAuthCode'       => getStrPayload(innerPayload, 'authCode'),
+            'authNetAvsResponse'    => getStrPayload(innerPayload, 'avsResponse'),
+            'authNetEntityName'     => firstNonBlankStr(getStrPayload(innerPayload, 'entityName'), getStrPayload(payload, 'entityName'))
+        };
+
+        Schema.SObjectType txnType = getObjectTypeOrThrow(config.transactionObject);
+        Map<String, Schema.SObjectField> txnFields = txnType.getDescribe().fields.getMap();
+        SObject txnRecord = txnType.newSObject();
+
+        for (MappingRow row : config.transactionMappings) {
+            if (row == null || String.isBlank(row.sourceField) || String.isBlank(row.targetField) || !txnValues.containsKey(row.sourceField)) {
+                continue;
+            }
+            putIfCreateable(txnRecord, txnFields, row.targetField, txnValues.get(row.sourceField));
+        }
+
+        String resolvedTxnLookup = resolveFieldApiName(txnFields, config.transactionSourceLookupField);
+        if (String.isNotBlank(resolvedTxnLookup)) {
+            try { txnRecord.put(resolvedTxnLookup, sourceRecordId); } catch (Exception e) { }
+        }
+
+        insert txnRecord;
+
+        // Update the invoice status to Paid using the referenceNumber (transId) mapping
+        updateInvoiceStatusAfterANetPayment(config, txnValues);
+
+        return (Id) txnRecord.get('Id');
+    }
+
+    private static void updateInvoiceStatusAfterANetPayment(MappingConfig config, Map<String, Object> txnValues) {
+        if (String.isBlank(config.invoiceObject) || config.invoiceMappings == null || config.invoiceMappings.isEmpty()) {
+            return;
+        }
+
+        // Find which SF Invoice field stores the reference number (transId) and which stores status
+        String referenceNumberField = null;
+        String statusField = null;
+        for (MappingRow row : config.invoiceMappings) {
+            if (row == null || String.isBlank(row.sourceField) || String.isBlank(row.targetField)) continue;
+            if (row.sourceField == 'referenceNumber') referenceNumberField = row.targetField;
+            if (row.sourceField == 'status') statusField = row.targetField;
+        }
+
+        if (String.isBlank(referenceNumberField) || String.isBlank(statusField)) return;
+
+        String transId = (String) txnValues.get('gatewayTransactionId');
+        if (String.isBlank(transId)) return;
+
+        Schema.SObjectType invoiceType = Schema.getGlobalDescribe().get(resolveObjectApiName(config.invoiceObject));
+        if (invoiceType == null) return;
+
+        Map<String, Schema.SObjectField> invoiceFields = invoiceType.getDescribe().fields.getMap();
+        String resolvedRefField = resolveFieldApiName(invoiceFields, referenceNumberField);
+        String resolvedStatusField = resolveFieldApiName(invoiceFields, statusField);
+
+        if (String.isBlank(resolvedRefField) || !invoiceFields.containsKey(resolvedRefField.toLowerCase())) return;
+        if (String.isBlank(resolvedStatusField) || !invoiceFields.containsKey(resolvedStatusField.toLowerCase())) return;
+
+        List<SObject> invoiceRecords = Database.query(
+            'SELECT Id, ' + resolvedStatusField +
+            ' FROM ' + config.invoiceObject +
+            ' WHERE ' + resolvedRefField + ' = :transId LIMIT 1'
+        );
+
+        if (invoiceRecords.isEmpty()) return;
+
+        SObject invoiceRecord = invoiceRecords[0];
+        try { invoiceRecord.put(resolvedStatusField, 'Paid'); } catch (Exception e) { return; }
+        update invoiceRecord;
+    }
+
+    private static String firstNonBlankStr(String primary, String fallback) {
+        return String.isBlank(primary) ? fallback : primary;
     }
 }

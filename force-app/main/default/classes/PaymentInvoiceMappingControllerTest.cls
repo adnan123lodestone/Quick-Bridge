@@ -43,14 +43,17 @@ private class PaymentInvoiceMappingControllerTest {
                 new Map<String, Object>{ 'sourceField' => 'hostedInvoiceUrl', 'targetField' => 'Stripe_Invoice_Link__c' },
                 new Map<String, Object>{ 'sourceField' => 'referenceNumber', 'targetField' => 'Reference_number__c' },
                 new Map<String, Object>{ 'sourceField' => 'status', 'targetField' => 'Status__c' },
-                new Map<String, Object>{ 'sourceField' => 'invoiceDate', 'targetField' => 'Invoice_Date__c' }
+                new Map<String, Object>{ 'sourceField' => 'invoiceDate', 'targetField' => 'Invoice_Date__c' },
+                new Map<String, Object>{ 'sourceField' => 'stripeInvoiceId', 'targetField' => 'Stripe_Invoice_Id__c' }
             },
             'transactionMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'gatewayEventId', 'targetField' => 'Gateway_Event_Id__c' },
                 new Map<String, Object>{ 'sourceField' => 'gatewayEventType', 'targetField' => 'Gateway_Event_Type__c' },
                 new Map<String, Object>{ 'sourceField' => 'gatewayAmount', 'targetField' => 'Gateway_Amount__c' },
                 new Map<String, Object>{ 'sourceField' => 'gatewayReferenceNumber', 'targetField' => 'Gateway_Reference_Number__c' },
-                new Map<String, Object>{ 'sourceField' => 'gatewayTransactionId', 'targetField' => 'Gateway_Transaction_Id__c' }
+                new Map<String, Object>{ 'sourceField' => 'gatewayTransactionId', 'targetField' => 'Gateway_Transaction_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'paymentType', 'targetField' => 'Payment_Type__c' },
+                new Map<String, Object>{ 'sourceField' => 'stripeLiveMode', 'targetField' => 'Stripe_Live_Mode__c' }
             }
         });
 
@@ -127,6 +130,118 @@ private class PaymentInvoiceMappingControllerTest {
         try {
             PaymentInvoiceMappingController.saveGatewayMappingConfig(payload);
             System.assert(false, 'Expected duplicate source validation to fail.');
+        } catch (AuraHandledException e) {
+            System.assert(String.isNotBlank(e.getMessage()));
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void getGatewayTransactionFieldsReturnsAuthNetFields() {
+        Test.startTest();
+        List<PaymentInvoiceMappingController.FieldOption> anetFields =
+            PaymentInvoiceMappingController.getGatewayTransactionFields('authorizenet');
+        Test.stopTest();
+
+        System.assert(containsValue(anetFields, 'gatewayTransactionId'), 'Auth.Net transaction fields should include gatewayTransactionId.');
+        System.assert(containsValue(anetFields, 'authNetWebhookId'), 'Auth.Net transaction fields should include authNetWebhookId.');
+        System.assert(containsValue(anetFields, 'authNetAuthCode'), 'Auth.Net transaction fields should include authNetAuthCode.');
+        System.assert(!containsValue(anetFields, 'stripeLiveMode'), 'Auth.Net transaction fields should not include stripeLiveMode.');
+    }
+
+    @IsTest
+    static void getInvoiceRequestFieldsForGatewayReturnsAuthNetFields() {
+        Test.startTest();
+        List<PaymentInvoiceMappingController.FieldOption> anetFields =
+            PaymentInvoiceMappingController.getInvoiceRequestFieldsForGateway('authorizenet');
+        Test.stopTest();
+
+        System.assert(containsValue(anetFields, 'amount'), 'Auth.Net invoice fields should include amount.');
+        System.assert(containsValue(anetFields, 'referenceNumber'), 'Auth.Net invoice fields should include referenceNumber.');
+        System.assert(containsValue(anetFields, 'authCode'), 'Auth.Net invoice fields should include authCode.');
+        System.assert(!containsValue(anetFields, 'hostedInvoiceUrl'), 'Auth.Net invoice fields should not include hostedInvoiceUrl.');
+    }
+
+    @IsTest
+    static void getGatewayMappingConfigReturnsAuthNetDefaults() {
+        Test.startTest();
+        PaymentInvoiceMappingController.GatewayMappingConfig config =
+            PaymentInvoiceMappingController.getGatewayMappingConfig('authorizenet');
+        Test.stopTest();
+
+        System.assertEquals('authorizenet', config.gateway);
+        System.assertNotEquals(null, config.sourceMappings);
+        System.assertNotEquals(null, config.invoiceMappings);
+        System.assertNotEquals(null, config.transactionMappings);
+    }
+
+    @IsTest
+    static void saveGatewayMappingConfigValidatesStandardAuthNetConfig() {
+        String payload = JSON.serialize(new Map<String, Object>{
+            'gateway' => 'authorizenet',
+            'sourceObject' => 'Order',
+            'sourceCustomerLookupField' => 'AccountId',
+            'invoiceObject' => 'Invoice__c',
+            'invoiceSourceLookupField' => 'Order__c',
+            'transactionObject' => 'Portal_Payment_Transaction__c',
+            'transactionSourceLookupField' => 'Order__c',
+            'sourceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
+            },
+            'invoiceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'amount', 'targetField' => 'Amount__c' },
+                new Map<String, Object>{ 'sourceField' => 'referenceNumber', 'targetField' => 'Reference_number__c' },
+                new Map<String, Object>{ 'sourceField' => 'status', 'targetField' => 'Status__c' },
+                new Map<String, Object>{ 'sourceField' => 'invoiceDate', 'targetField' => 'Invoice_Date__c' }
+            },
+            'transactionMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'gatewayEventId', 'targetField' => 'Gateway_Event_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayEventType', 'targetField' => 'Gateway_Event_Type__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayAmount', 'targetField' => 'Gateway_Amount__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayReferenceNumber', 'targetField' => 'Gateway_Reference_Number__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayTransactionId', 'targetField' => 'Gateway_Transaction_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'paymentType', 'targetField' => 'Payment_Type__c' }
+            }
+        });
+
+        Test.startTest();
+        String result = PaymentInvoiceMappingController.saveGatewayMappingConfig(payload);
+        Test.stopTest();
+
+        System.assertEquals('Mappings validated successfully.', result);
+    }
+
+    @IsTest
+    static void saveAuthNetConfigRejectsMissingRequiredInvoiceFields() {
+        String payload = JSON.serialize(new Map<String, Object>{
+            'gateway' => 'authorizenet',
+            'sourceObject' => 'Order',
+            'sourceCustomerLookupField' => 'AccountId',
+            'invoiceObject' => 'Invoice__c',
+            'invoiceSourceLookupField' => 'Order__c',
+            'transactionObject' => 'Portal_Payment_Transaction__c',
+            'transactionSourceLookupField' => 'Order__c',
+            'sourceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
+            },
+            'invoiceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'amount', 'targetField' => 'Amount__c' }
+                // missing referenceNumber, status, invoiceDate
+            },
+            'transactionMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'gatewayEventId', 'targetField' => 'Gateway_Event_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayEventType', 'targetField' => 'Gateway_Event_Type__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayAmount', 'targetField' => 'Gateway_Amount__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayReferenceNumber', 'targetField' => 'Gateway_Reference_Number__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayTransactionId', 'targetField' => 'Gateway_Transaction_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'paymentType', 'targetField' => 'Payment_Type__c' }
+            }
+        });
+
+        Test.startTest();
+        try {
+            PaymentInvoiceMappingController.saveGatewayMappingConfig(payload);
+            System.assert(false, 'Expected validation to fail due to missing referenceNumber.');
         } catch (AuraHandledException e) {
             System.assert(String.isNotBlank(e.getMessage()));
         }

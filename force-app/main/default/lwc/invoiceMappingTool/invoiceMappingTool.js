@@ -7,6 +7,7 @@ import getObjectsWithLookupTo from '@salesforce/apex/PaymentInvoiceMappingContro
 import getObjectFields from '@salesforce/apex/PaymentInvoiceMappingController.getObjectFields';
 import getLookupFields from '@salesforce/apex/PaymentInvoiceMappingController.getLookupFields';
 import getInvoiceRequestFields from '@salesforce/apex/PaymentInvoiceMappingController.getInvoiceRequestFields';
+import getInvoiceRequestFieldsForGateway from '@salesforce/apex/PaymentInvoiceMappingController.getInvoiceRequestFieldsForGateway';
 import getGatewayTransactionFields from '@salesforce/apex/PaymentInvoiceMappingController.getGatewayTransactionFields';
 import saveGatewayMappingConfig from '@salesforce/apex/PaymentInvoiceMappingController.saveGatewayMappingConfig';
 
@@ -16,7 +17,7 @@ const DEFAULT_TRANSACTION_OBJECT = 'Portal_Payment_Transaction__c';
 const SOURCE_REQUIRED_ROWS = [
     { sourceField: '', targetField: 'amount', targetLabel: 'Amount', requiredSide: 'target' }
 ];
-const INVOICE_REQUIRED_ROWS = [
+const STRIPE_INVOICE_REQUIRED_ROWS = [
     { sourceField: 'amount', targetField: 'Amount__c', sourceLabel: 'Amount' },
     { sourceField: 'hostedInvoiceUrl', targetField: 'Stripe_Invoice_Link__c', sourceLabel: 'Stripe Hosted Invoice URL' },
     { sourceField: 'referenceNumber', targetField: 'Reference_number__c', sourceLabel: 'Reference Number' },
@@ -26,7 +27,17 @@ const INVOICE_REQUIRED_ROWS = [
     { sourceField: 'customerEmail', targetField: '', sourceLabel: 'Customer Email', isOptional: true },
     { sourceField: 'paymentQrCode', targetField: '', sourceLabel: 'Payment QR Code (HTML)', isOptional: true }
 ];
-const TRANSACTION_REQUIRED_ROWS = [
+const ANET_INVOICE_REQUIRED_ROWS = [
+    { sourceField: 'amount', targetField: 'Amount__c', sourceLabel: 'Amount' },
+    { sourceField: 'referenceNumber', targetField: 'Reference_number__c', sourceLabel: 'Reference Number (Transaction ID)' },
+    { sourceField: 'status', targetField: 'Status__c', sourceLabel: 'Status' },
+    { sourceField: 'invoiceDate', targetField: 'Invoice_Date__c', sourceLabel: 'Invoice Date' },
+    { sourceField: 'authCode', targetField: '', sourceLabel: 'Auth Code', isOptional: true },
+    { sourceField: 'responseCode', targetField: '', sourceLabel: 'Response Code', isOptional: true },
+    { sourceField: 'customerEmail', targetField: '', sourceLabel: 'Customer Email', isOptional: true },
+    { sourceField: 'paymentQrCode', targetField: '', sourceLabel: 'Payment QR Code (HTML)', isOptional: true }
+];
+const STRIPE_TRANSACTION_REQUIRED_ROWS = [
     { sourceField: 'gatewayEventId', targetField: 'Gateway_Event_Id__c', sourceLabel: 'Gateway Event Id' },
     { sourceField: 'gatewayEventType', targetField: 'Gateway_Event_Type__c', sourceLabel: 'Gateway Event Type' },
     { sourceField: 'gatewayAmount', targetField: 'Gateway_Amount__c', sourceLabel: 'Gateway Amount' },
@@ -35,7 +46,20 @@ const TRANSACTION_REQUIRED_ROWS = [
     { sourceField: 'paymentType', targetField: 'Payment_Type__c', sourceLabel: 'Payment Type' },
     { sourceField: 'stripeLiveMode', targetField: 'Stripe_Live_Mode__c', sourceLabel: 'Stripe Live Mode' }
 ];
-const INVOICE_RECORD_SOURCE_OPTIONS = [
+const ANET_TRANSACTION_REQUIRED_ROWS = [
+    { sourceField: 'gatewayEventId', targetField: 'Gateway_Event_Id__c', sourceLabel: 'Gateway Event Id' },
+    { sourceField: 'gatewayEventType', targetField: 'Gateway_Event_Type__c', sourceLabel: 'Gateway Event Type' },
+    { sourceField: 'gatewayAmount', targetField: 'Gateway_Amount__c', sourceLabel: 'Gateway Amount' },
+    { sourceField: 'gatewayReferenceNumber', targetField: 'Gateway_Reference_Number__c', sourceLabel: 'Gateway Reference Number' },
+    { sourceField: 'gatewayTransactionId', targetField: 'Gateway_Transaction_Id__c', sourceLabel: 'Gateway Transaction Id' },
+    { sourceField: 'paymentType', targetField: 'Payment_Type__c', sourceLabel: 'Payment Type' },
+    { sourceField: 'authNetWebhookId', targetField: 'AuthorizeNet_Webhook_Id__c', sourceLabel: 'Authorize.Net Webhook Id', isOptional: true },
+    { sourceField: 'authNetResponseCode', targetField: 'AuthorizeNet_Response_Code__c', sourceLabel: 'Authorize.Net Response Code', isOptional: true },
+    { sourceField: 'authNetAuthCode', targetField: 'AuthorizeNet_Auth_Code__c', sourceLabel: 'Authorize.Net Auth Code', isOptional: true },
+    { sourceField: 'authNetAvsResponse', targetField: 'AuthorizeNet_AVS_Response__c', sourceLabel: 'Authorize.Net AVS Response', isOptional: true },
+    { sourceField: 'authNetEntityName', targetField: 'AuthorizeNet_Entity_Name__c', sourceLabel: 'Authorize.Net Entity Name', isOptional: true }
+];
+const STRIPE_INVOICE_RECORD_SOURCE_OPTIONS = [
     { label: 'Amount', value: 'amount' },
     { label: 'Stripe Hosted Invoice URL', value: 'hostedInvoiceUrl' },
     { label: 'Reference Number', value: 'referenceNumber' },
@@ -44,6 +68,16 @@ const INVOICE_RECORD_SOURCE_OPTIONS = [
     { label: 'Due Date', value: 'dueDate' },
     { label: 'Customer Email', value: 'customerEmail' },
     { label: 'Stripe Invoice Id', value: 'stripeInvoiceId' },
+    { label: 'Payment QR Code (HTML)', value: 'paymentQrCode' }
+];
+const ANET_INVOICE_RECORD_SOURCE_OPTIONS = [
+    { label: 'Amount', value: 'amount' },
+    { label: 'Reference Number (Transaction ID)', value: 'referenceNumber' },
+    { label: 'Status', value: 'status' },
+    { label: 'Invoice Date', value: 'invoiceDate' },
+    { label: 'Auth Code', value: 'authCode' },
+    { label: 'Response Code', value: 'responseCode' },
+    { label: 'Customer Email', value: 'customerEmail' },
     { label: 'Payment QR Code (HTML)', value: 'paymentQrCode' }
 ];
 
@@ -86,7 +120,24 @@ export default class InvoiceMappingTool extends LightningElement {
     }
 
     get gatewayLabel() {
+        if (this.gateway === 'authorizenet') return 'Authorize.Net';
         return this.gateway === 'stripe' ? 'Stripe' : this.gateway;
+    }
+
+    get isAuthNet() {
+        return this.gateway === 'authorizenet';
+    }
+
+    get saveButtonLabel() {
+        return `Save ${this.gatewayLabel} Mappings`;
+    }
+
+    get invoiceRequiredRows() {
+        return this.isAuthNet ? ANET_INVOICE_REQUIRED_ROWS : STRIPE_INVOICE_REQUIRED_ROWS;
+    }
+
+    get transactionRequiredRows() {
+        return this.isAuthNet ? ANET_TRANSACTION_REQUIRED_ROWS : STRIPE_TRANSACTION_REQUIRED_ROWS;
     }
 
     get sourceObjectValue() {
@@ -143,7 +194,7 @@ export default class InvoiceMappingTool extends LightningElement {
     }
 
     get invoiceRecordSourceFieldOptions() {
-        return INVOICE_RECORD_SOURCE_OPTIONS;
+        return this.isAuthNet ? ANET_INVOICE_RECORD_SOURCE_OPTIONS : STRIPE_INVOICE_RECORD_SOURCE_OPTIONS;
     }
 
     get sourceRowsWithOptions() {
@@ -159,7 +210,11 @@ export default class InvoiceMappingTool extends LightningElement {
     }
 
     get transactionRowsWithOptions() {
-        return (this.transactionRows || []).map((row) => ({ ...row, filteredTargetOptions: this.transactionFieldOptions }));
+        return (this.transactionRows || []).map((row) => ({
+            ...row,
+            filteredTargetOptions: this.transactionFieldOptions,
+            isPinned: row.isRequired || row.isOptional
+        }));
     }
 
     get sourceObjectUiOptions() {
@@ -247,6 +302,9 @@ export default class InvoiceMappingTool extends LightningElement {
     async loadInitialState() {
         this.isLoading = true;
         try {
+            const invoiceFieldsFetcher = this.isAuthNet
+                ? getInvoiceRequestFieldsForGateway({ gateway: this.gateway })
+                : getInvoiceRequestFields();
             const [
                 savedConfig,
                 sourceObjects,
@@ -257,7 +315,7 @@ export default class InvoiceMappingTool extends LightningElement {
                 getGatewayMappingConfig({ gateway: this.gateway }),
                 getEligibleSourceObjects(),
                 getCreateableObjects(),
-                getInvoiceRequestFields(),
+                invoiceFieldsFetcher,
                 getGatewayTransactionFields({ gateway: this.gateway })
             ]);
 
@@ -339,7 +397,7 @@ export default class InvoiceMappingTool extends LightningElement {
         ]);
         this.invoiceFieldOptions = invoiceFields || [];
         this.invoiceLookupOptions = invoiceLookups || [];
-        this.invoiceRows = this.normalizeRequiredTargets(this.invoiceRows, INVOICE_REQUIRED_ROWS, this.invoiceFieldOptions, this.useCustomInvoice);
+        this.invoiceRows = this.normalizeRequiredTargets(this.invoiceRows, this.invoiceRequiredRows, this.invoiceFieldOptions, this.useCustomInvoice);
         if (!this.config.invoiceSourceLookupField && this.invoiceLookupOptions.length === 1) {
             this.config = { ...this.config, invoiceSourceLookupField: this.invoiceLookupOptions[0].value };
         }
@@ -353,7 +411,7 @@ export default class InvoiceMappingTool extends LightningElement {
         ]);
         this.transactionFieldOptions = transactionFields || [];
         this.transactionLookupOptions = transactionLookups || [];
-        this.transactionRows = this.normalizeRequiredTargets(this.transactionRows, TRANSACTION_REQUIRED_ROWS, this.transactionFieldOptions, this.useCustomTransaction);
+        this.transactionRows = this.normalizeRequiredTargets(this.transactionRows, this.transactionRequiredRows, this.transactionFieldOptions, this.useCustomTransaction);
         if (!this.config.transactionSourceLookupField && this.transactionLookupOptions.length === 1) {
             this.config = { ...this.config, transactionSourceLookupField: this.transactionLookupOptions[0].value };
         }
@@ -589,9 +647,9 @@ export default class InvoiceMappingTool extends LightningElement {
                 transactionMappings: this.cleanRows(this.transactionRows)
             };
             const message = await saveGatewayMappingConfig({ configJson: JSON.stringify(payload) });
-            this.showToast('Success', message || 'Stripe invoice mappings saved.', 'success');
+            this.showToast('Success', message || `${this.gatewayLabel} invoice mappings saved.`, 'success');
         } catch (error) {
-            this.showToast('Save Failed', this.getErrorMessage(error, 'Could not save Stripe invoice mappings.'), 'error');
+            this.showToast('Save Failed', this.getErrorMessage(error, `Could not save ${this.gatewayLabel} invoice mappings.`), 'error');
         } finally {
             this.isSaving = false;
         }
@@ -702,8 +760,8 @@ export default class InvoiceMappingTool extends LightningElement {
 
     applyRequiredRows() {
         this.sourceRows = this.mergeRequiredRows(this.sourceRows, SOURCE_REQUIRED_ROWS, 'source');
-        this.invoiceRows = this.mergeRequiredRows(this.invoiceRows, INVOICE_REQUIRED_ROWS, 'invoice');
-        this.transactionRows = this.mergeRequiredRows(this.transactionRows, TRANSACTION_REQUIRED_ROWS, 'transaction');
+        this.invoiceRows = this.mergeRequiredRows(this.invoiceRows, this.invoiceRequiredRows, 'invoice');
+        this.transactionRows = this.mergeRequiredRows(this.transactionRows, this.transactionRequiredRows, 'transaction');
     }
 
     mergeRequiredRows(existingRows, requiredDefinitions, sectionName) {

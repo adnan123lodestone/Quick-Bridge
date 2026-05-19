@@ -146,7 +146,10 @@ global without sharing class PaymentWebhookRestResource {
         try {
             if (paymentType == 'stripe' && getStringValue(payload, 'type') == 'invoice.paid') {
                 txnRecordId = PaymentInvoiceRecordActionController.insertStripeWebhookTransaction(payload);
-                trace('Stored dynamic transaction record id=' + String.valueOf(txnRecordId));
+                trace('Stored dynamic Stripe transaction record id=' + String.valueOf(txnRecordId));
+            } else if (paymentType == 'authorizenet' && hasAuthorizeNetMappingConfigured(payload)) {
+                txnRecordId = PaymentInvoiceRecordActionController.insertAuthorizeNetWebhookTransaction(payload);
+                trace('Stored dynamic Authorize.Net transaction record id=' + String.valueOf(txnRecordId));
             } else {
                 Portal_Payment_Transaction__c logRecord = buildLogRecord(paymentType, payload, requestBody);
                 insert logRecord;
@@ -171,6 +174,37 @@ global without sharing class PaymentWebhookRestResource {
         result.recordId = txnRecordId;
         result.message = 'Webhook payload stored successfully.';
         return result;
+    }
+
+    private static Boolean hasAuthorizeNetMappingConfigured(Map<String, Object> payload) {
+        // Check if Auth.Net invoice mappings exist — if they do, use the dynamic path.
+        // Fall back to the hardcoded path for orgs that haven't configured the mapping yet.
+        Map<String, Object> innerPayload = getMapValue(payload, 'payload');
+        String merchantRefId = firstNonBlank(
+            getStringValue(innerPayload, 'merchantReferenceId'),
+            getStringValue(payload, 'merchantReferenceId')
+        );
+        if (String.isBlank(merchantRefId)) return false;
+
+        Id sourceRecordId;
+        try {
+            sourceRecordId = Id.valueOf(merchantRefId.trim());
+        } catch (Exception e) {
+            return false;
+        }
+
+        String sourceObjectApiName = sourceRecordId.getSObjectType().getDescribe().getName();
+        Integer mappingCount = [
+            SELECT COUNT()
+            FROM Field_Mapping__mdt
+            WHERE Integration__c = 'authorizenet'
+            AND Action__c = 'createInvoice'
+            AND Mapping_Context__c = 'PaymentInvoice'
+            AND SF_Object__c = :sourceObjectApiName
+            AND Is_Active__c = true
+            LIMIT 1
+        ];
+        return mappingCount > 0;
     }
 
     private static Portal_Payment_Transaction__c buildLogRecord(

@@ -10,9 +10,9 @@
             <div>
                 <p class="mapping-eyebrow">Payment Invoice Setup</p>
                 <h2 class="mapping-title">{gatewayLabel} invoice mappings</h2>
-                <p class="mapping-subtitle">Configure the source, invoice record, and payment transaction mappings for Stripe invoice creation.</p>
+                <p class="mapping-subtitle">Configure the source, invoice record, and payment transaction mappings for {gatewayLabel} invoice creation.</p>
             </div>
-            <lightning-button variant="brand" label="Save Stripe Mappings" onclick={handleSave} disabled={saveDisabled}></lightning-button>
+            <lightning-button variant="brand" label={saveButtonLabel} onclick={handleSave} disabled={saveDisabled}></lightning-button>
         </div>
 
         <div class="mapping-section">
@@ -66,7 +66,7 @@
                     <div class="mapping-grid header-row">
                         <div>Source field</div>
                         <div></div>
-                        <div>Stripe invoice input</div>
+                        <div>{gatewayLabel} invoice input</div>
                         <div></div>
                     </div>
                     <template for:each={sourceRowsWithOptions} for:item="row">
@@ -105,7 +105,7 @@
                 <div class="step-badge">2</div>
                 <div>
                     <h3 class="section-title">Invoice record</h3>
-                    <p class="section-subtitle">Choose where the Salesforce invoice record is created after Stripe invoice generation.</p>
+                    <p class="section-subtitle">Choose where the Salesforce invoice record is created after {gatewayLabel} invoice generation.</p>
                 </div>
                 <lightning-input
                     class="mode-toggle"
@@ -243,9 +243,9 @@
                 </template>
 
                 <div class="mapping-block">
-                    <div class="mapping-block-title">Stripe webhook to transaction mapping</div>
+                    <div class="mapping-block-title">{gatewayLabel} webhook to transaction mapping</div>
                     <div class="mapping-grid header-row">
-                        <div>Stripe webhook field</div>
+                        <div>{gatewayLabel} webhook field</div>
                         <div></div>
                         <div>Transaction field</div>
                         <div></div>
@@ -254,10 +254,13 @@
                         <div key={row.id} class="mapping-grid data-row">
                             <div class="mapped-field-cell">
                                 <lightning-combobox data-id={row.id} data-field="sourceField" variant="label-hidden"
-                                    value={row.sourceField} options={gatewayTransactionFieldOptions} placeholder="Select Stripe field"
+                                    value={row.sourceField} options={gatewayTransactionFieldOptions} placeholder="Select gateway field"
                                     disabled={row.lockSource} onchange={handleTransactionRowChange}></lightning-combobox>
                                 <template if:true={row.isRequired}>
                                     <span class="required-badge">Required</span>
+                                </template>
+                                <template if:true={row.isOptional}>
+                                    <span class="optional-badge">Optional</span>
                                 </template>
                             </div>
                             <lightning-icon icon-name="utility:forward" size="xx-small" class="arrow-icon"></lightning-icon>
@@ -265,7 +268,7 @@
                                 value={row.targetField} options={row.filteredTargetOptions} placeholder="Select transaction field"
                                 disabled={row.lockTarget} onchange={handleTransactionRowChange}></lightning-combobox>
                             <lightning-button-icon icon-name="utility:delete" variant="bare" alternative-text="Remove row"
-                                data-id={row.id} onclick={removeTransactionRow} disabled={row.isRequired}></lightning-button-icon>
+                                data-id={row.id} onclick={removeTransactionRow} disabled={row.isPinned}></lightning-button-icon>
                         </div>
                     </template>
                     <lightning-button class="add-row-button" variant="neutral" label="Add Transaction Mapping" onclick={addTransactionRow}></lightning-button>

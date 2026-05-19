@@ -2,7 +2,7 @@ public with sharing class PaymentInvoiceMappingController {
     private static final String CONTEXT_PAYMENT_INVOICE = 'PaymentInvoice';
     private static final String ACTION_CREATE_INVOICE = 'createInvoice';
     private static final String SETUP_MARKER = '__setup__';
-    private static final Set<String> SUPPORTED_GATEWAYS = new Set<String>{ 'stripe' };
+    private static final Set<String> SUPPORTED_GATEWAYS = new Set<String>{ 'stripe', 'authorizenet' };
     private static final Set<String> CUSTOMER_OBJECTS = new Set<String>{ 'Account', 'Contact' };
     private static final Set<String> IGNORED_FIELD_NAMES = new Set<String>{
         'ownerid', 'recordtypeid', 'currencyisocode', 'createdbyid', 'lastmodifiedbyid', 'systemmodstamp'
@@ -285,6 +285,25 @@ public with sharing class PaymentInvoiceMappingController {
 
     @AuraEnabled(cacheable=true)
     public static List<FieldOption> getInvoiceRequestFields() {
+        return getInvoiceRequestFields('stripe');
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static List<FieldOption> getInvoiceRequestFieldsForGateway(String gateway) {
+        String normalizedGateway = normalizeGateway(gateway);
+        if (normalizedGateway == 'authorizenet') {
+            return new List<FieldOption>{
+                fieldOption('Amount', 'amount', 'Currency'),
+                fieldOption('Reference Number (Transaction ID)', 'referenceNumber', 'String'),
+                fieldOption('Status', 'status', 'String'),
+                fieldOption('Invoice Date', 'invoiceDate', 'Date'),
+                fieldOption('Auth Code', 'authCode', 'String'),
+                fieldOption('Response Code', 'responseCode', 'String'),
+                fieldOption('Customer Email', 'customerEmail', 'Email'),
+                fieldOption('Payment QR Code (HTML)', 'paymentQrCode', 'String')
+            };
+        }
+        // stripe (default)
         return new List<FieldOption>{
             fieldOption('Amount', 'amount', 'Currency'),
             fieldOption('Currency', 'currency', 'String'),
@@ -295,10 +314,14 @@ public with sharing class PaymentInvoiceMappingController {
         };
     }
 
+    private static List<FieldOption> getInvoiceRequestFields(String gateway) {
+        return getInvoiceRequestFieldsForGateway(gateway);
+    }
+
     @AuraEnabled(cacheable=true)
     public static List<FieldOption> getGatewayTransactionFields(String gateway) {
-        normalizeGateway(gateway);
-        return new List<FieldOption>{
+        String normalizedGateway = normalizeGateway(gateway);
+        List<FieldOption> options = new List<FieldOption>{
             fieldOption('Gateway Event Id', 'gatewayEventId', 'String'),
             fieldOption('Gateway Event Type', 'gatewayEventType', 'String'),
             fieldOption('Gateway Event Date', 'gatewayEventDate', 'Datetime'),
@@ -306,13 +329,22 @@ public with sharing class PaymentInvoiceMappingController {
             fieldOption('Gateway Currency', 'gatewayCurrency', 'String'),
             fieldOption('Gateway Reference Number', 'gatewayReferenceNumber', 'String'),
             fieldOption('Gateway Transaction Id', 'gatewayTransactionId', 'String'),
-            fieldOption('Payment Type', 'paymentType', 'String'),
-            fieldOption('Stripe Live Mode', 'stripeLiveMode', 'Boolean'),
-            fieldOption('Stripe Status', 'stripeStatus', 'String'),
-            fieldOption('Stripe Customer Id', 'stripeCustomerId', 'String'),
-            fieldOption('Stripe Invoice PDF Url', 'stripeInvoicePdfUrl', 'Url'),
-            fieldOption('Stripe Payment Method Id', 'stripePaymentMethodId', 'String')
+            fieldOption('Payment Type', 'paymentType', 'String')
         };
+        if (normalizedGateway == 'authorizenet') {
+            options.add(fieldOption('Authorize.Net Webhook Id', 'authNetWebhookId', 'String'));
+            options.add(fieldOption('Authorize.Net Response Code', 'authNetResponseCode', 'Integer'));
+            options.add(fieldOption('Authorize.Net Auth Code', 'authNetAuthCode', 'String'));
+            options.add(fieldOption('Authorize.Net AVS Response', 'authNetAvsResponse', 'String'));
+            options.add(fieldOption('Authorize.Net Entity Name', 'authNetEntityName', 'String'));
+        } else {
+            options.add(fieldOption('Stripe Live Mode', 'stripeLiveMode', 'Boolean'));
+            options.add(fieldOption('Stripe Status', 'stripeStatus', 'String'));
+            options.add(fieldOption('Stripe Customer Id', 'stripeCustomerId', 'String'));
+            options.add(fieldOption('Stripe Invoice PDF Url', 'stripeInvoicePdfUrl', 'Url'));
+            options.add(fieldOption('Stripe Payment Method Id', 'stripePaymentMethodId', 'String'));
+        }
+        return options;
     }
 
     @AuraEnabled
@@ -320,18 +352,21 @@ public with sharing class PaymentInvoiceMappingController {
         GatewayMappingConfig config = parseConfig(configJson);
         validateConfig(config);
 
+        // Derive developer name prefix from gateway so Auth.Net records don't collide with Stripe records.
+        String devPrefix = config.gateway == 'authorizenet' ? 'PI_ANet_' : 'PI_Stripe_';
+
         // Build the set of DeveloperNames that will be written fresh this save.
         // These must NOT also appear as deactivation-only records — Salesforce rejects
         // duplicate fullNames in a single deploy container.
         Set<String> reusedNames = new Set<String>{
-            'PI_Stripe_Source_Setup', 'PI_Stripe_Invoice_Setup', 'PI_Stripe_Transaction_Setup'
+            devPrefix + 'Source_Setup', devPrefix + 'Invoice_Setup', devPrefix + 'Transaction_Setup'
         };
         Integer srcCount  = config.sourceMappings  == null ? 0 : config.sourceMappings.size();
         Integer invCount  = config.invoiceMappings  == null ? 0 : config.invoiceMappings.size();
         Integer txnCount  = config.transactionMappings == null ? 0 : config.transactionMappings.size();
-        for (Integer i = 1; i <= srcCount; i++)  reusedNames.add('PI_Stripe_Source_'  + String.valueOf(i).leftPad(3, '0'));
-        for (Integer i = 1; i <= invCount; i++)  reusedNames.add('PI_Stripe_Invoice_' + String.valueOf(i).leftPad(3, '0'));
-        for (Integer i = 1; i <= txnCount; i++)  reusedNames.add('PI_Stripe_Txn_'     + String.valueOf(i).leftPad(3, '0'));
+        for (Integer i = 1; i <= srcCount; i++)  reusedNames.add(devPrefix + 'Source_'  + String.valueOf(i).leftPad(3, '0'));
+        for (Integer i = 1; i <= invCount; i++)  reusedNames.add(devPrefix + 'Invoice_' + String.valueOf(i).leftPad(3, '0'));
+        for (Integer i = 1; i <= txnCount; i++)  reusedNames.add(devPrefix + 'Txn_'     + String.valueOf(i).leftPad(3, '0'));
 
         Metadata.DeployContainer container = new Metadata.DeployContainer();
         for (Field_Mapping__mdt existing : [
@@ -352,12 +387,12 @@ public with sharing class PaymentInvoiceMappingController {
             container.addMetadata(inactiveMetadata);
         }
 
-        addSetupRecord(container, config, 'Source', config.sourceObject, config.sourceObject, null, 'PI_Stripe_Source_Setup');
-        addSetupRecord(container, config, 'Invoice', config.sourceObject, config.invoiceObject, config.invoiceSourceLookupField, 'PI_Stripe_Invoice_Setup');
-        addSetupRecord(container, config, 'Transaction', config.sourceObject, config.transactionObject, config.transactionSourceLookupField, 'PI_Stripe_Transaction_Setup');
-        addMappingRecords(container, config, 'Source', config.sourceObject, config.sourceObject, config.sourceMappings, 'PI_Stripe_Source_');
-        addMappingRecords(container, config, 'Invoice', config.sourceObject, config.invoiceObject, config.invoiceMappings, 'PI_Stripe_Invoice_');
-        addMappingRecords(container, config, 'Transaction', config.sourceObject, config.transactionObject, config.transactionMappings, 'PI_Stripe_Txn_');
+        addSetupRecord(container, config, 'Source', config.sourceObject, config.sourceObject, null, devPrefix + 'Source_Setup');
+        addSetupRecord(container, config, 'Invoice', config.sourceObject, config.invoiceObject, config.invoiceSourceLookupField, devPrefix + 'Invoice_Setup');
+        addSetupRecord(container, config, 'Transaction', config.sourceObject, config.transactionObject, config.transactionSourceLookupField, devPrefix + 'Transaction_Setup');
+        addMappingRecords(container, config, 'Source', config.sourceObject, config.sourceObject, config.sourceMappings, devPrefix + 'Source_');
+        addMappingRecords(container, config, 'Invoice', config.sourceObject, config.invoiceObject, config.invoiceMappings, devPrefix + 'Invoice_');
+        addMappingRecords(container, config, 'Transaction', config.sourceObject, config.transactionObject, config.transactionMappings, devPrefix + 'Txn_');
 
         if (Test.isRunningTest()) {
             return 'Mappings validated successfully.';
@@ -400,8 +435,14 @@ public with sharing class PaymentInvoiceMappingController {
         validateMappingRows(config.invoiceMappings, 'invoice record');
         validateMappingRows(config.transactionMappings, 'payment transaction');
         validateRequiredSemanticMappings(config.sourceMappings, new Set<String>{ 'amount' }, 'source invoice request', true);
-        validateRequiredSemanticMappings(config.invoiceMappings, new Set<String>{ 'amount', 'hostedInvoiceUrl', 'referenceNumber', 'status', 'invoiceDate', 'stripeInvoiceId' }, 'invoice record', false);
-        validateRequiredSemanticMappings(config.transactionMappings, new Set<String>{ 'gatewayEventId', 'gatewayEventType', 'gatewayAmount', 'gatewayReferenceNumber', 'gatewayTransactionId', 'paymentType', 'stripeLiveMode' }, 'payment transaction', false);
+        Set<String> requiredInvoiceFields = config.gateway == 'authorizenet'
+            ? new Set<String>{ 'amount', 'referenceNumber', 'status', 'invoiceDate' }
+            : new Set<String>{ 'amount', 'hostedInvoiceUrl', 'referenceNumber', 'status', 'invoiceDate', 'stripeInvoiceId' };
+        Set<String> requiredTransactionFields = config.gateway == 'authorizenet'
+            ? new Set<String>{ 'gatewayEventId', 'gatewayEventType', 'gatewayAmount', 'gatewayReferenceNumber', 'gatewayTransactionId', 'paymentType' }
+            : new Set<String>{ 'gatewayEventId', 'gatewayEventType', 'gatewayAmount', 'gatewayReferenceNumber', 'gatewayTransactionId', 'paymentType', 'stripeLiveMode' };
+        validateRequiredSemanticMappings(config.invoiceMappings, requiredInvoiceFields, 'invoice record', false);
+        validateRequiredSemanticMappings(config.transactionMappings, requiredTransactionFields, 'payment transaction', false);
     }
 
     private static void validateCustomerLookup(String objectApiName, String fieldName, GatewayMappingConfig config) {
