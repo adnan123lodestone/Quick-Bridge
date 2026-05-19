@@ -12,13 +12,6 @@ public with sharing class ScheduledIntegrationJobProcessor implements Queueable,
             WHERE Id = :scheduleId
             LIMIT 1
         ];
-
-        if (job.Integration_Type__c == 'QuickBooks') {
-            new QBSyncScheduler(job.Source_Object__c).execute(null);
-            return;
-        }
-        if (job.Integration_Type__c == 'Shopify') {
-            new ShopifySyncScheduler(job.Source_Object__c, job.Direction__c == 'Out').execute(null);
-        }
+        ScheduledOperationRouter.execute(job);
     }
 }

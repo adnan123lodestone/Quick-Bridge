@@ -31,6 +31,7 @@ public with sharing class PaymentMethodAdminService {
 
     public static DeactivateResponse deactivatePaymentMethods(DeactivateRequest request) {
         try {
+            QuickBridgeAdminGuard.requireManage();
             if (request == null || request.paymentMethodStates == null || request.paymentMethodStates.isEmpty()) {
                 throw new PaymentMethodAdminException('At least one payment method state must be provided.');
             }
@@ -60,6 +61,7 @@ public with sharing class PaymentMethodAdminService {
             response.acceptedMethods = acceptedMethods;
             response.unsupportedMethods = unsupportedMethods;
             response.deploymentId = deploymentId;
+            QuickBridgeAdminGuard.audit('PAYMENT_METHOD_SYNC', null, 'Queued', response.message, null);
             return response;
         } catch (Exception e) {
             ErrorLogUtility.logException(

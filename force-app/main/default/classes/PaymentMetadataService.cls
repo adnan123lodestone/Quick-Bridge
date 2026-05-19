@@ -103,6 +103,7 @@ public with sharing class PaymentMetadataService {
     public static List<MetadataConfig> getPaymentMetadataConfigs() {
         List<MetadataConfig> configs = new List<MetadataConfig>();
         try {
+            QuickBridgeAdminGuard.requireView();
             for (String providerKey : PROVIDER_LABELS.keySet()) {
                 configs.add(buildMetadataConfig(providerKey));
             }
@@ -117,6 +118,7 @@ public with sharing class PaymentMetadataService {
     public static MetadataUpdateResponse updatePaymentMetadata(String provider, String fieldValuesJson, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
         try {
+            QuickBridgeAdminGuard.requireManage();
             requireAdminSession(sessionToken);
             if (String.isBlank(provider) || String.isBlank(fieldValuesJson)) {
                 response.success = false;
@@ -152,6 +154,7 @@ public with sharing class PaymentMetadataService {
             response.success = true;
             response.message = 'Configuration save initiated for ' + PROVIDER_LABELS.get(normalizedProvider);
             response.deploymentId = null;
+            QuickBridgeAdminGuard.audit('METADATA_SAVE', normalizedProvider, 'Queued', response.message, null);
         } catch (Exception e) {
             response.success = false;
             response.message = 'Error updating metadata: ' + e.getMessage();
@@ -166,6 +169,7 @@ public with sharing class PaymentMetadataService {
         preferences.availableProductsVisible = true;
 
         try {
+            QuickBridgeAdminGuard.requireView();
             Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance('Default');
             if (config != null && config.Available_Products_Visible__c != null) {
                 preferences.availableProductsVisible = config.Available_Products_Visible__c;
@@ -182,6 +186,7 @@ public with sharing class PaymentMetadataService {
     public static MetadataUpdateResponse updateAvailableProductsVisible(Boolean visible, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
         try {
+            QuickBridgeAdminGuard.requireManage();
             requireAdminSession(sessionToken);
             Metadata.DeployContainer container = new Metadata.DeployContainer();
             Metadata.CustomMetadata record = new Metadata.CustomMetadata();
@@ -200,6 +205,7 @@ public with sharing class PaymentMetadataService {
 
             response.success = true;
             response.message = 'Available Products display preference save initiated.';
+            QuickBridgeAdminGuard.audit('AVAILABLE_PRODUCTS_VISIBILITY', null, 'Queued', 'visible=' + String.valueOf(visible == true), null);
         } catch (Exception e) {
             response.success = false;
             response.message = 'Error updating Available Products preference: ' + e.getMessage();
@@ -264,6 +270,7 @@ public with sharing class PaymentMetadataService {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
 
         try {
+            QuickBridgeAdminGuard.requireManage();
             requireAdminSession(sessionToken);
             List<String> renewalProductLabels = resolveProviderLabels(renewalProductKeys);
             List<String> additionalSubscriptionProductLabels = resolveProviderLabels(additionalSubscriptionProductKeys);
@@ -284,6 +291,7 @@ public with sharing class PaymentMetadataService {
 
             response.success = true;
             response.message = 'Renewal request email sent to ' + RENEWAL_REQUEST_RECIPIENT + '.';
+            QuickBridgeAdminGuard.audit('RENEWAL_REQUEST', null, 'Success', response.message, null);
         } catch (Exception e) {
             response.success = false;
             response.message = 'Error sending renewal request: ' + e.getMessage();

@@ -1,14 +1,8 @@
 import { LightningElement, api } from "lwc";
-import getAuthorizeNetClientConfig from "@salesforce/apex/AuthorizeNetPaymentService.getClientConfig";
-import processAuthorizeNetPayment from "@salesforce/apex/AuthorizeNetPaymentService.processOpaquePayment";
-import getStripeClientConfig from "@salesforce/apex/StripePaymentService.getClientConfig";
-import processStripePayment from "@salesforce/apex/StripePaymentService.processPayment";
-import getPayPalClientConfig from "@salesforce/apex/PayPalPaymentService.getClientConfig";
-import createPayPalOrder from "@salesforce/apex/PayPalPaymentService.createOrder";
-import capturePayPalOrder from "@salesforce/apex/PayPalPaymentService.captureOrder";
+import getCheckoutProviders from "@salesforce/apex/PaymentCheckoutController.getCheckoutProviders";
+import initializePayment from "@salesforce/apex/PaymentCheckoutController.initializePayment";
+import executePayment from "@salesforce/apex/PaymentCheckoutController.executePayment";
 import CardPayment_lables from "@salesforce/label/c.CardPayment_lables";
-import getActiveGatewaysForCheckout from "@salesforce/apex/PaymentGatewayService.getActiveGatewaysForCheckout";
-import getConnectorDescriptors from "@salesforce/apex/IntegrationConnectorRegistry.getConnectorDescriptors";
 
 let acceptJsPromise;
 let stripeJsPromise;
@@ -210,39 +204,8 @@ export default class PaymentComponent extends LightningElement {
 
   async initializeProviderConfigs() {
     try {
-      await this.loadPaymentProviderDescriptors();
-      const serverResponseStr = await getActiveGatewaysForCheckout();
-      const serverResponse = JSON.parse(serverResponseStr);
-
-      if (serverResponse.status !== 'Success') {
-        this.selectedProvider = null; // Reset
-        this.dispatchError(serverResponse.message || "Failed to validate credentials with Server Org.");
-        this.authorizeNetConfig = this.buildUnavailableProviderConfig(serverResponse.message);
-        this.stripeConfig = this.buildUnavailableProviderConfig(serverResponse.message);
-        this.paypalConfig = this.buildUnavailableProviderConfig(serverResponse.message);
-        return;
-      }
-
-      const activeGateways = (serverResponse.activeGateways || []).map(g => g.toLowerCase().trim());
-
-      const [authorizeNetResult, stripeResult, paypalResult] = await Promise.allSettled([
-        getAuthorizeNetClientConfig(),
-        getStripeClientConfig(),
-        getPayPalClientConfig(),
-      ]);
-
-      // Intersection Logic
-      this.authorizeNetConfig = authorizeNetResult.status === "fulfilled"
-        ? { ...authorizeNetResult.value, active: authorizeNetResult.value.active && activeGateways.includes("authorize.net") }
-        : this.buildUnavailableProviderConfig("Authorize.Net configuration could not be loaded.", authorizeNetResult.reason);
-
-      this.stripeConfig = stripeResult.status === "fulfilled"
-        ? { ...stripeResult.value, active: stripeResult.value.active && activeGateways.includes("stripe") }
-        : this.buildUnavailableProviderConfig("Stripe configuration could not be loaded.", stripeResult.reason);
-
-      this.paypalConfig = paypalResult.status === "fulfilled"
-        ? { ...paypalResult.value, active: paypalResult.value.active && activeGateways.includes("paypal") }
-        : this.buildUnavailableProviderConfig("PayPal configuration could not be loaded.", paypalResult.reason);
+      const providers = await getCheckoutProviders();
+      this.applyCheckoutProviders(providers);
 
       // Auto-select provider
       if (!this.isProviderSelectable(this.selectedProvider)) {
@@ -262,17 +225,33 @@ export default class PaymentComponent extends LightningElement {
     }
   }
 
-  async loadPaymentProviderDescriptors() {
-    try {
-      const descriptors = await getConnectorDescriptors();
-      const paymentProviders = (descriptors || [])
-        .filter((provider) => provider.hasPayment || provider.hasCheckout)
-        .filter((provider) => CHECKOUT_PROVIDER_ORDER.includes(provider.connectorKey))
-        .sort((a, b) => CHECKOUT_PROVIDER_ORDER.indexOf(a.connectorKey) - CHECKOUT_PROVIDER_ORDER.indexOf(b.connectorKey));
-      this.paymentProviderDescriptors = paymentProviders.length ? paymentProviders : FALLBACK_PAYMENT_PROVIDERS;
-    } catch (error) {
-      this.paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
-    }
+  applyCheckoutProviders(providers) {
+    const providerList = Array.isArray(providers) ? providers : [];
+    const normalized = providerList
+      .filter((provider) => CHECKOUT_PROVIDER_ORDER.includes(provider.connectorKey))
+      .sort((a, b) => CHECKOUT_PROVIDER_ORDER.indexOf(a.connectorKey) - CHECKOUT_PROVIDER_ORDER.indexOf(b.connectorKey));
+
+    this.paymentProviderDescriptors = normalized.length
+      ? normalized.map((provider) => ({ ...provider, hasPayment: true, hasCheckout: true }))
+      : FALLBACK_PAYMENT_PROVIDERS;
+
+    const byKey = new Map(normalized.map((provider) => [provider.connectorKey, provider]));
+    this.authorizeNetConfig = this.toLegacyProviderConfig(byKey.get("authorizenet"), "Authorize.Net is unavailable.");
+    this.stripeConfig = this.toLegacyProviderConfig(byKey.get("stripe"), "Stripe is unavailable.");
+    this.paypalConfig = this.toLegacyProviderConfig(byKey.get("paypal"), "PayPal is unavailable.");
+  }
+
+  toLegacyProviderConfig(provider, fallbackMessage) {
+    if (!provider) return this.buildUnavailableProviderConfig(fallbackMessage);
+    return {
+      ...(provider.config || {}),
+      active: provider.active === true,
+      configured: provider.configured === true,
+      message: provider.message,
+      acceptJsUrl: provider.config?.acceptJsUrl || provider.clientScriptUrl,
+      stripeJsUrl: provider.config?.stripeJsUrl || provider.clientScriptUrl,
+      payPalJsUrl: provider.config?.payPalJsUrl || provider.clientScriptUrl,
+    };
   }
 
   buildUnavailableProviderConfig(message, error) {
@@ -458,8 +437,9 @@ export default class PaymentComponent extends LightningElement {
     const opaqueData = await this.tokenizePaymentData(config, paymentDetails);
     this.clearSensitiveFields();
 
-    const response = await processAuthorizeNetPayment({
+    const response = await executePayment({
       request: {
+        providerKey: "authorizenet",
         amount: Number(resolvedAmount),
         orderId: this.orderId || null,
         dataDescriptor: opaqueData.dataDescriptor,
@@ -526,8 +506,9 @@ export default class PaymentComponent extends LightningElement {
     this.logStripeStep(`Stripe PaymentMethod created: ${stripeResponse?.paymentMethod?.id || "missing id"}`);
     this.logStripeStep("Calling Apex StripePaymentService.processPayment");
 
-    const response = await processStripePayment({
+    const response = await executePayment({
       request: {
+        providerKey: "stripe",
         amount: Number(resolvedAmount),
         orderId: this.orderId || null,
         paymentMethodId: stripeResponse?.paymentMethod?.id,
@@ -790,7 +771,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadAuthorizeNetResources() {
-    if (!this.authorizeNetConfig) this.authorizeNetConfig = await getAuthorizeNetClientConfig();
+    if (!this.authorizeNetConfig) await this.initializeProviderConfigs();
     if (this.authorizeNetConfig?.active === false) throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is currently inactive.");
     if (!this.authorizeNetConfig?.configured) throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is not fully configured.");
 
@@ -820,9 +801,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadStripeResources() {
-    if (!this.stripeConfig) {
-      try { this.stripeConfig = await getStripeClientConfig(); } catch (error) { throw new Error(this.getErrorMessage(error)); }
-    }
+    if (!this.stripeConfig) await this.initializeProviderConfigs();
     if (this.stripeConfig?.active === false) throw new Error(this.stripeConfig?.message || "Stripe is currently inactive.");
     if (!this.stripeConfig?.configured) throw new Error(this.stripeConfig?.message || "Stripe is not fully configured.");
     if (!this.stripeConfig?.publishableKey) throw new Error("Stripe publishable key is missing.");
@@ -855,7 +834,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadPayPalResources() {
-    if (!this.paypalConfig) this.paypalConfig = await getPayPalClientConfig();
+    if (!this.paypalConfig) await this.initializeProviderConfigs();
     if (this.paypalConfig?.active === false) throw new Error(this.paypalConfig?.message || "PayPal is currently inactive.");
     if (!this.paypalConfig?.configured) throw new Error(this.paypalConfig?.message || "PayPal is not fully configured.");
 
@@ -982,8 +961,9 @@ export default class PaymentComponent extends LightningElement {
         const resolvedAmount = this.resolveAmount(this.amount);
         this.isSubmitting = true;
 
-        const response = await createPayPalOrder({
+        const response = await initializePayment({
           request: {
+            providerKey: "paypal",
             amount: Number(resolvedAmount),
             orderId: this.orderId || null,
             fullName: this.paymentForm.cardName,
@@ -1001,8 +981,9 @@ export default class PaymentComponent extends LightningElement {
       },
       onApprove: async (data) => {
         try {
-          const response = await capturePayPalOrder({
+          const response = await executePayment({
             request: {
+              providerKey: "paypal",
               paypalOrderId: data?.orderID,
               orderId: this.orderId || null,
             },

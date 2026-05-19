@@ -39,6 +39,20 @@ public with sharing class IntegrationEntityRegistry {
         }
         List<EntityDefinition> result = new List<EntityDefinition>();
         try {
+            for (Integration_Object_Map__mdt row : [
+                SELECT Connector_Key__c, Salesforce_Object__c, External_Object__c
+                FROM Integration_Object_Map__mdt
+                WHERE Active__c = true
+            ]) {
+                EntityDefinition definition = new EntityDefinition();
+                definition.integrationKey = normalizeIntegration(row.Connector_Key__c);
+                definition.salesforceObject = stripNamespace(row.Salesforce_Object__c);
+                definition.externalEntity = row.External_Object__c;
+                result.add(definition);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
             for (Integration_Entity_Definition__c row : [
                 SELECT Integration_Key__c, Salesforce_Object__c, External_Entity__c
                 FROM Integration_Entity_Definition__c
