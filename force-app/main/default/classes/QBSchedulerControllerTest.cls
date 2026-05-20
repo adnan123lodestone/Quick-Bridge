@@ -38,6 +38,12 @@ private class QBSchedulerControllerTest {
 
     List<Map<String, Object>> jobs = QBSchedulerController.getScheduledJobs();
     System.assertNotEquals(null, jobs);
+    System.assertEquals(
+      1,
+      jobs.size(),
+      'New Ready schedules should be listed as active schedules.'
+    );
+    System.assertEquals('Ready', (String) jobs[0].get('status'));
 
     QBSchedulerController.deleteSpecificJob('QBO Sync - Account');
   }
@@ -99,6 +105,79 @@ private class QBSchedulerControllerTest {
 
     List<Map<String, Object>> runs = QBSchedulerController.getRecentRuns(null);
     System.assertEquals(0, runs.size());
+  }
+
+  @isTest
+  static void testSchedulerNextRunCalculationPaths() {
+    Datetime baseTime = Datetime.newInstance(2026, 5, 20, 12, 0, 0);
+
+    System.assertEquals(
+      baseTime.addMinutes(5),
+      SchedulerEntitlementService.calculateNextRun(5, 'Minutes', baseTime)
+    );
+    System.assertEquals(
+      baseTime.addHours(2),
+      SchedulerEntitlementService.calculateNextRun(2, 'Hours', baseTime)
+    );
+    System.assertEquals(
+      baseTime.addDays(3),
+      SchedulerEntitlementService.calculateNextRun(3, 'Days', baseTime)
+    );
+    System.assertEquals(
+      baseTime.addDays(14),
+      SchedulerEntitlementService.calculateNextRun(2, 'Weeks', baseTime)
+    );
+    System.assertEquals(
+      baseTime.addMonths(1),
+      SchedulerEntitlementService.calculateNextRun(1, 'Months', baseTime)
+    );
+    System.assertEquals(
+      baseTime.addHours(1),
+      SchedulerEntitlementService.calculateNextRun(null, null, baseTime)
+    );
+  }
+
+  @isTest
+  static void testSchedulerEntitlementCreateCountAndDeletePaths() {
+    Test.startTest();
+    SchedulerEntitlementService.assertCanCreateSchedule();
+    SchedulerEntitlementService.recordScheduleCreated(
+      'QuickBooks',
+      'Account',
+      '30',
+      'Minutes',
+      'QBO Sync - Direct Service Account',
+      new List<Id>()
+    );
+    SchedulerEntitlementService.recordScheduleCreated(
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    );
+    SchedulerEntitlementService.UsageSummary activeSummary = SchedulerEntitlementService.getUsageSummary();
+    SchedulerEntitlementService.markScheduleDeleted(
+      'QBO Sync - Direct Service Account'
+    );
+    SchedulerEntitlementService.markScheduleDeleted(null);
+    Test.stopTest();
+
+    System.assert(
+      activeSummary.activeCount >= 1,
+      'Directly recorded Ready schedules should be counted as active.'
+    );
+    System.assertEquals(
+      0,
+      [
+        SELECT COUNT()
+        FROM Scheduled_Integration_Job__c
+        WHERE
+          Logical_Job_Key__c = 'QBO Sync - Direct Service Account'
+          AND Status__c IN ('Ready', 'Active', 'Claimed', 'Running')
+      ]
+    );
   }
 
   @isTest
@@ -206,6 +285,60 @@ private class QBSchedulerControllerTest {
     System.assertEquals('Ready', afterRun.Status__c);
     System.assertEquals(null, afterRun.Lease_Token__c);
     System.assertEquals(null, afterRun.Lease_Expires_At__c);
+  }
+
+  @isTest
+  static void testReadyClaimedAndRunningSchedulesAreVisibleAndCounted() {
+    insert new List<Scheduled_Integration_Job__c>{
+      new Scheduled_Integration_Job__c(
+        Logical_Job_Key__c = 'QBO Sync - Ready Account',
+        Scheduler_Name__c = 'QBO Sync - Ready Account',
+        Integration_Type__c = 'QuickBooks',
+        Source_Object__c = 'Account',
+        Frequency_Value__c = 10,
+        Frequency_Type__c = 'Minutes',
+        Status__c = 'Ready',
+        Created_DateTime__c = System.now()
+      ),
+      new Scheduled_Integration_Job__c(
+        Logical_Job_Key__c = 'QBO Sync - Claimed Account',
+        Scheduler_Name__c = 'QBO Sync - Claimed Account',
+        Integration_Type__c = 'QuickBooks',
+        Source_Object__c = 'Account',
+        Frequency_Value__c = 10,
+        Frequency_Type__c = 'Minutes',
+        Status__c = 'Claimed',
+        Lease_Token__c = 'test-token',
+        Lease_Expires_At__c = System.now().addMinutes(5),
+        Created_DateTime__c = System.now()
+      ),
+      new Scheduled_Integration_Job__c(
+        Logical_Job_Key__c = 'QBO Sync - Running Account',
+        Scheduler_Name__c = 'QBO Sync - Running Account',
+        Integration_Type__c = 'QuickBooks',
+        Source_Object__c = 'Account',
+        Frequency_Value__c = 10,
+        Frequency_Type__c = 'Minutes',
+        Status__c = 'Running',
+        Created_DateTime__c = System.now()
+      )
+    };
+
+    Test.startTest();
+    List<Map<String, Object>> jobs = QBSchedulerController.getScheduledJobs();
+    SchedulerEntitlementService.UsageSummary usage = SchedulerEntitlementService.getUsageSummary();
+    Test.stopTest();
+
+    System.assertEquals(
+      3,
+      jobs.size(),
+      'Live scheduler statuses should be visible in the scheduler UI.'
+    );
+    System.assertEquals(
+      3,
+      usage.activeCount,
+      'Live scheduler statuses should count against active schedule limits.'
+    );
   }
 
   @isTest
