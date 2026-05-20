@@ -5,6 +5,8 @@ public with sharing class QBOInvoiceMappingResolver {
     @AuraEnabled
     public String qboIdField;
     @AuraEnabled
+    public String qboIdFieldDirection;
+    @AuraEnabled
     public String displayNameField;
     @AuraEnabled
     public Map<String, String> headerMappings;
@@ -83,7 +85,9 @@ public with sharing class QBOInvoiceMappingResolver {
     result.lineMappings = new Map<String, String>();
 
     // Resolve QBO id field from mappings
-    result.qboIdField = resolveQboIdField(rows, sourceObject);
+    QboIdResolution idRes = resolveQboIdField(rows, sourceObject);
+    result.qboIdField = idRes.fieldName;
+    result.qboIdFieldDirection = idRes.direction;
 
     // Resolve display name field (prefer Name, fall back to first text SF field found)
     result.displayNameField = resolveDisplayNameField(sourceObject);
@@ -127,18 +131,27 @@ public with sharing class QBOInvoiceMappingResolver {
     return result;
   }
 
-  // Resolves which SF field stores the QBO Invoice Id returned from QBO.
+  private class QboIdResolution {
+    String fieldName;
+    String direction;
+    QboIdResolution(String f, String d) {
+      fieldName = f;
+      direction = d;
+    }
+  }
+
+  // Resolves which SF field stores the QBO Invoice Id returned from QBO, and its sync direction.
   // Priority order:
   //   1. Mapping row External_Field__c='Id', direction QBO to SF or Two-Way (explicit inbound id mapping)
   //   2. Mapping row External_Field__c='ExternalId', direction QBO to SF or Two-Way
   //   3. Mapping row External_Field__c='Id', any direction (covers SF to QBO rows that also carry the id back)
   //   4. Well-known field names on the object: QuickbookID__c, then External_Id__c (with/without namespace)
-  private static String resolveQboIdField(
+  private static QboIdResolution resolveQboIdField(
     List<Field_Mapping__mdt> rows,
     String sourceObject
   ) {
-    String fallbackExternalId = null;
-    String anyDirectionIdField = null;
+    QboIdResolution fallbackExternalId = null;
+    QboIdResolution anyDirectionIdField = null;
 
     for (Field_Mapping__mdt row : rows) {
       if (
@@ -150,49 +163,48 @@ public with sharing class QBOInvoiceMappingResolver {
 
       if (row.External_Field__c == 'Id') {
         if (inbound)
-          return row.SF_Field__c; // priority 1
+          return new QboIdResolution(row.SF_Field__c, dir); // priority 1
         if (anyDirectionIdField == null)
-          anyDirectionIdField = row.SF_Field__c; // priority 3 candidate
+          anyDirectionIdField = new QboIdResolution(row.SF_Field__c, dir);
       }
       if (
         row.External_Field__c == 'ExternalId' &&
         inbound &&
         fallbackExternalId == null
       ) {
-        fallbackExternalId = row.SF_Field__c; // priority 2 candidate
+        fallbackExternalId = new QboIdResolution(row.SF_Field__c, dir); // priority 2 candidate
       }
     }
 
-    if (String.isNotBlank(fallbackExternalId))
+    if (fallbackExternalId != null)
       return fallbackExternalId;
-    if (String.isNotBlank(anyDirectionIdField))
+    if (anyDirectionIdField != null)
       return anyDirectionIdField;
 
-    // Priority 4: well-known field names on the object
+    // Priority 4: well-known field names on the object (direction unknown, default Two-Way)
     Schema.SObjectType sot = getSObjectType(sourceObject);
     if (sot != null) {
       Map<String, Schema.SObjectField> fields = sot.getDescribe()
         .fields.getMap();
       String nsPrefix = getNamespacePrefix();
-      // QuickbookID__c is the field QBO sync batches write the returned Invoice Id into
       if (fields.containsKey('quickbookid__c'))
-        return 'QuickbookID__c';
+        return new QboIdResolution('QuickbookID__c', 'Two-Way');
       if (
         String.isNotBlank(nsPrefix) &&
         fields.containsKey((nsPrefix + 'QuickbookID__c').toLowerCase())
       ) {
-        return nsPrefix + 'QuickbookID__c';
+        return new QboIdResolution(nsPrefix + 'QuickbookID__c', 'Two-Way');
       }
       if (fields.containsKey('external_id__c'))
-        return 'External_Id__c';
+        return new QboIdResolution('External_Id__c', 'Two-Way');
       if (
         String.isNotBlank(nsPrefix) &&
         fields.containsKey((nsPrefix + 'External_Id__c').toLowerCase())
       ) {
-        return nsPrefix + 'External_Id__c';
+        return new QboIdResolution(nsPrefix + 'External_Id__c', 'Two-Way');
       }
     }
-    return null;
+    return new QboIdResolution(null, null);
   }
 
   // Returns 'Name' if the object has a Name field, otherwise null.

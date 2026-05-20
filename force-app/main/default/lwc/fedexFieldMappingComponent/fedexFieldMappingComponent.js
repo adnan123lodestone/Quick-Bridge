@@ -315,9 +315,9 @@ export default class FedexFieldMappingComponent extends LightningElement {
   handleSFFieldChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) =>
-      row.id === rowId ? { ...row, sfField: value } : row
-    );
+    this.mappingRows = this.mappingRows.map((row) => {
+      return row.id === rowId ? { ...row, sfField: value } : row;
+    });
     this.updateRowDropdowns();
   }
 

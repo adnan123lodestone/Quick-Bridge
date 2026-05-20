@@ -302,9 +302,9 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   handleSFFieldChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) =>
-      row.id === rowId ? { ...row, sfField: value } : row
-    );
+    this.mappingRows = this.mappingRows.map((row) => {
+      return row.id === rowId ? { ...row, sfField: value } : row;
+    });
     this.updateRowDropdowns();
   }
 
@@ -336,9 +336,9 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   handleSyncDirectionChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) =>
-      row.id === rowId ? { ...row, syncDirection: value } : row
-    );
+    this.mappingRows = this.mappingRows.map((row) => {
+      return row.id === rowId ? { ...row, syncDirection: value } : row;
+    });
     this.updateRowDropdowns();
   }
 

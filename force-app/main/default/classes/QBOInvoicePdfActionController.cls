@@ -5,13 +5,32 @@ public with sharing class QBOInvoicePdfActionController {
     @AuraEnabled
     public Boolean qboIdPresent;
     @AuraEnabled
+    public Boolean showSyncToQbo;
+    @AuraEnabled
+    public Boolean showSyncFromQbo;
+    @AuraEnabled
     public String message;
     public PanelData() {
       isConfigured = false;
       qboIdPresent = false;
+      showSyncToQbo = false;
+      showSyncFromQbo = false;
       message = '';
     }
   }
+
+  public class ActionResponse {
+    @AuraEnabled
+    public Boolean success;
+    @AuraEnabled
+    public String message;
+    public ActionResponse(Boolean success, String message) {
+      this.success = success;
+      this.message = message;
+    }
+  }
+
+  // ── Panel load ────────────────────────────────────────────────────────────
 
   @AuraEnabled(cacheable=false)
   public static PanelData getPanelData(Id recordId, String objectApiName) {
@@ -38,7 +57,24 @@ public with sharing class QBOInvoicePdfActionController {
 
       data.isConfigured = true;
 
-      String qboId = fetchQboId(recordId, objectApiName, resolved.qboIdField);
+      String idDirection = resolved.qboIdFieldDirection;
+      if (idDirection == 'Two-Way') {
+        data.showSyncToQbo = true;
+        data.showSyncFromQbo = true;
+      } else if (idDirection == 'SF to QBO') {
+        data.showSyncToQbo = true;
+      } else if (idDirection == 'QBO to SF') {
+        data.showSyncFromQbo = true;
+      } else {
+        data.showSyncToQbo = true;
+        data.showSyncFromQbo = true;
+      }
+
+      String qboId = fetchFieldValue(
+        recordId,
+        objectApiName,
+        resolved.qboIdField
+      );
       data.qboIdPresent = String.isNotBlank(qboId);
 
       if (!data.qboIdPresent) {
@@ -58,6 +94,163 @@ public with sharing class QBOInvoicePdfActionController {
     }
   }
 
+  // ── Sync To QBO (outbound SF → QBO via work queue) ────────────────────────
+
+  @AuraEnabled(cacheable=false)
+  public static ActionResponse syncToQbo(Id recordId, String objectApiName) {
+    try {
+      QBOInvoiceMappingResolver.ResolverResult resolved = QBOInvoiceMappingResolver.resolve();
+      assertObjectMatch(objectApiName, resolved.invoiceSourceObject);
+
+      String qboId = fetchFieldValue(
+        recordId,
+        objectApiName,
+        resolved.qboIdField
+      );
+      Boolean isInitialSync = String.isBlank(qboId);
+
+      String stripped = stripNamespace(objectApiName);
+      String lockPrefix = stripped.equalsIgnoreCase('order')
+        ? 'Order'
+        : 'Invoice';
+
+      IntegrationWorkService.enqueueQuickBooksWork(
+        'InvoiceUpsert',
+        objectApiName,
+        recordId,
+        lockPrefix + ':' + recordId,
+        isInitialSync
+      );
+
+      return new ActionResponse(
+        true,
+        isInitialSync
+          ? 'Record queued to sync to QBO.'
+          : 'Record queued to update in QBO.'
+      );
+    } catch (QBOInvoiceMappingResolver.ResolverException e) {
+      logException('syncToQbo', e, objectApiName, recordId);
+      throw new AuraHandledException(e.getMessage());
+    } catch (AuraHandledException e) {
+      logException('syncToQbo', e, objectApiName, recordId);
+      throw e;
+    } catch (Exception e) {
+      logException('syncToQbo', e, objectApiName, recordId);
+      throw new AuraHandledException(e.getMessage());
+    }
+  }
+
+  // ── Sync From QBO (inbound QBO → SF via direct callout) ──────────────────
+
+  @AuraEnabled(cacheable=false)
+  public static ActionResponse syncFromQbo(Id recordId, String objectApiName) {
+    try {
+      QBOInvoiceMappingResolver.ResolverResult resolved = QBOInvoiceMappingResolver.resolve();
+      assertObjectMatch(objectApiName, resolved.invoiceSourceObject);
+
+      String qboId = fetchFieldValue(
+        recordId,
+        objectApiName,
+        resolved.qboIdField
+      );
+      if (String.isBlank(qboId)) {
+        throw new AuraHandledException(
+          'This record has no QBO Id. Sync it to QBO first before syncing back.'
+        );
+      }
+
+      String externalEntity = IntegrationEntityRegistry.resolveExternalEntity(
+        'qbonline',
+        objectApiName,
+        null,
+        'Invoice'
+      );
+
+      // For Order-based invoices, delegate to QBOInvoiceSyncQueueable which handles
+      // the full rebuild including line items (TotalAmount is derived from OrderItems,
+      // not a directly writable field).
+      if (
+        externalEntity == 'Invoice' &&
+        stripNamespace(objectApiName).equalsIgnoreCase('order')
+      ) {
+        QBOInvoiceSyncQueueable syncJob = new QBOInvoiceSyncQueueable(
+          new Set<String>{ qboId }
+        );
+        syncJob.executeSync();
+        return new ActionResponse(
+          true,
+          'Invoice ' + qboId + ' synced from QBO including line items.'
+        );
+      }
+
+      String endpoint = '/' + externalEntity.toLowerCase() + '/' + qboId;
+
+      HttpResponse res = QuickBooksAuthHandler.makeApiCall(
+        'GET',
+        endpoint,
+        null
+      );
+      if (res == null || res.getStatusCode() != 200) {
+        Integer code = res == null ? 0 : res.getStatusCode();
+        throw new AuraHandledException(
+          'QBO returned HTTP ' +
+            code +
+            ' fetching ' +
+            externalEntity +
+            ' ' +
+            qboId +
+            '.'
+        );
+      }
+
+      Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(
+        res.getBody()
+      );
+      Map<String, Object> entityData = (Map<String, Object>) responseMap.get(
+        externalEntity
+      );
+      if (entityData == null) {
+        throw new AuraHandledException(
+          'QBO response did not contain ' + externalEntity + ' data.'
+        );
+      }
+
+      Map<String, String> mapping = resolveInboundMapping(
+        externalEntity,
+        objectApiName
+      );
+      Schema.SObjectType sot = Schema.getGlobalDescribe().get(objectApiName);
+      SObject record = sot.newSObject(recordId);
+      applyMapping(record, entityData, mapping);
+      record.put(resolved.qboIdField, qboId);
+
+      QBTriggerHandler.isAccountProcessing = true;
+      QBTriggerHandler.isOrderProcessing = true;
+      try {
+        update record;
+      } finally {
+        QBTriggerHandler.isAccountProcessing = false;
+        QBTriggerHandler.isOrderProcessing = false;
+      }
+
+      return new ActionResponse(
+        true,
+        externalEntity + ' ' + qboId + ' synced from QBO.'
+      );
+    } catch (QBOInvoiceMappingResolver.ResolverException e) {
+      logException('syncFromQbo', e, objectApiName, recordId);
+      throw new AuraHandledException(e.getMessage());
+    } catch (AuraHandledException e) {
+      logException('syncFromQbo', e, objectApiName, recordId);
+      throw e;
+    } catch (Exception e) {
+      logException('syncFromQbo', e, objectApiName, recordId);
+      throw new AuraHandledException(e.getMessage());
+    }
+  }
+
+  // ── PDF download ──────────────────────────────────────────────────────────
+
   @AuraEnabled(cacheable=false)
   public static Map<String, String> downloadPdf(
     Id recordId,
@@ -65,16 +258,7 @@ public with sharing class QBOInvoicePdfActionController {
   ) {
     try {
       QBOInvoiceMappingResolver.ResolverResult resolved = QBOInvoiceMappingResolver.resolve();
-
-      if (!objectMatches(objectApiName, resolved.invoiceSourceObject)) {
-        throw new AuraHandledException(
-          'This action is only available on the QBO Invoice source object (' +
-            resolved.invoiceSourceObject +
-            '). This record is a ' +
-            objectApiName +
-            '.'
-        );
-      }
+      assertObjectMatch(objectApiName, resolved.invoiceSourceObject);
 
       if (String.isBlank(resolved.qboIdField)) {
         throw new AuraHandledException(
@@ -82,14 +266,18 @@ public with sharing class QBOInvoicePdfActionController {
         );
       }
 
-      String qboId = fetchQboId(recordId, objectApiName, resolved.qboIdField);
+      String qboId = fetchFieldValue(
+        recordId,
+        objectApiName,
+        resolved.qboIdField
+      );
       if (String.isBlank(qboId)) {
         throw new AuraHandledException(
           'This record has not been synced to QBO yet. Sync it to QBO before downloading the PDF.'
         );
       }
 
-      String displayName = fetchDisplayName(
+      String displayName = fetchFieldValue(
         recordId,
         objectApiName,
         resolved.displayNameField
@@ -115,8 +303,6 @@ public with sharing class QBOInvoicePdfActionController {
         );
       }
 
-      // Title includes QBO id so each distinct invoice gets its own file;
-      // re-downloading the same invoice adds a new version to that same file.
       String fileTitle =
         'QBO Invoice PDF' +
         (String.isNotBlank(displayName) ? ' - ' + displayName : '') +
@@ -141,57 +327,97 @@ public with sharing class QBOInvoicePdfActionController {
     }
   }
 
-  // Dynamically queries the QBO id field from the record.
-  private static String fetchQboId(
-    Id recordId,
-    String objectApiName,
-    String qboIdField
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  private static Map<String, String> resolveInboundMapping(
+    String externalEntity,
+    String objectApiName
   ) {
-    String query =
-      'SELECT ' +
-      qboIdField +
-      ' FROM ' +
-      objectApiName +
-      ' WHERE Id = :recordId LIMIT 1';
-    List<SObject> records = Database.query(query);
-    if (records.isEmpty())
-      return null;
-    Object val = records[0].get(qboIdField);
-    return val == null ? null : String.valueOf(val);
+    if (externalEntity == 'Customer') {
+      return QBObjectMappings.getCustomerToAccountMapping();
+    }
+    // For Invoice entities: use the object-specific inbound mapping
+    if (stripNamespace(objectApiName).equalsIgnoreCase('order')) {
+      return QBObjectMappings.getInvoiceToOrderMapping();
+    }
+    return QBObjectMappings.reverseMapping(
+      QBObjectMappings.getInvoiceMapping()
+    );
   }
 
-  // Dynamically queries the display name field. Gracefully returns null if no Name field exists.
-  private static String fetchDisplayName(
+  private static void applyMapping(
+    SObject record,
+    Map<String, Object> data,
+    Map<String, String> mapping
+  ) {
+    if (mapping == null || mapping.isEmpty())
+      return;
+    for (String qboPath : mapping.keySet()) {
+      String sfField = mapping.get(qboPath);
+      if (String.isBlank(sfField))
+        continue;
+      Object val = getNestedValue(data, qboPath);
+      if (val != null) {
+        try {
+          if (
+            val instanceof String &&
+            ((String) val).length() == 10 &&
+            ((String) val).contains('-')
+          ) {
+            record.put(sfField, Date.valueOf((String) val));
+          } else {
+            record.put(sfField, val);
+          }
+        } catch (Exception ignored) {
+        }
+      }
+    }
+  }
+
+  private static Object getNestedValue(Map<String, Object> data, String path) {
+    if (String.isBlank(path) || data == null)
+      return null;
+    if (!path.contains('.'))
+      return data.get(path);
+    List<String> keys = path.split('\\.');
+    Map<String, Object> cur = data;
+    for (Integer i = 0; i < keys.size() - 1; i++) {
+      Object next = cur.get(keys[i]);
+      if (!(next instanceof Map<String, Object>))
+        return null;
+      cur = (Map<String, Object>) next;
+    }
+    return cur.get(keys[keys.size() - 1]);
+  }
+
+  private static String fetchFieldValue(
     Id recordId,
     String objectApiName,
-    String displayNameField
+    String fieldApiName
   ) {
-    if (String.isBlank(displayNameField))
+    if (String.isBlank(fieldApiName))
       return null;
     try {
       String query =
         'SELECT ' +
-        displayNameField +
+        fieldApiName +
         ' FROM ' +
         objectApiName +
         ' WHERE Id = :recordId LIMIT 1';
       List<SObject> records = Database.query(query);
       if (records.isEmpty())
         return null;
-      Object val = records[0].get(displayNameField);
+      Object val = records[0].get(fieldApiName);
       return val == null ? null : String.valueOf(val);
     } catch (Exception e) {
       return null;
     }
   }
 
-  // Saves the PDF blob. Creates a new ContentVersion on an existing document if one already exists
-  // for this record with the same title; otherwise creates a fresh document and links it.
   private static String savePdf(Id recordId, Blob pdfBlob, String fileTitle) {
-    String safeTitle = fileTitle.replaceAll('[^A-Za-z0-9_ \\-]', '');
-    String pathOnClient = safeTitle.replaceAll(' ', '_') + '.pdf';
+    String safeTitle = fileTitle.replaceAll('[^A-Za-z0-9_ \\-()]', '');
+    String pathOnClient = safeTitle.replaceAll('[ ()]', '_') + '.pdf';
 
-    // Check for an existing ContentDocument linked to this record with the same title
     List<ContentDocumentLink> existing = [
       SELECT ContentDocumentId
       FROM ContentDocumentLink
@@ -200,19 +426,16 @@ public with sharing class QBOInvoicePdfActionController {
     ];
 
     if (!existing.isEmpty()) {
-      // Insert a new version on the existing document
       String existingDocId = existing[0].ContentDocumentId;
-      ContentVersion newVersion = new ContentVersion(
+      insert new ContentVersion(
         Title = safeTitle,
         PathOnClient = pathOnClient,
         VersionData = pdfBlob,
         ContentDocumentId = existingDocId
       );
-      insert newVersion;
       return existingDocId;
     }
 
-    // Create a brand-new document and link it
     ContentVersion cv = new ContentVersion(
       Title = safeTitle,
       PathOnClient = pathOnClient,
@@ -220,25 +443,36 @@ public with sharing class QBOInvoicePdfActionController {
       Origin = 'H'
     );
     insert cv;
-
     cv = [
       SELECT ContentDocumentId
       FROM ContentVersion
       WHERE Id = :cv.Id
       LIMIT 1
     ];
-
     insert new ContentDocumentLink(
       ContentDocumentId = cv.ContentDocumentId,
       LinkedEntityId = recordId,
       ShareType = 'V',
       Visibility = 'AllUsers'
     );
-
     return cv.ContentDocumentId;
   }
 
-  // Namespace-strips both names before comparing so namespace differences don't cause mismatches.
+  private static void assertObjectMatch(
+    String objectApiName,
+    String configuredObject
+  ) {
+    if (!objectMatches(objectApiName, configuredObject)) {
+      throw new AuraHandledException(
+        'This action is only available on the QBO Invoice source object (' +
+          configuredObject +
+          '). This record is a ' +
+          objectApiName +
+          '.'
+      );
+    }
+  }
+
   private static Boolean objectMatches(
     String objectApiName,
     String configuredObject

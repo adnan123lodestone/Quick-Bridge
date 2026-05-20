@@ -108,7 +108,7 @@ public with sharing class IntegrationEntitlementService {
   }
 
   public static void requestCheckoutRefresh() {
-    if (System.isBatch() || System.isFuture()) {
+    if (System.isBatch() || System.isFuture() || System.isQueueable()) {
       return;
     }
     try {

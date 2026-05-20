@@ -295,8 +295,8 @@ export default class PaymentConfiguration extends LightningElement {
       event.target.dataset.provider || event.currentTarget.dataset.provider;
     if (!provider) return;
 
-    // eslint-disable-next-line no-alert, no-restricted-globals
     if (
+      // eslint-disable-next-line no-alert, no-restricted-globals
       !confirm(
         `Are you sure you want to delete the configuration for ${provider}?`
       )

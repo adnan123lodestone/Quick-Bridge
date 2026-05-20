@@ -465,7 +465,7 @@ export default class PaymentComponent extends LightningElement {
     try {
       await this.ensureAuthorizeNetReady();
     } catch {
-      this.isAuthorizeNetInitializing = false;
+      // Authorize.Net preload is best-effort; the interactive checkout flow surfaces failures.
     }
   }
 
@@ -531,8 +531,9 @@ export default class PaymentComponent extends LightningElement {
         this.isStripeInitializing = false;
         return;
       }
-      // eslint-disable-next-line no-await-in-loop, @lwc/lwc/no-async-operation
+      // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => {
+        // eslint-disable-next-line @lwc/lwc/no-async-operation
         window.setTimeout(resolve, delayMs);
       });
     }

@@ -13,6 +13,7 @@ import Authorize_Net_logo from "@salesforce/resourceUrl/Authorize_Net_logo";
 import QuickBridge_Logo from "@salesforce/resourceUrl/QuickBridge_Logo";
 import QB_Logo from "@salesforce/resourceUrl/QB_Logo";
 import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
+import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
 import recoverPin from "@salesforce/apex/PaymentGatewayService.recoverPin";
 
 const SESSION_TOKEN_KEY = "qb_admin_token";
@@ -112,7 +113,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       id: "ups",
       productKey: "ups",
       label: "UPS",
-      logoUrl: "https://cdn.worldvectorlogo.com/logos/ups-1.svg",
+      logoUrl: UPS_Logo,
       aliases: TILE_PROVIDER_ALIASES.ups
     }
   ];
@@ -875,9 +876,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   handleRenewalProductToggle(event) {
     const productId = event.currentTarget.dataset.id;
     const selected = event.target.checked;
-    this.renewalProducts = this.renewalProducts.map((product) =>
-      product.id === productId ? { ...product, selected } : product
-    );
+    this.renewalProducts = this.renewalProducts.map((product) => {
+      return product.id === productId ? { ...product, selected } : product;
+    });
   }
 
   async handleSendRenewalRequest() {
@@ -1049,8 +1050,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   async handleMetadataDelete(event) {
     const provider = event.currentTarget.dataset.provider;
 
-    // eslint-disable-next-line no-alert, no-restricted-globals
     if (
+      // eslint-disable-next-line no-alert, no-restricted-globals
       !confirm(
         `Are you sure you want to delete the configuration for ${provider}?`
       )

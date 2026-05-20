@@ -12,7 +12,8 @@ public with sharing class IntegrationUsageAggregator implements Queueable {
       Test.isRunningTest() ||
       aggregationQueued ||
       System.isBatch() ||
-      System.isFuture()
+      System.isFuture() ||
+      System.isQueueable()
     ) {
       return;
     }
