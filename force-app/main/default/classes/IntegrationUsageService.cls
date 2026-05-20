@@ -131,7 +131,7 @@ public without sharing class IntegrationUsageService {
           Integration_Type__c product,
           COUNT_DISTINCT(Logical_Job_Key__c) total
         FROM Scheduled_Integration_Job__c
-        WHERE Status__c = 'Active'
+        WHERE Status__c IN ('Active', 'Ready', 'Claimed', 'Running')
         GROUP BY Integration_Type__c
       ]) {
         ProductInfo info = normalizeProduct((String) result.get('product'));
@@ -162,47 +162,11 @@ public without sharing class IntegrationUsageService {
 
   public static void refreshSubscriptionStatuses() {
     try {
-      Map<String, Quickbridge_Config__mdt> configsByDeveloperName = new Map<String, Quickbridge_Config__mdt>();
-      for (Quickbridge_Config__mdt config : [
-        SELECT
-          DeveloperName,
-          QuickBooks_Is_Active__c,
-          QuickBooks_End_Date__c,
-          Shopify_Is_Active__c,
-          Shopify_End_Date__c,
-          Stripe_Active__c,
-          Stripe_End_Date__c,
-          AuthorizeNet_Active__c,
-          AuthorizeNet_End_Date__c,
-          PayPal_Active__c,
-          PayPal_EndDate__c,
-          FedEx_Active__c,
-          FedEx_End_Date__c,
-          UPS_Active__c,
-          UPS_End_Date__c
-        FROM Quickbridge_Config__mdt
-        WHERE
-          DeveloperName IN (
-            'QuickBooks',
-            'Shopify',
-            'Stripe',
-            'AuthorizeNet',
-            'PayPal',
-            'FedEx',
-            'UPS'
-          )
-      ]) {
-        configsByDeveloperName.put(config.DeveloperName, config);
-      }
-
       List<Integration_Usage_Summary__c> updates = new List<Integration_Usage_Summary__c>();
       Map<String, Integration_Usage_Summary__c> summaries = getOrCreateSummariesByKey();
       for (String productKey : PRODUCT_KEYS) {
         ProductInfo info = PRODUCT_INFO_BY_KEY.get(productKey);
-        Quickbridge_Config__mdt config = configsByDeveloperName.get(
-          info.configDeveloperName
-        );
-        SubscriptionState state = deriveSubscriptionState(config, info);
+        SubscriptionState state = deriveSubscriptionState(info);
         Integration_Usage_Summary__c summary = summaries.get(productKey);
         summary.Subscription_Status__c = state.status;
         summary.Subscription_Days_Remaining__c = state.daysRemaining;
@@ -461,22 +425,20 @@ public without sharing class IntegrationUsageService {
     Integer daysRemaining;
   }
 
-  private static SubscriptionState deriveSubscriptionState(
-    Quickbridge_Config__mdt config,
-    ProductInfo info
-  ) {
+  private static SubscriptionState deriveSubscriptionState(ProductInfo info) {
     SubscriptionState state = new SubscriptionState();
     state.status = 'Inactive';
     state.daysRemaining = null;
 
-    if (config == null) {
+    if (info == null) {
       return state;
     }
 
-    Object activeValue = config.get(info.activeField);
-    Boolean active = activeValue instanceof Boolean && (Boolean) activeValue;
-    Object endDateValue = config.get(info.endDateField);
-    Date endDate = endDateValue instanceof Date ? (Date) endDateValue : null;
+    Boolean active = ConnectorConfigResolver.getBoolean(
+      info.key,
+      info.activeField
+    );
+    Date endDate = ConnectorConfigResolver.getDate(info.key, info.endDateField);
     if (endDate != null) {
       state.daysRemaining = Date.today().daysBetween(endDate);
     }
