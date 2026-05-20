@@ -1,42 +1,29 @@
 public with sharing class QBPurchaseOrderWorker implements IntegrationWorkHandler {
-  public void handle(Integration_Work_Item__c item) {
-    process(item);
-  }
-
-  public static void process(Integration_Work_Item__c item) {
-    Id purchaseOrderId = parseId(
-      item.Source_Salesforce_Id__c,
-      item.Source_Record_Id__c
-    );
-    if (purchaseOrderId == null) {
-      throw new QBPurchaseOrderWorkerException(
-        'Purchase order work item has no Salesforce Id.'
-      );
+    public void handle(Integration_Work_Item__c item) {
+        process(item);
     }
-    QuickBooksPurchaseOrderBatch batch = new QuickBooksPurchaseOrderBatch(
-      new Set<Id>{ purchaseOrderId },
-      isInitialSync(item)
-    );
-    batch.execute(
-      null,
-      new List<SObject>{ new Purchase_Order__c(Id = purchaseOrderId) }
-    );
-  }
 
-  private static Boolean isInitialSync(Integration_Work_Item__c item) {
-    Map<String, Object> payload = IntegrationWorkService.parsePayload(item);
-    return payload.containsKey('isInitialSync') &&
-      payload.get('isInitialSync') == true;
-  }
-
-  private static Id parseId(String primaryValue, String fallbackValue) {
-    try {
-      return (Id) (String.isBlank(primaryValue) ? fallbackValue : primaryValue);
-    } catch (Exception e) {
-      return null;
+    public static void process(Integration_Work_Item__c item) {
+        Id purchaseOrderId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
+        if (purchaseOrderId == null) {
+            throw new QBPurchaseOrderWorkerException('Purchase order work item has no Salesforce Id.');
+        }
+        QuickBooksPurchaseOrderBatch batch = new QuickBooksPurchaseOrderBatch(new Set<Id>{ purchaseOrderId }, isInitialSync(item));
+        batch.execute(null, new List<SObject>{ new Purchase_Order__c(Id = purchaseOrderId) });
     }
-  }
 
-  public class QBPurchaseOrderWorkerException extends Exception {
-  }
+    private static Boolean isInitialSync(Integration_Work_Item__c item) {
+        Map<String, Object> payload = IntegrationWorkService.parsePayload(item);
+        return payload.containsKey('isInitialSync') && payload.get('isInitialSync') == true;
+    }
+
+    private static Id parseId(String primaryValue, String fallbackValue) {
+        try {
+            return (Id) (String.isBlank(primaryValue) ? fallbackValue : primaryValue);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public class QBPurchaseOrderWorkerException extends Exception {}
 }

@@ -3329,6 +3329,7 @@ form {
   .integrations-page-actions {
     justify-content: stretch;
     margin: -0.75rem 0 1.25rem;
+    gap: 12px;
   }
 
   .renewal-request-button {
@@ -3464,4 +3465,15 @@ form {
   max-width: 1400px;
   min-width: 320px;
   transition: all 0.2s ease-in-out;
+}
+
+.integrations-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -1rem 0 1.5rem;
+  gap: 12px;
+}
+
+.renewal-request-button:first-child {
+  margin-right: 12px;
 }

@@ -15,6 +15,7 @@ import QB_Logo from "@salesforce/resourceUrl/QB_Logo";
 import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
 import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
 import recoverPin from "@salesforce/apex/PaymentGatewayService.recoverPin";
+import refreshLicenses from "@salesforce/apex/PaymentGatewayService.refreshLicenses";
 
 const SESSION_TOKEN_KEY = "qb_admin_token";
 const SESSION_EXPIRY_KEY = "qb_admin_expiry";
@@ -213,6 +214,33 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       const config = this.getConfigForTile(tile.id);
       return !this.isConfigActiveAndCurrent(tile.id, config);
     });
+  }
+
+  get hasSelectedConfig() {
+    return this.paymentMetadataConfigs.some((c) => c.isSelected === true);
+  }
+
+  get navSettingsClass() {
+    return this.currentScreen === "config" ? "nav-button active" : "nav-button";
+  }
+
+  navigateToSettings() {
+    if (!this.isLoggedIn) return;
+    if (!this.selectedTile) {
+      this.showToast(
+        "No Gateway Selected",
+        "Please select a gateway from Integrations first.",
+        "warning"
+      );
+      return;
+    }
+    this.paymentMetadataConfigs = this.paymentMetadataConfigs.map((c) => ({
+      ...c,
+      isSelected: c.provider.toLowerCase() === this.selectedTile.toLowerCase(),
+      isEditing: false // start in read‑only mode
+    }));
+
+    this.currentScreen = "config";
   }
 
   isSubscribedTile(tileId) {
@@ -760,12 +788,17 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
       this.paymentMetadataConfigs = (configs || []).map((config) => {
         const formValues = { ...config.fields };
-        return {
-          ...config,
-          isSelected: false,
-          isEditing: false,
-          formValues: formValues,
-          editableFieldsData: (config.editableFields || []).map((fieldName) => {
+
+        // Build editable fields data
+        const editableFieldsData = (config.editableFields || [])
+          .filter((fieldName) => {
+            const isSandboxField =
+              fieldName.includes("Sandbox") || fieldName.includes("UseSandbox");
+            if (!isSandboxField) return true;
+            const excludedProviders = ["stripe", "authorizenet", "paypal"];
+            return !excludedProviders.includes(config.provider);
+          })
+          .map((fieldName) => {
             const isCheckbox =
               fieldName.includes("Active") || fieldName.includes("Sandbox");
             const isReadOnlyDate = fieldName.includes("Date");
@@ -792,7 +825,32 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                   : "badge-inactive"
                 : ""
             };
-          })
+          });
+
+        // --- Override Active Checkbox ---
+        const activeField = editableFieldsData.find(
+          (f) => f.isCheckbox && f.name.includes("Active")
+        );
+        if (activeField) {
+          const endDateField = this.getEndDateField(config.provider);
+          const endDateStr = formValues[endDateField];
+          let isActive = false;
+          if (endDateStr) {
+            const endDate = new Date(endDateStr + "T23:59:59");
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            isActive = endDate >= today;
+          }
+          activeField.currentValue = isActive;
+          activeField.isTrue = isActive;
+          activeField.isReadOnly = true; // Disable in edit mode
+        }
+        return {
+          ...config,
+          isSelected: false,
+          isEditing: false,
+          formValues: formValues,
+          editableFieldsData: editableFieldsData
         };
       });
     } catch (error) {
@@ -990,7 +1048,12 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     const provider = event.currentTarget.dataset.provider;
     this.isSaving = true;
     try {
-      const fieldValues = this.metadataFormValues[provider] || {};
+      let fieldValues = this.metadataFormValues[provider] || {};
+      Object.keys(fieldValues).forEach((key) => {
+        if (key.includes("Active")) {
+          delete fieldValues[key];
+        }
+      });
 
       const result = await updatePaymentMetadata({
         provider: provider,
@@ -1197,5 +1260,52 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
     sessionStorage.removeItem(SESSION_EXPIRY_KEY);
     sessionStorage.removeItem("qb_admin_userId");
+  }
+
+  handleCheckLicenses() {
+    const sessionToken = this.getSessionToken();
+    if (!sessionToken) {
+      this.showToast("Session Expired", "Please log in again.", "error");
+      return;
+    }
+
+    refreshLicenses({ sessionToken })
+      .then((result) => {
+        if (result.startsWith("Success")) {
+          this.showToast(
+            "Licenses Refreshed",
+            "Active licenses and dates have been updated.",
+            "success"
+          );
+          // Refresh the current view
+          this.loadMetadataConfigs();
+          this.loadConfigPanelPreferences();
+          // Force re-render of tiles
+          this.paymentMetadataConfigs = [...this.paymentMetadataConfigs];
+        } else {
+          this.showToast("Refresh Failed", result, "error");
+        }
+      })
+      .catch((error) => {
+        this.handleSessionError(error);
+        this.showToast(
+          "Error",
+          error.body?.message || "Could not refresh licenses.",
+          "error"
+        );
+      });
+  }
+
+  getEndDateField(provider) {
+    const mapping = {
+      qbo: "QuickBooks_End_Date__c",
+      shopify: "Shopify_End_Date__c",
+      stripe: "Stripe_End_Date__c",
+      authorizenet: "AuthorizeNet_End_Date__c",
+      paypal: "PayPal_EndDate__c",
+      fedex: "FedEx_End_Date__c",
+      ups: "UPS_End_Date__c"
+    };
+    return mapping[provider];
   }
 }

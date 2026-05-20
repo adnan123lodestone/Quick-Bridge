@@ -465,7 +465,7 @@ export default class PaymentComponent extends LightningElement {
     try {
       await this.ensureAuthorizeNetReady();
     } catch {
-      // Authorize.Net preload is best-effort; the interactive checkout flow surfaces failures.
+      // Authorize.Net readiness is retried when the user submits payment.
     }
   }
 
@@ -514,8 +514,10 @@ export default class PaymentComponent extends LightningElement {
     const schedulePreload =
       typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback.bind(window)
-        : // eslint-disable-next-line @lwc/lwc/no-async-operation
-          (callback) => window.setTimeout(callback, 0);
+        : (callback) => {
+            // eslint-disable-next-line @lwc/lwc/no-async-operation
+            return window.setTimeout(callback, 0);
+          };
 
     schedulePreload(() => {
       this.ensureStripeReady().catch(() => {
@@ -1262,7 +1264,8 @@ export default class PaymentComponent extends LightningElement {
     this.isPaypalInitializing = true;
     await this.ensurePayPalReady();
 
-    host.replaceChildren();
+    // eslint-disable-next-line @lwc/lwc/no-inner-html
+    host.innerHTML = "";
     this.paypalButtonsInstance = window.paypal.Buttons({
       createOrder: async () => {
         const resolvedAmount = this.resolveAmount(this.amount);
@@ -1327,7 +1330,8 @@ export default class PaymentComponent extends LightningElement {
 
   unmountPayPalButtons() {
     const host = this.template.querySelector(".paypal-button-container");
-    if (host) host.replaceChildren();
+    // eslint-disable-next-line @lwc/lwc/no-inner-html
+    if (host) host.innerHTML = "";
     if (
       this.paypalButtonsInstance &&
       typeof this.paypalButtonsInstance.close === "function"

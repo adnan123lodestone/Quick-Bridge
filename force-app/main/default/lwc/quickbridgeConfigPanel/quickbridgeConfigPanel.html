@@ -60,6 +60,14 @@
               ></lightning-icon>
               Field Mapping
             </button>
+            <button class={navSettingsClass} onclick={navigateToSettings}>
+              <lightning-icon
+                icon-name="utility:settings"
+                size="x-small"
+                class="nav-icon"
+              ></lightning-icon>
+              Settings
+            </button>
             <template if:true={isQboOrShopify}>
               <button class={navSchedulerClass} onclick={navigateToScheduler}>
                 <lightning-icon
@@ -70,7 +78,6 @@
                 Scheduler
               </button>
             </template>
-
             <button class="nav-button" onclick={handleSidebarBack}>
               <lightning-icon
                 icon-name="utility:back"
@@ -78,15 +85,6 @@
                 class="nav-icon"
               ></lightning-icon>
               Back
-            </button>
-
-            <button class="nav-button logout" onclick={handleLogout}>
-              <lightning-icon
-                icon-name="utility:logout"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Logout
             </button>
           </template>
           <template if:false={isLoggedIn}>
@@ -101,6 +99,16 @@
           </template>
         </nav>
         <div class="sidebar-footer">
+          <template if:true={isLoggedIn}>
+            <button class="nav-button logout" onclick={handleLogout}>
+              <lightning-icon
+                icon-name="utility:logout"
+                size="x-small"
+                class="nav-icon"
+              ></lightning-icon>
+              Logout
+            </button>
+          </template>
           <p>Product of The Lodestone Group</p>
         </div>
       </aside>
@@ -340,6 +348,17 @@
                     size="xx-small"
                   ></lightning-icon>
                   <span>Renewal Request</span>
+                </button>
+                <button
+                  type="button"
+                  class="renewal-request-button"
+                  onclick={handleCheckLicenses}
+                >
+                  <lightning-icon
+                    icon-name="utility:refresh"
+                    size="xx-small"
+                  ></lightning-icon>
+                  <span>Check Licenses</span>
                 </button>
               </div>
               <template if:true={hasSubscribedTiles}>
@@ -594,166 +613,213 @@
             </div>
 
             <div class="dashboard-body dashboard-full-width settings-layout">
-              <aside class="settings-side-card">
-                <h2 class="settings-side-title">
-                  <lightning-icon
-                    icon-name="utility:settings"
-                    size="x-small"
-                    class="settings-side-icon"
-                  ></lightning-icon>
-                  Settings
-                </h2>
-                <p class="settings-side-copy">
-                  Configure your application settings here.
-                </p>
-                <div class="settings-side-actions">
-                  <button
-                    type="button"
-                    class="settings-log-button"
-                    onclick={navigateToDashboard}
-                  >
-                    Error Log
-                  </button>
-                  <button
-                    type="button"
-                    class="settings-logout-button"
-                    onclick={handleLogout}
-                  >
-                    <span>Logout</span>
+              <template if:true={selectedTile}>
+                <aside class="settings-side-card">
+                  <h2 class="settings-side-title">
                     <lightning-icon
-                      icon-name="utility:logout"
-                      size="xx-small"
-                      class="settings-logout-icon"
-                    ></lightning-icon>
-                  </button>
-                </div>
-              </aside>
-
-              <div class="settings-main-card config-panel slds-box">
-                <template if:true={integrationExpiryAlert}>
-                  <div class={integrationExpiryAlert.bannerClass} role="alert">
-                    <lightning-icon
-                      icon-name="utility:warning"
+                      icon-name="utility:settings"
                       size="x-small"
-                      class="renewal-alert-icon"
+                      class="settings-side-icon"
                     ></lightning-icon>
-                    <div>
-                      <p class="renewal-alert-title">
-                        {integrationExpiryAlert.title}
-                      </p>
-                      <p class="renewal-alert-message">
-                        {integrationExpiryAlert.message}
-                      </p>
-                    </div>
+                    Settings
+                  </h2>
+                  <p class="settings-side-copy">
+                    Configure your application settings here.
+                  </p>
+                  <div class="settings-side-actions">
+                    <button
+                      type="button"
+                      class="settings-log-button"
+                      onclick={navigateToDashboard}
+                    >
+                      Error Log
+                    </button>
+                    <button
+                      type="button"
+                      class="settings-logout-button"
+                      onclick={handleLogout}
+                    >
+                      <span>Logout</span>
+                      <lightning-icon
+                        icon-name="utility:logout"
+                        size="xx-small"
+                        class="settings-logout-icon"
+                      ></lightning-icon>
+                    </button>
                   </div>
-                </template>
-                <template for:each={paymentMetadataConfigs} for:item="config">
-                  <template if:true={config.isSelected}>
-                    <div key={config.provider} class="config-content">
-                      <div class="config-header-row slds-m-bottom_large">
-                        <div>
-                          <h2 class="config-title">{config.label} Settings</h2>
-                          <p class="config-subtitle">
-                            Configure your API credentials for {config.label}
-                          </p>
-                        </div>
-                        <div class="config-action-buttons">
-                          <template if:true={config.isEditing}>
-                            <button
-                              class="qb-action-btn btn-cancel slds-m-right_small"
-                              data-provider={config.provider}
-                              onclick={toggleEditMode}
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              class="qb-action-btn btn-save"
-                              data-provider={config.provider}
-                              onclick={handleSaveMetadata}
-                              disabled={isSaving}
-                            >
-                              Save Configuration
-                            </button>
-                          </template>
-                          <template if:false={config.isEditing}>
-                            <button
-                              class="qb-action-btn btn-edit slds-m-right_small"
-                              data-provider={config.provider}
-                              onclick={toggleEditMode}
-                            >
-                              Edit Settings
-                            </button>
-                            <template if:true={config.active}>
-                              <button
-                                class="qb-action-btn btn-delete"
-                                data-provider={config.provider}
-                                onclick={handleMetadataDelete}
-                              >
-                                Delete
-                              </button>
-                            </template>
-                          </template>
-                        </div>
-                      </div>
-                      <div class="config-form-grid">
-                        <template
-                          for:each={config.editableFieldsData}
-                          for:item="field"
-                        >
-                          <div
-                            key={field.name}
-                            class="config-field-wrapper slds-m-bottom_medium"
-                          >
-                            <template if:true={config.isEditing}>
-                              <template if:true={field.isCheckbox}>
-                                <lightning-input
-                                  type="checkbox"
-                                  label={field.label}
-                                  data-field={field.name}
-                                  data-provider={config.provider}
-                                  checked={field.currentValue}
-                                  onchange={handleFieldChange}
-                                ></lightning-input>
-                              </template>
-                              <template if:false={field.isCheckbox}>
-                                <lightning-input
-                                  type="text"
-                                  label={field.label}
-                                  data-field={field.name}
-                                  data-provider={config.provider}
-                                  value={field.currentValue}
-                                  disabled={field.isReadOnly}
-                                  onchange={handleFieldChange}
-                                ></lightning-input>
-                              </template>
-                            </template>
-                            <template if:false={config.isEditing}>
-                              <p class="field-label-display">{field.label}</p>
-                              <div class="field-value-display">
-                                <template if:true={field.isCheckbox}>
-                                  <lightning-input
-                                    type="checkbox"
-                                    checked={field.isTrue}
-                                    disabled
-                                  ></lightning-input>
-                                </template>
-                                <template if:false={field.isCheckbox}>
-                                  <template if:true={field.displayValue}>
-                                    {field.displayValue}
-                                  </template>
-                                  <template if:false={field.displayValue}>
-                                    &nbsp;
-                                  </template>
-                                </template>
-                              </div>
-                            </template>
-                          </div>
-                        </template>
+                </aside>
+
+                <div class="settings-main-card config-panel slds-box">
+                  <template if:true={integrationExpiryAlert}>
+                    <div
+                      class={integrationExpiryAlert.bannerClass}
+                      role="alert"
+                    >
+                      <lightning-icon
+                        icon-name="utility:warning"
+                        size="x-small"
+                        class="renewal-alert-icon"
+                      ></lightning-icon>
+                      <div>
+                        <p class="renewal-alert-title">
+                          {integrationExpiryAlert.title}
+                        </p>
+                        <p class="renewal-alert-message">
+                          {integrationExpiryAlert.message}
+                        </p>
                       </div>
                     </div>
                   </template>
-                </template>
-              </div>
+                  <template for:each={paymentMetadataConfigs} for:item="config">
+                    <template if:true={config.isSelected}>
+                      <div key={config.provider} class="config-content">
+                        <div class="config-header-row slds-m-bottom_large">
+                          <div>
+                            <h2 class="config-title">
+                              {config.label} Settings
+                            </h2>
+                            <p class="config-subtitle">
+                              Configure your API credentials for {config.label}
+                            </p>
+                          </div>
+                          <div class="config-action-buttons">
+                            <template if:true={config.isEditing}>
+                              <button
+                                class="qb-action-btn btn-cancel slds-m-right_small"
+                                data-provider={config.provider}
+                                onclick={toggleEditMode}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                class="qb-action-btn btn-save"
+                                data-provider={config.provider}
+                                onclick={handleSaveMetadata}
+                                disabled={isSaving}
+                              >
+                                Save Configuration
+                              </button>
+                            </template>
+                            <template if:false={config.isEditing}>
+                              <button
+                                class="qb-action-btn btn-edit slds-m-right_small"
+                                data-provider={config.provider}
+                                onclick={toggleEditMode}
+                              >
+                                Edit Settings
+                              </button>
+                              <template if:true={config.active}>
+                                <button
+                                  class="qb-action-btn btn-delete"
+                                  data-provider={config.provider}
+                                  onclick={handleMetadataDelete}
+                                >
+                                  Delete
+                                </button>
+                              </template>
+                            </template>
+                          </div>
+                        </div>
+                        <div class="config-form-grid">
+                          <template
+                            for:each={config.editableFieldsData}
+                            for:item="field"
+                          >
+                            <div
+                              key={field.name}
+                              class="config-field-wrapper slds-m-bottom_medium"
+                            >
+                              <template if:true={config.isEditing}>
+                                <template if:true={field.isCheckbox}>
+                                  <lightning-input
+                                    type="checkbox"
+                                    label={field.label}
+                                    data-field={field.name}
+                                    data-provider={config.provider}
+                                    checked={field.currentValue}
+                                    disabled={field.isReadOnly}
+                                    onchange={handleFieldChange}
+                                  ></lightning-input>
+                                </template>
+                                <template if:false={field.isCheckbox}>
+                                  <lightning-input
+                                    type="text"
+                                    label={field.label}
+                                    data-field={field.name}
+                                    data-provider={config.provider}
+                                    value={field.currentValue}
+                                    disabled={field.isReadOnly}
+                                    onchange={handleFieldChange}
+                                  ></lightning-input>
+                                </template>
+                              </template>
+                              <template if:false={config.isEditing}>
+                                <p class="field-label-display">{field.label}</p>
+                                <div class="field-value-display">
+                                  <template if:true={field.isCheckbox}>
+                                    <lightning-input
+                                      type="checkbox"
+                                      checked={field.isTrue}
+                                      disabled
+                                    ></lightning-input>
+                                  </template>
+                                  <template if:false={field.isCheckbox}>
+                                    <template if:true={field.displayValue}>
+                                      {field.displayValue}
+                                    </template>
+                                    <template if:false={field.displayValue}>
+                                      &nbsp;
+                                    </template>
+                                  </template>
+                                </div>
+                              </template>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </template>
+                  <template if:false={hasSelectedConfig}>
+                    <div class="slds-text-align_center slds-p-around_medium">
+                      <p>No configuration found for the selected gateway.</p>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <template if:false={selectedTile}>
+                <div
+                  class="slds-box slds-text-align_center"
+                  style="
+                    padding: 3rem;
+                    background: white;
+                    border-radius: 12px;
+                    border: 1px solid #e2e8f0;
+                  "
+                >
+                  <h3
+                    style="
+                      font-size: 1.5rem;
+                      color: #334155;
+                      font-weight: bold;
+                      margin-bottom: 1rem;
+                    "
+                  >
+                    No Gateway Selected
+                  </h3>
+                  <p style="color: #64748b">
+                    Please go to the Integrations screen and select a gateway to
+                    view its settings.
+                  </p>
+                  <button
+                    class="qb-login-button"
+                    style="width: auto; margin-top: 1rem"
+                    onclick={navigateToHome}
+                  >
+                    Go to Integrations
+                  </button>
+                </div>
+              </template>
             </div>
           </div>
         </template>
