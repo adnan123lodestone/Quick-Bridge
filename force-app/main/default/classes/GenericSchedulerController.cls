@@ -46,6 +46,9 @@ public with sharing class GenericSchedulerController {
     String selectedObject,
     String direction
   ) {
+    if (connectorKey == 'qbo') {
+      QuickBooksAuthHandler.validateConfiguration();
+    }
     QuickBridgeAdminGuard.requireRunSync();
     SchedulerEntitlementService.assertCanCreateSchedule();
     Integer safeValue = Integer.valueOf(freqValue.trim());

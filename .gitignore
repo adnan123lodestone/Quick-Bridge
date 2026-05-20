@@ -30,6 +30,9 @@ node_modules/
 # Eslint cache
 .eslintcache
 
+# Local Codex document review artifacts
+.codex-docx-review/
+
 # MacOS system files
 .DS_Store
 
