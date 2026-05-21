@@ -17,9 +17,7 @@ export default class InvoiceSendToCustomerAction extends LightningElement {
     this.isRunning = true;
 
     try {
-      const response = await sendInvoiceToCustomer({
-        invoiceId: this.recordId
-      });
+      const response = await sendInvoiceToCustomer({ invoiceId: this.recordId });
       if (!response?.success) {
         throw new Error(response?.message || "Invoice could not be sent.");
       }

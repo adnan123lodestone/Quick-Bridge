@@ -1,10 +1,9 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
     <apiVersion>66.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>Field Mapping Component</masterLabel>
-    <description
-  >Component for mapping Salesforce Order fields to QuickBooks Online or Klaviyo fields</description>
+    <description>Component for mapping Salesforce Order fields to QuickBooks Online or Klaviyo fields</description>
     <targets>
         <target>lightning__AppPage</target>
         <target>lightning__HomePage</target>

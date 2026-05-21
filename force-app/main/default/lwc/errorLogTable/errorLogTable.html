@@ -1,166 +1,104 @@
 <template>
-  <lightning-card
-    icon-name="standard:service_report"
-    class="slds-card_boundary"
-  >
-    <!-- Title + badge -->
-    <h3
-      slot="title"
-      class="slds-text-heading_small slds-truncate slds-p-left_small"
-    >
-      <b>{gatewayName} Error Logs</b>
-      <template if:true={isRetryableGateway}>
-        <span class="slds-badge slds-m-left_small slds-theme_error"
-          >{totalFresh} Pending | {retriedLogs.length} Attempted</span
-        >
-      </template>
-      <template if:false={isRetryableGateway}>
-        <span class="slds-badge slds-m-left_small slds-theme_error"
-          >{totalSimpleErrors} Total</span
-        >
-      </template>
-    </h3>
+    <lightning-card icon-name="standard:service_report" class="slds-card_boundary">
+        <!-- Title + badge -->
+        <h3 slot="title" class="slds-text-heading_small slds-truncate slds-p-left_small">
+            <b>{gatewayName} Error Logs</b>
+            <template if:true={isRetryableGateway}>
+                <span class="slds-badge slds-m-left_small slds-theme_error">{totalFresh} Pending | {retriedLogs.length} Attempted</span>
+            </template>
+            <template if:false={isRetryableGateway}>
+                <span class="slds-badge slds-m-left_small slds-theme_error">{totalSimpleErrors} Total</span>
+            </template>
+        </h3>
 
-    <div slot="actions">
-      <lightning-button-icon
-        icon-name="utility:refresh"
-        alternative-text="Refresh Logs"
-        title="Refresh Logs"
-        onclick={handleRefresh}
-        disabled={isRefreshing}
-      ></lightning-button-icon>
-    </div>
+        <div slot="actions">
+            <lightning-button-icon icon-name="utility:refresh" alternative-text="Refresh Logs" title="Refresh Logs" onclick={handleRefresh} disabled={isRefreshing}></lightning-button-icon>
+        </div>
 
-    <div class="slds-p-horizontal_small relative-container">
-      <template if:true={isRefreshing}>
-        <lightning-spinner
-          alternative-text="Loading"
-          size="small"
-        ></lightning-spinner>
-      </template>
+        <div class="slds-p-horizontal_small relative-container">
+            <template if:true={isRefreshing}>
+                <lightning-spinner alternative-text="Loading" size="small"></lightning-spinner>
+            </template>
 
-      <!-- 1) For Retryable Gateways (QBO/Shopify) : split tables -->
-      <template if:true={isRetryableGateway}>
-        <!-- Upper table: logs with Retry_Count__c > 0 (no retry button) -->
-        <template if:true={hasRetriedLogs}>
-          <div class="slds-m-bottom_large">
-            <h2 class="slds-text-heading_small slds-m-bottom_small">
-              {gatewayName} Errors with Retry Attempts
-            </h2>
-            <div class="desktop-view">
-              <lightning-datatable
-                key-field="Id"
-                data={retriedLogs}
-                columns={retriedColumns}
-                hide-checkbox-column="true"
-                resize-column-disabled="true"
-              >
-              </lightning-datatable>
-            </div>
-          </div>
-        </template>
+            <!-- 1) For Retryable Gateways (QBO/Shopify) : split tables -->
+            <template if:true={isRetryableGateway}>
+                <!-- Upper table: logs with Retry_Count__c > 0 (no retry button) -->
+                <template if:true={hasRetriedLogs}>
+                    <div class="slds-m-bottom_large">
+                        <h2 class="slds-text-heading_small slds-m-bottom_small">{gatewayName} Errors with Retry Attempts</h2>
+                        <div class="desktop-view">
+                            <lightning-datatable
+                                key-field="Id"
+                                data={retriedLogs}
+                                columns={retriedColumns}
+                                hide-checkbox-column="true"
+                                resize-column-disabled="true">
+                            </lightning-datatable>
+                        </div>
+                    </div>
+                </template>
 
-        <!-- Bottom table: fresh errors (Retry_Count__c == 0) with retry action -->
-        <template if:true={hasFreshLogs}>
-          <h2 class="slds-text-heading_small slds-m-bottom_small">
-            {gatewayName} Pending Errors
-          </h2>
-          <div
-            class="desktop-view slds-box slds-p-around_none slds-m-bottom_small"
-          >
-            <lightning-datatable
-              key-field="Id"
-              data={paginatedFreshLogs}
-              columns={allColumns}
-              hide-checkbox-column="true"
-              resize-column-disabled="true"
-              onrowaction={handleRowAction}
-            >
-            </lightning-datatable>
-          </div>
+                <!-- Bottom table: fresh errors (Retry_Count__c == 0) with retry action -->
+                <template if:true={hasFreshLogs}>
+                    <h2 class="slds-text-heading_small slds-m-bottom_small">{gatewayName} Pending Errors</h2>
+                    <div class="desktop-view slds-box slds-p-around_none slds-m-bottom_small">
+                        <lightning-datatable
+                            key-field="Id"
+                            data={paginatedFreshLogs}
+                            columns={allColumns}
+                            hide-checkbox-column="true"
+                            resize-column-disabled="true"
+                            onrowaction={handleRowAction}>
+                        </lightning-datatable>
+                    </div>
 
-          <!-- Pagination for fresh table -->
-          <div
-            class="slds-grid slds-grid_align-spread slds-p-top_small slds-border_top"
-          >
-            <div class="slds-col">
-              <lightning-button-icon
-                icon-name="utility:chevronleft"
-                variant="border-filled"
-                disabled={isFirstPage}
-                onclick={handlePrevious}
-                title="Previous"
-              ></lightning-button-icon>
-            </div>
-            <div class="slds-col slds-align-middle slds-text-color_weak">
-              <b>Page {currentPage} of {totalPages}</b>
-            </div>
-            <div class="slds-col">
-              <lightning-button-icon
-                icon-name="utility:chevronright"
-                variant="border-filled"
-                disabled={isLastPage}
-                onclick={handleNext}
-                title="Next"
-              ></lightning-button-icon>
-            </div>
-          </div>
-        </template>
+                    <!-- Pagination for fresh table -->
+                    <div class="slds-grid slds-grid_align-spread slds-p-top_small slds-border_top">
+                        <div class="slds-col">
+                            <lightning-button-icon icon-name="utility:chevronleft" variant="border-filled" disabled={isFirstPage} onclick={handlePrevious} title="Previous"></lightning-button-icon>
+                        </div>
+                        <div class="slds-col slds-align-middle slds-text-color_weak">
+                            <b>Page {currentPage} of {totalPages}</b>
+                        </div>
+                        <div class="slds-col">
+                            <lightning-button-icon icon-name="utility:chevronright" variant="border-filled" disabled={isLastPage} onclick={handleNext} title="Next"></lightning-button-icon>
+                        </div>
+                    </div>
+                </template>
 
-        <!-- No logs at all for retryable gateways -->
-        <template if:false={hasFreshLogs}>
-          <template if:false={hasRetriedLogs}>
-            <div
-              class="slds-illustration slds-illustration_small slds-p-around_large slds-text-align_center"
-            >
-              <lightning-icon
-                icon-name="utility:search"
-                size="large"
-                class="slds-m-bottom_small"
-                variant="warning"
-              ></lightning-icon>
-              <h3 class="slds-text-heading_medium">No error logs found</h3>
-              <p class="slds-text-body_regular slds-text-color_weak">
-                Everything is running smoothly for {gatewayName}.
-              </p>
-            </div>
-          </template>
-        </template>
-      </template>
+                <!-- No logs at all for retryable gateways -->
+                <template if:false={hasFreshLogs}>
+                    <template if:false={hasRetriedLogs}>
+                        <div class="slds-illustration slds-illustration_small slds-p-around_large slds-text-align_center">
+                            <lightning-icon icon-name="utility:search" size="large" class="slds-m-bottom_small" variant="warning"></lightning-icon>
+                            <h3 class="slds-text-heading_medium">No error logs found</h3>
+                            <p class="slds-text-body_regular slds-text-color_weak">Everything is running smoothly for {gatewayName}.</p>
+                        </div>
+                    </template>
+                </template>
+            </template>
 
-      <!-- 2) For Non‑Retryable Gateways (Stripe, UPS, etc.) : simple single table -->
-      <template if:false={isRetryableGateway}>
-        <template if:true={hasSimpleLogs}>
-          <div
-            class="desktop-view slds-box slds-p-around_none slds-m-bottom_small"
-          >
-            <lightning-datatable
-              key-field="Id"
-              data={simpleLogs}
-              columns={allColumns}
-              hide-checkbox-column="true"
-              resize-column-disabled="true"
-            >
-            </lightning-datatable>
-          </div>
-        </template>
-        <template if:false={hasSimpleLogs}>
-          <div
-            class="slds-illustration slds-illustration_small slds-p-around_large slds-text-align_center"
-          >
-            <lightning-icon
-              icon-name="utility:search"
-              size="large"
-              class="slds-m-bottom_small"
-              variant="warning"
-            ></lightning-icon>
-            <h3 class="slds-text-heading_medium">No error logs found</h3>
-            <p class="slds-text-body_regular slds-text-color_weak">
-              Everything is running smoothly for {gatewayName}.
-            </p>
-          </div>
-        </template>
-      </template>
-    </div>
-  </lightning-card>
+            <!-- 2) For Non‑Retryable Gateways (Stripe, UPS, etc.) : simple single table -->
+            <template if:false={isRetryableGateway}>
+                <template if:true={hasSimpleLogs}>
+                    <div class="desktop-view slds-box slds-p-around_none slds-m-bottom_small">
+                        <lightning-datatable
+                            key-field="Id"
+                            data={simpleLogs}
+                            columns={allColumns}
+                            hide-checkbox-column="true"
+                            resize-column-disabled="true">
+                        </lightning-datatable>
+                    </div>
+                </template>
+                <template if:false={hasSimpleLogs}>
+                    <div class="slds-illustration slds-illustration_small slds-p-around_large slds-text-align_center">
+                        <lightning-icon icon-name="utility:search" size="large" class="slds-m-bottom_small" variant="warning"></lightning-icon>
+                        <h3 class="slds-text-heading_medium">No error logs found</h3>
+                        <p class="slds-text-body_regular slds-text-color_weak">Everything is running smoothly for {gatewayName}.</p>
+                    </div>
+                </template>
+            </template>
+        </div>
+    </lightning-card>
 </template>

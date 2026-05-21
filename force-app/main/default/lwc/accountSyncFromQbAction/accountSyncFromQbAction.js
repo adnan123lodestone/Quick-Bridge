@@ -19,9 +19,7 @@ export default class AccountSyncFromQbAction extends LightningElement {
     try {
       const response = await syncFromQuickBooks({ accountId: this.recordId });
       if (!response?.success) {
-        throw new Error(
-          response?.message || "Account could not be synced from QuickBooks."
-        );
+        throw new Error(response?.message || "Account could not be synced from QuickBooks.");
       }
 
       this.dispatchEvent(
