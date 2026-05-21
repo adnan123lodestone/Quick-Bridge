@@ -23,7 +23,12 @@ private class IntegrationConnectorRegistryTest {
     }
 
     @IsTest
-    static void productRecordsBecomeCatalogSourceOfTruth() {
+    static void productRecordsOverlayMetadataAndAddNetNew() {
+        // Baseline: how many connectors come from metadata alone
+        List<IntegrationConnectorRegistry.ConnectorDescriptor> baseline = IntegrationConnectorRegistry.connectors();
+        Integer metadataCount = baseline.size();
+
+        // Insert a net-new product not in Integration_Connector__mdt
         insert new Integration_Product__c(
             Name = 'Klaviyo',
             Product_Key__c = 'klaviyo',
@@ -47,9 +52,14 @@ private class IntegrationConnectorRegistryTest {
         IntegrationConnectorRegistry.clearCache();
 
         List<IntegrationConnectorRegistry.ConnectorDescriptor> connectors = IntegrationConnectorRegistry.connectors();
-        System.assertEquals(1, connectors.size(), 'Product records should be used when present.');
+        // Metadata connectors are always present; net-new product record is appended
+        System.assertEquals(metadataCount + 1, connectors.size(), 'Net-new product record should be appended to metadata connectors.');
+
+        // Overlay fields are applied to the net-new entry
+        IntegrationConnectorRegistry.ConnectorDescriptor klaviyo = IntegrationConnectorRegistry.byKey('klaviyo');
+        System.assertNotEquals(null, klaviyo, 'Net-new klaviyo connector should be resolvable by key.');
         System.assertEquals('klaviyo', IntegrationConnectorRegistry.normalizeProductKey('email'));
-        System.assertEquals('https://example.com/klaviyo.svg', connectors[0].logoUrl);
-        System.assertEquals(true, connectors[0].catalogActive);
+        System.assertEquals('https://example.com/klaviyo.svg', klaviyo.logoUrl);
+        System.assertEquals(true, klaviyo.catalogActive);
     }
 }

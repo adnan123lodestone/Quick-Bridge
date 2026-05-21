@@ -375,13 +375,6 @@ public with sharing class StripePaymentService {
                             }
 
                             private static Quickbridge_Config__mdt getConfig() {
-                                Quickbridge_Config__mdt config;
-                                try {
-                                    config = Quickbridge_Config__mdt.getInstance('Stripe');
-                                } catch(Exception e) {
-                                    config = null;
-                                }
-
                                 if (Test.isRunningTest()) {
                                     Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
                                     testConfig.Stripe_Active__c = true;
@@ -390,7 +383,15 @@ public with sharing class StripePaymentService {
                                     return testConfig;
                                 }
 
-                                if (config == null) throw new AuraHandledException('Stripe configuration record was not found.');
+                                Quickbridge_Config__mdt config = new Quickbridge_Config__mdt();
+                                config.Stripe_Active__c = ConnectorConfigResolver.getBoolean('stripe', 'Stripe_Active__c');
+                                config.Stripe_Publishable_Key__c = ConnectorConfigResolver.getValue('stripe', 'Stripe_Publishable_Key__c');
+                                config.Stripe_Use_Sandbox__c = ConnectorConfigResolver.getBoolean('stripe', 'Stripe_Use_Sandbox__c');
+                                config.Stripe_Start_Date__c = ConnectorConfigResolver.getDate('stripe', 'Stripe_Start_Date__c');
+                                config.Stripe_End_Date__c = ConnectorConfigResolver.getDate('stripe', 'Stripe_End_Date__c');
+                                if (!ConnectorConfigService.isActive('stripe') && String.isBlank(config.Stripe_Publishable_Key__c)) {
+                                    throw new AuraHandledException('Stripe configuration record was not found.');
+                                }
                                 return config;
                             }
 

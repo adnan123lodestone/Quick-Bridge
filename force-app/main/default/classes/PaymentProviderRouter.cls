@@ -19,6 +19,7 @@ public with sharing class PaymentProviderRouter {
         if (String.isBlank(adapterClassName)) {
             return null;
         }
+        ConnectorAdapterAllowlist.assertAllowed(adapterClassName);
         Type adapterType = Type.forName(adapterClassName);
         if (adapterType == null) {
             adapterType = Type.forName('QuickBridgeTLG', adapterClassName);

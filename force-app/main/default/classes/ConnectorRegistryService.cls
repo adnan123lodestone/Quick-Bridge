@@ -154,23 +154,23 @@ public with sharing class ConnectorRegistryService {
     }
 
     private static List<ConnectorDescriptor> loadDescriptors() {
-        List<ConnectorDescriptor> descriptors = loadProductDescriptors();
-        if (descriptors.isEmpty()) {
-            descriptors = loadMetadataDescriptors();
-        }
+        // Metadata is the canonical source for capabilities, config fields, and object maps.
+        // Product object records overlay presentation fields (logo, dates, status, display order).
+        List<ConnectorDescriptor> descriptors = loadMetadataDescriptors();
         if (descriptors.isEmpty()) {
             descriptors = LegacyConnectorRegistryFallback.connectors();
         }
+        overlayProductDescriptors(descriptors);
         hydrateCapabilities(descriptors);
         hydrateConfigFields(descriptors);
         hydrateObjectMaps(descriptors);
         return descriptors;
     }
 
-    private static List<ConnectorDescriptor> loadProductDescriptors() {
-        List<ConnectorDescriptor> rows = new List<ConnectorDescriptor>();
+    private static void overlayProductDescriptors(List<ConnectorDescriptor> base) {
+        List<Integration_Product__c> productRows;
         try {
-            for (Integration_Product__c row : [
+            productRows = [
                 SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Aliases__c, Category__c,
                     Config_Record_Name__c, Active_Field__c, Expiry_Field__c, Editable_Fields__c,
                     Display_Order__c, Enabled__c, Catalog_Active__c, Has_Config__c, Has_Reporting__c,
@@ -179,7 +179,26 @@ public with sharing class ConnectorRegistryService {
                 FROM Integration_Product__c
                 WHERE Enabled__c = true
                 ORDER BY Display_Order__c ASC, Product_Label__c ASC
-            ]) {
+            ];
+        } catch (Exception ignored) {
+            return;
+        }
+        Map<String, ConnectorDescriptor> byKey = byConnectorKey(base);
+        for (Integration_Product__c row : productRows) {
+            String normalizedConnectorKey = normalize(String.isBlank(row.Connector_Key__c) ? row.Product_Key__c : row.Connector_Key__c);
+            ConnectorDescriptor existing = byKey.get(normalizedConnectorKey);
+            if (existing != null) {
+                // Overlay presentation fields only — do not replace capabilities or config field definitions
+                existing.logoUrl = row.Logo_URL__c;
+                existing.catalogActive = row.Catalog_Active__c == true;
+                existing.startDate = row.Start_Date__c;
+                existing.endDate = row.End_Date__c;
+                existing.status = row.Status__c;
+                if (row.Display_Order__c != null) {
+                    existing.sortOrder = row.Display_Order__c.intValue();
+                }
+            } else {
+                // Net-new product not in metadata — add it
                 ConnectorDescriptor descriptor = baseDescriptor(
                     row.Connector_Key__c,
                     row.Product_Key__c,
@@ -204,11 +223,13 @@ public with sharing class ConnectorRegistryService {
                 descriptor.startDate = row.Start_Date__c;
                 descriptor.endDate = row.End_Date__c;
                 descriptor.status = row.Status__c;
-                rows.add(descriptor);
+                base.add(descriptor);
+                byKey.put(normalizedConnectorKey, descriptor);
+                if (String.isNotBlank(row.Product_Key__c)) {
+                    byKey.put(normalize(row.Product_Key__c), descriptor);
+                }
             }
-        } catch (Exception ignored) {
         }
-        return rows;
     }
 
     private static List<ConnectorDescriptor> loadMetadataDescriptors() {

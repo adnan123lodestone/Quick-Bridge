@@ -28,7 +28,15 @@ public with sharing class ConnectorConfigService {
     public Boolean fromNormalizedConfig { get; set; }
   }
 
-  @AuraEnabled(cacheable=true)
+  @AuraEnabled(cacheable=false)
+  public static ConnectorConfig getPublicConfig(String connectorKey, String sessionToken) {
+    QuickBridgeAdminGuard.requireView();
+    QuickBridgeAdminSessionService.requireValidSession(sessionToken);
+    ConnectorConfig cfg = getConfig(connectorKey);
+    redactSecretFields(cfg);
+    return cfg;
+  }
+
   public static ConnectorConfig getConfig(String connectorKey) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
@@ -48,6 +56,17 @@ public with sharing class ConnectorConfigService {
       hydrateFromLegacyConfig(config, descriptor);
     }
     return config;
+  }
+
+  private static void redactSecretFields(ConnectorConfig cfg) {
+    if (cfg == null || cfg.values == null) {
+      return;
+    }
+    Map<String, String> redacted = new Map<String, String>();
+    for (String key : cfg.values.keySet()) {
+      redacted.put(key, isSecretField(key) ? '••••••••' : cfg.values.get(key));
+    }
+    cfg.values = redacted;
   }
 
   public static String getConfigValue(

@@ -4,8 +4,9 @@ public with sharing class IntegrationWorkAdminController {
         @AuraEnabled public String message { get; set; }
     }
 
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled(cacheable=false)
     public static List<Integration_Work_Item__c> getRecentWorkItems(String statusFilter, Integer limitSize) {
+        QuickBridgeAdminGuard.requireView();
         Integer rowLimit = limitSize == null || limitSize <= 0 ? 50 : Math.min(200, limitSize);
         if (String.isBlank(statusFilter) || statusFilter == 'All') {
             return [
@@ -28,6 +29,7 @@ public with sharing class IntegrationWorkAdminController {
 
     @AuraEnabled
     public static WorkActionResponse retryNow(Id workItemId) {
+        QuickBridgeAdminGuard.requireRunSync();
         WorkActionResponse response = new WorkActionResponse();
         update new Integration_Work_Item__c(
             Id = workItemId,
@@ -47,6 +49,7 @@ public with sharing class IntegrationWorkAdminController {
 
     @AuraEnabled
     public static WorkActionResponse cancel(Id workItemId) {
+        QuickBridgeAdminGuard.requireRunSync();
         WorkActionResponse response = new WorkActionResponse();
         update new Integration_Work_Item__c(
             Id = workItemId,

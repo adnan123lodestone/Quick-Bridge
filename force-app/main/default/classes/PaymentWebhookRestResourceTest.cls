@@ -182,16 +182,11 @@ private class PaymentWebhookRestResourceTest {
         PaymentWebhookRestResource.WebhookResponse response = PaymentWebhookRestResource.handlePost();
         Test.stopTest();
 
-        System.assertEquals(200, RestContext.response.statusCode);
-        System.assertEquals(true, response.recordCreated);
-
-        Portal_Payment_Transaction__c logRecord = [
-            SELECT Id, Order__c, Payment_Type__c
-            FROM Portal_Payment_Transaction__c
-            LIMIT 1
-        ];
-        System.assertEquals(orderRecord.Id, logRecord.Order__c);
-        System.assertEquals('PayPal', logRecord.Payment_Type__c);
+        // PayPal webhook signature verification is not yet implemented — webhook is rejected fail-closed (503)
+        // until a proper IPN/OAuth verification path is wired up.
+        System.assertEquals(503, RestContext.response.statusCode);
+        System.assertEquals(false, response.success);
+        System.assertEquals(0, [SELECT COUNT() FROM Portal_Payment_Transaction__c]);
     }
 
     @IsTest

@@ -5,6 +5,7 @@ public with sharing class PaymentGatewayService {
   String password
   ) {
     try {
+      AdminLoginRateLimiter.checkAndIncrement(username);
       IntegrationEntitlementService.EntitlementResult entitlement = IntegrationEntitlementService.refreshCheckoutEntitlementForLogin(
         username,
       password
@@ -20,6 +21,9 @@ public with sharing class PaymentGatewayService {
         'PaymentGatewayService.verifyCredentialsAndGetGateways',
       res
         );
+      if (entitlement.active == true) {
+        AdminLoginRateLimiter.clearOnSuccess(username);
+      }
       return responseBody;
     } catch (Exception e) {
       ErrorLogUtility.logException(
@@ -69,24 +73,13 @@ public with sharing class PaymentGatewayService {
   @AuraEnabled
   public static String recoverPin(String username) {
     try {
-      String recoveryUsername = username;
-      if (String.isBlank(recoveryUsername)) {
-        List<Quickbridge_Config__mdt> configs = [
-          SELECT Username__c
-          FROM Quickbridge_Config__mdt
-          WHERE Username__c != NULL
-          LIMIT 1
-        ];
-        if (!configs.isEmpty()) {
-          recoveryUsername = configs[0].Username__c;
-        }
+      if (String.isBlank(username)) {
+        throw new AuraHandledException('Username is required to recover your PIN.');
       }
-      if (String.isBlank(recoveryUsername)) {
-        throw new AuraHandledException('No Username found in metadata.');
-      }
-      
+      AdminLoginRateLimiter.checkAndIncrement(username);
+
       Map<String, String> requestBody = new Map<String, String>();
-      requestBody.put('username', recoveryUsername.trim());
+      requestBody.put('username', username.trim());
       
       HttpRequest req = new HttpRequest();
       req.setEndpoint(
@@ -267,7 +260,7 @@ public with sharing class PaymentGatewayService {
       return responseBody;
     }
     if (String.valueOf(responseMap.get('status')) == 'Success') {
-      Datetime expiresAt = System.now().addHours(8);
+      Datetime expiresAt = System.now().addHours(2);
       QuickBridgeAdminSessionService.SessionCreateResult sessionResult = QuickBridgeAdminSessionService.createSession(
         username,
       expiresAt
@@ -280,8 +273,9 @@ public with sharing class PaymentGatewayService {
   
   @AuraEnabled
   public static String refreshLicenses(String sessionToken) {
-    // QuickBridgeAdminSessionService.requireValidSession(sessionToken);
-    
+    QuickBridgeAdminGuard.requireManage();
+    QuickBridgeAdminSessionService.requireValidSession(sessionToken);
+
     // Get current credentials from Quickbridge_Config__mdt or session
     Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance('Default');
     if (config == null || String.isBlank(config.Username__c)) {

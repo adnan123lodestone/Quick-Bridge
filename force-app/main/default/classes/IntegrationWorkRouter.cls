@@ -28,6 +28,7 @@ public with sharing class IntegrationWorkRouter {
         if (String.isBlank(className)) {
             return null;
         }
+        ConnectorAdapterAllowlist.assertAllowed(className);
         Type handlerType = Type.forName(className);
         if (handlerType == null) {
             handlerType = Type.forName('QuickBridgeTLG', className);

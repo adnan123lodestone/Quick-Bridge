@@ -583,22 +583,20 @@ global without sharing class PaymentWebhookRestResource {
 
     private static SignatureVerificationResult verifyWebhookSignature(String paymentType, String requestBody, RestRequest request) {
         if (paymentType == 'stripe') {
-            if (!Test.isRunningTest()) {
-                trace('Stripe verification bypass enabled — Salesforce API gateway reformats the body, making HMAC verification impossible.');
-                return new SignatureVerificationResult(true, 200, null);
-            }
             return verifyStripeSignature(requestBody, request);
         }
 
         if (paymentType == 'authorizenet') {
-            if (!Test.isRunningTest()) {
-                trace('Authorize.Net verification bypass is enabled for runtime execution.');
-                return new SignatureVerificationResult(true, 200, null);
-            }
             return verifyAuthorizeNetSignature(requestBody, request);
         }
 
-        return new SignatureVerificationResult(true, 200, null);
+        if (paymentType == 'paypal') {
+            // PayPal webhook signature verification not yet implemented.
+            // Fail closed until IPN/OAuth verification is wired up.
+            return new SignatureVerificationResult(false, 503, 'PayPal webhook signature verification is not yet configured. Contact your administrator.');
+        }
+
+        return new SignatureVerificationResult(false, 400, 'Unknown payment type: ' + paymentType);
     }
 
     private static SignatureVerificationResult verifyStripeSignature(String requestBody, RestRequest request) {
@@ -779,34 +777,17 @@ global without sharing class PaymentWebhookRestResource {
     }
 
     private static String getStripeWebhookSigningSecret() {
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('Stripe');
-        } catch (Exception e) {}
-
-        // if (Test.isRunningTest()) {
-        //     return config == null || String.isBlank(config.Stripe_Webhook_Signing_Secret__c)
-        //         ? TEST_STRIPE_WEBHOOK_SIGNING_SECRET
-        //         : config.Stripe_Webhook_Signing_Secret__c;
-        // }
-        
         if (Test.isRunningTest()) {
-            return TEST_STRIPE_WEBHOOK_SIGNING_SECRET; 
+            return TEST_STRIPE_WEBHOOK_SIGNING_SECRET;
         }
-        return config == null ? null : config.Stripe_Webhook_Signing_Secret__c;
+        return ConnectorConfigResolver.getValue('stripe', 'Stripe_Webhook_Signing_Secret__c');
     }
 
     private static String getAuthorizeNetWebhookSigningKey() {
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
-        } catch (Exception e) {}
-
         if (Test.isRunningTest()) {
             return TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY;
         }
-
-        return config == null ? null : config.AuthorizeNet_Webhook_Signing_Key__c;
+        return ConnectorConfigResolver.getValue('authorizenet', 'AuthorizeNet_Webhook_Signing_Key__c');
     }
 
     private static String getHeaderValue(RestRequest request, String headerName) {

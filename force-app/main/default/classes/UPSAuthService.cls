@@ -71,17 +71,18 @@ public with sharing class UPSAuthService {
     public static UPSCredentialConfig getCredentialConfig() {
         UPSCredentialConfig config = new UPSCredentialConfig();
 
-        Quickbridge_Config__mdt qbConfig = Quickbridge_Config__mdt.getInstance('UPS');
-        if (qbConfig != null && (
-            String.isNotBlank(qbConfig.UPS_Client_Id__c) ||
-            String.isNotBlank(qbConfig.UPS_Client_Secret__c)
-        )) {
-            config.clientId = qbConfig.UPS_Client_Id__c;
-            config.clientSecret = qbConfig.UPS_Client_Secret__c;
-            config.environment = String.isBlank(qbConfig.UPS_Environment__c) ? 'Sandbox' : qbConfig.UPS_Environment__c;
-            config.accountNumber = qbConfig.UPS_Account_Number__c;
-            config.defaultServiceCode = String.isBlank(qbConfig.UPS_Default_Service_Code__c) ? '03' : qbConfig.UPS_Default_Service_Code__c;
-            config.isActive = qbConfig.UPS_Active__c == true;
+        String clientId = ConnectorConfigResolver.getValue('ups', 'UPS_Client_Id__c');
+        String clientSecret = ConnectorConfigResolver.getValue('ups', 'UPS_Client_Secret__c');
+
+        if (String.isNotBlank(clientId) || String.isNotBlank(clientSecret)) {
+            config.clientId = clientId;
+            config.clientSecret = clientSecret;
+            String env = ConnectorConfigResolver.getValue('ups', 'UPS_Environment__c');
+            config.environment = String.isBlank(env) ? 'Sandbox' : env;
+            config.accountNumber = ConnectorConfigResolver.getValue('ups', 'UPS_Account_Number__c');
+            String svcCode = ConnectorConfigResolver.getValue('ups', 'UPS_Default_Service_Code__c');
+            config.defaultServiceCode = String.isBlank(svcCode) ? '03' : svcCode;
+            config.isActive = ConnectorConfigResolver.getBoolean('ups', 'UPS_Active__c');
             return config;
         }
 

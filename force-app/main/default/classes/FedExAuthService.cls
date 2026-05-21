@@ -59,13 +59,12 @@ public with sharing class FedExAuthService {
     public static FedExCredentialConfig getCredentialConfig() {
         FedExCredentialConfig config = new FedExCredentialConfig();
 
-        Quickbridge_Config__mdt quickbridgeConfig = Quickbridge_Config__mdt.getInstance('FedEx');
-        if (quickbridgeConfig != null && (
-            String.isNotBlank(quickbridgeConfig.FedEx_Client_Id__c) ||
-            String.isNotBlank(quickbridgeConfig.FedEx_Client_Secret__c) ||
-            String.isNotBlank(quickbridgeConfig.FedEx_Account_Number__c)
-        )) {
-            if (quickbridgeConfig.FedEx_Active__c != true) {
+        String clientId = ConnectorConfigResolver.getValue('fedex', 'FedEx_Client_Id__c');
+        String clientSecret = ConnectorConfigResolver.getValue('fedex', 'FedEx_Client_Secret__c');
+        Boolean isActive = ConnectorConfigResolver.getBoolean('fedex', 'FedEx_Active__c');
+
+        if (String.isNotBlank(clientId) || String.isNotBlank(clientSecret)) {
+            if (isActive != true) {
                 ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
                 context.gatewayName = 'FedEx';
                 context.classMethodName = 'FedExAuthService.getCredentialConfig';
@@ -74,16 +73,17 @@ public with sharing class FedExAuthService {
                 ErrorLogUtility.logError(context);
                 throw new AuraHandledException('FedEx integration is not active. Enable it in Quickbridge configuration before running FedEx actions.');
             }
-            config.clientId = quickbridgeConfig.FedEx_Client_Id__c;
-            config.clientSecret = quickbridgeConfig.FedEx_Client_Secret__c;
-            config.environment = String.isBlank(quickbridgeConfig.FedEx_Environment__c) ? 'Sandbox' : quickbridgeConfig.FedEx_Environment__c;
-            config.accountNumber = quickbridgeConfig.FedEx_Account_Number__c;
-            config.defaultServiceType = quickbridgeConfig.FedEx_Default_Service_Type__c;
-            config.defaultPackagingType = quickbridgeConfig.FedEx_Default_Packaging_Type__c;
-            config.defaultPickupType = quickbridgeConfig.FedEx_Default_Pickup_Type__c;
+            config.clientId = clientId;
+            config.clientSecret = clientSecret;
+            config.environment = String.isBlank(ConnectorConfigResolver.getValue('fedex', 'FedEx_Environment__c')) ? 'Sandbox' : ConnectorConfigResolver.getValue('fedex', 'FedEx_Environment__c');
+            config.accountNumber = ConnectorConfigResolver.getValue('fedex', 'FedEx_Account_Number__c');
+            config.defaultServiceType = ConnectorConfigResolver.getValue('fedex', 'FedEx_Default_Service_Type__c');
+            config.defaultPackagingType = ConnectorConfigResolver.getValue('fedex', 'FedEx_Default_Packaging_Type__c');
+            config.defaultPickupType = ConnectorConfigResolver.getValue('fedex', 'FedEx_Default_Pickup_Type__c');
             return config;
         }
 
+        // Legacy FedEx_Config__mdt fallback (pre-Quickbridge config)
         FedEx_Config__mdt legacyConfig = [
             SELECT Client_Id__c, Client_Secret__c, Environment__c, MasterLabel
             FROM FedEx_Config__mdt

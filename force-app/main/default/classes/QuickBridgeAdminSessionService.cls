@@ -12,7 +12,7 @@ public with sharing class QuickBridgeAdminSessionService {
         if (String.isBlank(username)) {
             throw new AdminSessionException('Username is required to create an admin session.');
         }
-        Datetime expiry = expiresAt == null ? System.now().addHours(8) : expiresAt;
+        Datetime expiry = expiresAt == null ? System.now().addHours(2) : expiresAt;
         String rawToken = newRawToken(username);
         String tokenHash = hashToken(rawToken);
 
@@ -59,10 +59,6 @@ public with sharing class QuickBridgeAdminSessionService {
             throw new AdminSessionException('QuickBridge admin session expired. Please log in again.');
         }
 
-        update new QuickBridge_Admin_Session__c(
-            Id = sessionRecord.Id,
-            Last_Used_At__c = System.now()
-        );
         return sessionRecord;
     }
 
