@@ -1165,6 +1165,18 @@ public with sharing class FieldMappingController {
         'STRING',
         false
       );
+    } else if (qbEntity == 'CreditMemoLine') {
+      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.SalesItemLineDetail.ItemRef.value', 'STRING', true);
+      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
+      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.SalesItemLineDetail.Qty', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.SalesItemLineDetail.UnitPrice', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
+    } else if (qbEntity == 'PurchaseOrderLine') {
+      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.ItemBasedExpenseLineDetail.ItemRef.value', 'STRING', true);
+      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
+      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.ItemBasedExpenseLineDetail.Qty', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.ItemBasedExpenseLineDetail.UnitPrice', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
     }
 
     return qbFields;

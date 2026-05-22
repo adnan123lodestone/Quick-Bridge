@@ -30,7 +30,8 @@ private class QBSchedulerControllerTest {
     String jobId = QBSchedulerController.scheduleJob(
       '15',
       'Minutes',
-      'Account'
+      'Account',
+      true
     );
     Test.stopTest();
 
@@ -55,14 +56,16 @@ private class QBSchedulerControllerTest {
     String hoursJob = QBSchedulerController.scheduleJob(
       '2',
       'Hours',
-      'Contact'
+      'Contact',
+      true
     );
-    String daysJob = QBSchedulerController.scheduleJob('3', 'Days', 'Product2');
-    String weeksJob = QBSchedulerController.scheduleJob('1', 'Weeks', 'Order');
+    String daysJob = QBSchedulerController.scheduleJob('3', 'Days', 'Product2', true);
+    String weeksJob = QBSchedulerController.scheduleJob('1', 'Weeks', 'Order', false);
     String monthsJob = QBSchedulerController.scheduleJob(
       '1',
       'Months',
-      'Invoice__c'
+      'Invoice__c',
+      true
     );
     Test.stopTest();
 
@@ -76,7 +79,7 @@ private class QBSchedulerControllerTest {
   static void testScheduleJobInvalidInputThrowsHandledException() {
     Boolean didThrow = false;
     try {
-      QBSchedulerController.scheduleJob('abc', 'Hours', 'Account');
+      QBSchedulerController.scheduleJob('abc', 'Hours', 'Account', true);
     } catch (Exception e) {
       didThrow = true;
     }
@@ -93,7 +96,7 @@ private class QBSchedulerControllerTest {
   static void testSummaryPauseAndRecentRunsBlankPath() {
     Map<String, String> summary = QBSchedulerController.getSyncSettingsSummary();
     System.assertEquals(
-      'Salesforce to QuickBooks Online',
+      'Salesforce ↔ QuickBooks Online',
       summary.get('direction')
     );
 

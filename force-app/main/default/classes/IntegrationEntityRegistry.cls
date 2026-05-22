@@ -66,8 +66,15 @@ public with sharing class IntegrationEntityRegistry {
             }
         } catch (Exception ignored) {
         }
-        if (result.isEmpty()) {
-            result.addAll(fallbackDefinitions());
+        // Always add fallback definitions for entries not covered by DB records
+        Set<String> coveredKeys = new Set<String>();
+        for (EntityDefinition d : result) {
+            coveredKeys.add(d.integrationKey + '|' + d.salesforceObject);
+        }
+        for (EntityDefinition d : fallbackDefinitions()) {
+            if (!coveredKeys.contains(d.integrationKey + '|' + d.salesforceObject)) {
+                result.add(d);
+            }
         }
         cachedDefinitions = result;
         return cachedDefinitions;
@@ -83,6 +90,9 @@ public with sharing class IntegrationEntityRegistry {
         add(rows, 'qbonline', 'Credit_Memo__c', 'CreditMemo');
         add(rows, 'qbonline', 'Purchase_Order__c', 'PurchaseOrder');
         add(rows, 'qbonline', 'Item_Sales_Tax__c', 'TaxCode');
+        add(rows, 'qbonline', 'OrderItem', 'InvoiceLine');
+        add(rows, 'qbonline', 'Credit_Memo_Line__c', 'CreditMemoLine');
+        add(rows, 'qbonline', 'Purchase_Order_Line__c', 'PurchaseOrderLine');
         add(rows, 'shopify', 'Account', 'Customer');
         add(rows, 'shopify', 'Order', 'Order');
         add(rows, 'shopify', 'Product2', 'Product');

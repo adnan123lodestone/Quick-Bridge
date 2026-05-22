@@ -238,7 +238,15 @@ public with sharing class PayPalPaymentService {
 
                 // --- Invoice Creation ---
                 try {
-                    PaymentInvoiceRecordActionController.createPayPalInvoiceFromCapture(request.orderId, response);
+                    Order ord = [SELECT TotalAmount, AccountId FROM Order WHERE Id = :request.orderId LIMIT 1];
+                    
+                    Map<String, Object> invoiceData = new Map<String, Object>();
+                    invoiceData.put('Amount__c', ord.TotalAmount);
+                    invoiceData.put('Order__c', request.orderId);
+                    invoiceData.put('Related_Account__c', ord.AccountId);
+                    invoiceData.put('Reference_number__c', response.transId);
+                    
+                    QuickBridgeRecordEngine.processIncomingInvoice(invoiceData);
                 } catch(Exception ex) {
                     System.debug('Invoice creation failed: ' + ex.getMessage());
                     ErrorLogUtility.logException('PayPal', 'PayPalPaymentService.captureOrder.invoiceCreation', ex, 'Order', parseId(request.orderId));
@@ -289,6 +297,25 @@ public with sharing class PayPalPaymentService {
     }
     
     private static Quickbridge_Config__mdt getConfig() {
+        Quickbridge_Config__mdt config;
+        try {
+            config = Quickbridge_Config__mdt.getInstance('PayPal');
+        } catch(Exception e) {
+            config = null;
+        }
+        
+        // if (Test.isRunningTest()) {
+        //     Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
+        //     testConfig.PayPal_Active__c = config == null || config.PayPal_Active__c == null ? true : config.PayPal_Active__c;
+        //     testConfig.PayPal_StartDate__c = config == null ? null : config.PayPal_StartDate__c;
+        //     testConfig.PayPal_EndDate__c = config == null ? null : config.PayPal_EndDate__c;
+        //     testConfig.PayPal_ClientId__c = config == null || String.isBlank(config.PayPal_ClientId__c)
+        //         ? 'paypal-client-id-test'
+        //         : config.PayPal_ClientId__c;
+        //     testConfig.PayPal_UseSandbox__c = config == null || config.PayPal_UseSandbox__c == null ? true : config.PayPal_UseSandbox__c;
+        //     return testConfig;
+        // }
+        
         if (Test.isRunningTest()) {
             Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
             testConfig.PayPal_Active__c = true;
@@ -299,12 +326,9 @@ public with sharing class PayPalPaymentService {
             return testConfig;
         }
 
-        Quickbridge_Config__mdt config = new Quickbridge_Config__mdt();
-        config.PayPal_Active__c = ConnectorConfigResolver.getBoolean('paypal', 'PayPal_Active__c');
-        config.PayPal_ClientId__c = ConnectorConfigResolver.getValue('paypal', 'PayPal_ClientId__c');
-        config.PayPal_UseSandbox__c = ConnectorConfigResolver.getBoolean('paypal', 'PayPal_UseSandbox__c');
-        config.PayPal_StartDate__c = ConnectorConfigResolver.getDate('paypal', 'PayPal_StartDate__c');
-        config.PayPal_EndDate__c = ConnectorConfigResolver.getDate('paypal', 'PayPal_EndDate__c');
+        if (config == null) {
+            throw new AuraHandledException('PayPal configuration record was not found.');
+        }
         return config;
     }
     

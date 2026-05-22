@@ -135,10 +135,122 @@ public with sharing class PaymentMetadataService {
         return configs;
     }
 
+    @AuraEnabled(cacheable=false)
+    public static List<MetadataConfig> getConnectorConfigs() {
+        List<MetadataConfig> configs = new List<MetadataConfig>();
+        try {
+            for (ConnectorRegistryService.ConnectorDescriptor descriptor : ConnectorRegistryService.connectors()) {
+                if (descriptor.hasConfig != true) continue;
+                MetadataConfig config = new MetadataConfig();
+                config.provider = descriptor.connectorKey;
+                config.label = descriptor.label;
+                config.fields = new Map<String, String>();
+                config.editableFields = descriptor.editableFields != null ? descriptor.editableFields : new List<String>();
+
+                ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig(descriptor.connectorKey);
+                config.active = cfg.active == true;
+
+                // Populate expiry and start date under their legacy MDT field names so the
+                // LWC TILE_EXPIRY_FIELDS / TILE_START_FIELDS constants still work without change.
+                if (cfg.expiryDate != null && String.isNotBlank(descriptor.expiryField)) {
+                    config.fields.put(descriptor.expiryField, String.valueOf(cfg.expiryDate));
+                }
+                String startFieldKey = deriveStartFieldKey(descriptor.expiryField);
+                if (cfg.values != null && String.isNotBlank(startFieldKey)) {
+                    String startVal = cfg.values.containsKey(startFieldKey)
+                        ? cfg.values.get(startFieldKey)
+                        : cfg.values.get(startFieldKey.replace('start_date', 'Start_Date__c'));
+                    if (String.isNotBlank(startVal)) {
+                        config.fields.put(startFieldKey, startVal);
+                    }
+                }
+
+                // Populate all non-secret config values under both canonical and legacy field names
+                if (cfg.values != null) {
+                    for (String fieldKey : cfg.values.keySet()) {
+                        if (!isSecretConfigField(fieldKey)) {
+                            config.fields.put(fieldKey, cfg.values.get(fieldKey));
+                        }
+                    }
+                }
+
+                // Also populate active field so the config panel form shows the correct state
+                if (String.isNotBlank(descriptor.activeField)) {
+                    config.fields.put(descriptor.activeField, String.valueOf(config.active));
+                }
+
+                configs.add(config);
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'PaymentMetadataService.getConnectorConfigs exception: ' + e.getMessage());
+            ErrorLogUtility.logException('QuickBridge', 'PaymentMetadataService.getConnectorConfigs', e, null, null);
+        }
+        return configs;
+    }
+
     @AuraEnabled
-    public static MetadataUpdateResponse updatePaymentMetadata(String provider, String fieldValuesJson) {
+    public static MetadataUpdateResponse saveConnectorConfig(String connectorKey, String fieldValuesJson, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
         try {
+            QuickBridgeAdminSessionService.requireValidSession(sessionToken);
+
+            if (String.isBlank(connectorKey) || String.isBlank(fieldValuesJson)) {
+                response.success = false;
+                response.message = 'Invalid request parameters';
+                return response;
+            }
+
+            String normalizedKey = connectorKey.toLowerCase().trim();
+            ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(normalizedKey);
+            if (descriptor == null) {
+                response.success = false;
+                response.message = 'Unsupported connector: ' + connectorKey;
+                return response;
+            }
+
+            Map<String, Object> fieldValues = (Map<String, Object>) JSON.deserializeUntyped(fieldValuesJson);
+            for (String fieldKey : fieldValues.keySet()) {
+                // Skip active field — it is derived from expiry date, not set directly
+                if (fieldKey.containsIgnoreCase('Active')) continue;
+                Object val = fieldValues.get(fieldKey);
+                String strVal = val == null ? null : String.valueOf(val);
+                ConnectorConfigService.upsertNonSecretValue(normalizedKey, fieldKey, strVal);
+            }
+
+            response.success = true;
+            response.message = 'Configuration saved for ' + (descriptor.label != null ? descriptor.label : connectorKey);
+        } catch (AuraHandledException ahe) {
+            response.success = false;
+            response.message = ahe.getMessage();
+        } catch (Exception e) {
+            response.success = false;
+            response.message = 'Error saving configuration: ' + e.getMessage();
+            ErrorLogUtility.logException('QuickBridge', 'PaymentMetadataService.saveConnectorConfig', e, null, null);
+        }
+        return response;
+    }
+
+    private static String deriveStartFieldKey(String expiryFieldKey) {
+        if (String.isBlank(expiryFieldKey)) return null;
+        if (expiryFieldKey.containsIgnoreCase('End_Date__c')) return expiryFieldKey.replaceAll('(?i)End_Date__c', 'Start_Date__c');
+        if (expiryFieldKey.containsIgnoreCase('EndDate__c')) return expiryFieldKey.replaceAll('(?i)EndDate__c', 'StartDate__c');
+        if (expiryFieldKey.containsIgnoreCase('end_date')) return expiryFieldKey.replaceAll('(?i)end_date', 'start_date');
+        return null;
+    }
+
+    private static Boolean isSecretConfigField(String fieldName) {
+        String normalized = ConnectorRegistryService.normalize(fieldName);
+        return normalized.contains('secret') || normalized.contains('token') ||
+               normalized.contains('password') || normalized.contains('privatekey') ||
+               normalized.contains('clientsecret');
+    }
+
+    @AuraEnabled
+    public static MetadataUpdateResponse updatePaymentMetadata(String provider, String fieldValuesJson, String sessionToken) {
+        MetadataUpdateResponse response = new MetadataUpdateResponse();
+        try {
+            QuickBridgeAdminSessionService.requireValidSession(sessionToken);
+
             if (String.isBlank(provider) || String.isBlank(fieldValuesJson)) {
                 response.success = false;
                 response.message = 'Invalid request parameters';
@@ -181,15 +293,30 @@ public with sharing class PaymentMetadataService {
         return response;
     }
 
+    private static final String QB_PANEL_CONNECTOR_KEY = 'quickbridge';
+    private static final String AVAILABLE_PRODUCTS_VISIBLE_FIELD = 'available_products_visible';
+
     @AuraEnabled
     public static ConfigPanelPreferences getConfigPanelPreferences() {
         ConfigPanelPreferences preferences = new ConfigPanelPreferences();
         preferences.availableProductsVisible = true;
 
         try {
-            Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance('Default');
-            if (config != null && config.Available_Products_Visible__c != null) {
-                preferences.availableProductsVisible = config.Available_Products_Visible__c;
+            List<Connector_Config_Value__c> rows = [
+                SELECT Value__c
+                FROM Connector_Config_Value__c
+                WHERE Connector_Key__c = :QB_PANEL_CONNECTOR_KEY
+                  AND Field_Key__c = :AVAILABLE_PRODUCTS_VISIBLE_FIELD
+                LIMIT 1
+            ];
+            if (!rows.isEmpty() && String.isNotBlank(rows[0].Value__c)) {
+                preferences.availableProductsVisible = rows[0].Value__c == 'true';
+            } else {
+                // Fall back to legacy metadata while the object record doesn't exist yet
+                Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance('Default');
+                if (config != null && config.Available_Products_Visible__c != null) {
+                    preferences.availableProductsVisible = config.Available_Products_Visible__c;
+                }
             }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'PaymentMetadataService.getConfigPanelPreferences exception: ' + e.getMessage());
@@ -200,26 +327,29 @@ public with sharing class PaymentMetadataService {
     }
 
     @AuraEnabled
-    public static MetadataUpdateResponse updateAvailableProductsVisible(Boolean visible) {
+    public static MetadataUpdateResponse updateAvailableProductsVisible(Boolean visible, String sessionToken) {
         MetadataUpdateResponse response = new MetadataUpdateResponse();
         try {
-            Metadata.DeployContainer container = new Metadata.DeployContainer();
-            Metadata.CustomMetadata record = new Metadata.CustomMetadata();
-            record.fullName = METADATA_TYPE_NAME + '.Default';
-            record.label = 'Default';
+            QuickBridgeAdminSessionService.requireValidSession(sessionToken);
 
-            Metadata.CustomMetadataValue metaValue = new Metadata.CustomMetadataValue();
-            metaValue.field = 'Available_Products_Visible__c';
-            metaValue.value = visible == true;
-            record.values.add(metaValue);
-
-            container.addMetadata(record);
-            if (!Test.isRunningTest()) {
-                Metadata.Operations.enqueueDeployment(container, null);
-            }
+            String visibleStr = visible == true ? 'true' : 'false';
+            List<Connector_Config_Value__c> existing = [
+                SELECT Id
+                FROM Connector_Config_Value__c
+                WHERE Connector_Key__c = :QB_PANEL_CONNECTOR_KEY
+                  AND Field_Key__c = :AVAILABLE_PRODUCTS_VISIBLE_FIELD
+                LIMIT 1
+            ];
+            Connector_Config_Value__c row = existing.isEmpty() ? new Connector_Config_Value__c() : existing[0];
+            row.Name = QB_PANEL_CONNECTOR_KEY + ':' + AVAILABLE_PRODUCTS_VISIBLE_FIELD;
+            row.Connector_Key__c = QB_PANEL_CONNECTOR_KEY;
+            row.Field_Key__c = AVAILABLE_PRODUCTS_VISIBLE_FIELD;
+            row.Value__c = visibleStr;
+            row.Is_Secret_Reference__c = false;
+            upsert row;
 
             response.success = true;
-            response.message = 'Available Products display preference save initiated.';
+            response.message = 'Available Products display preference saved.';
         } catch (Exception e) {
             response.success = false;
             response.message = 'Error updating Available Products preference: ' + e.getMessage();
@@ -240,19 +370,11 @@ public with sharing class PaymentMetadataService {
             alert.provider = normalizedProvider;
             alert.providerLabel = PROVIDER_LABELS.get(normalizedProvider);
 
-            String expiryField = PROVIDER_EXPIRY_FIELDS.get(normalizedProvider);
-            String recordName = PROVIDER_RECORD_NAMES.get(normalizedProvider);
-            if (String.isBlank(expiryField) || String.isBlank(recordName)) {
+            ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig(normalizedProvider);
+            Date expiryDate = cfg.expiryDate;
+            if (expiryDate == null) {
                 return alert;
             }
-
-            String query = 'SELECT ' + expiryField + ' FROM ' + METADATA_TYPE_NAME + ' WHERE DeveloperName = :recordName LIMIT 1';
-            SObject metadataRecord = Database.query(query);
-            if (metadataRecord == null || metadataRecord.get(expiryField) == null) {
-                return alert;
-            }
-
-            Date expiryDate = (Date) metadataRecord.get(expiryField);
             Integer daysUntilExpiry = Date.today().daysBetween(expiryDate);
             if (daysUntilExpiry > EXPIRY_WARNING_DAYS) {
                 return alert;
@@ -277,6 +399,100 @@ public with sharing class PaymentMetadataService {
         }
 
         return alert;
+    }
+
+    private static final String RENEWAL_REQUEST_RECIPIENT = 'adnan@thelodestonegroup.com';
+
+    @AuraEnabled
+    public static MetadataUpdateResponse sendProductRenewalRequest(
+        List<String> renewalProductKeys,
+        List<String> additionalSubscriptionProductKeys,
+        String sessionToken
+    ) {
+        MetadataUpdateResponse response = new MetadataUpdateResponse();
+        try {
+            QuickBridgeAdminSessionService.requireValidSession(sessionToken);
+
+            List<String> safeRenewal = renewalProductKeys != null ? renewalProductKeys : new List<String>();
+            List<String> safeAdditional = additionalSubscriptionProductKeys != null ? additionalSubscriptionProductKeys : new List<String>();
+
+            if (safeRenewal.isEmpty() && safeAdditional.isEmpty()) {
+                response.success = false;
+                response.message = 'Select at least one product to include in the renewal request.';
+                return response;
+            }
+
+            // Validate all product keys
+            List<String> allKeys = new List<String>(safeRenewal);
+            allKeys.addAll(safeAdditional);
+            for (String key : allKeys) {
+                if (String.isBlank(key)) continue;
+                String normalized = key.toLowerCase().trim();
+                if (!PROVIDER_LABELS.containsKey(normalized)) {
+                    response.success = false;
+                    response.message = 'Unsupported product key: ' + key;
+                    return response;
+                }
+            }
+
+            List<String> renewalLabels = resolveProviderLabels(safeRenewal);
+            List<String> additionalLabels = resolveProviderLabels(safeAdditional);
+            String emailBody = buildProductRenewalRequestEmailBody(renewalLabels, additionalLabels);
+
+            Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+            email.setToAddresses(new List<String>{ RENEWAL_REQUEST_RECIPIENT });
+            email.setSubject('QuickBridge Renewal Request');
+            email.setPlainTextBody(emailBody);
+            if (!Test.isRunningTest()) {
+                Messaging.sendEmail(new List<Messaging.SingleEmailMessage>{ email }, false);
+            }
+
+            response.success = true;
+            response.message = 'Renewal request sent to ' + RENEWAL_REQUEST_RECIPIENT;
+        } catch (AuraHandledException ahe) {
+            response.success = false;
+            response.message = ahe.getMessage();
+        } catch (Exception e) {
+            response.success = false;
+            response.message = 'Error sending renewal request: ' + e.getMessage();
+            ErrorLogUtility.logException('QuickBridge', 'PaymentMetadataService.sendProductRenewalRequest', e, null, null);
+        }
+        return response;
+    }
+
+    @TestVisible
+    private static List<String> resolveProviderLabels(List<String> productKeys) {
+        List<String> labels = new List<String>();
+        Set<String> seenKeys = new Set<String>();
+        if (productKeys == null) return labels;
+        for (String key : productKeys) {
+            if (String.isBlank(key)) continue;
+            String normalized = key.toLowerCase().trim();
+            if (seenKeys.contains(normalized)) continue;
+            seenKeys.add(normalized);
+            String label = PROVIDER_LABELS.get(normalized);
+            if (String.isNotBlank(label)) labels.add(label);
+        }
+        return labels;
+    }
+
+    @TestVisible
+    private static String buildProductRenewalRequestEmailBody(List<String> renewalLabels, List<String> additionalLabels) {
+        List<String> lines = new List<String>();
+        lines.add('Renewal for existing subscriptions:');
+        lines.addAll(formatProductLines(renewalLabels));
+        lines.add('');
+        lines.add('Additional subscriptions requested:');
+        lines.addAll(formatProductLines(additionalLabels));
+        return String.join(lines, '\n');
+    }
+
+    @TestVisible
+    private static List<String> formatProductLines(List<String> labels) {
+        if (labels == null || labels.isEmpty()) return new List<String>{ '- None selected' };
+        List<String> lines = new List<String>();
+        for (String label : labels) lines.add('- ' + label);
+        return lines;
     }
 
     private static MetadataConfig buildMetadataConfig(String provider) {
@@ -334,6 +550,7 @@ public with sharing class PaymentMetadataService {
         return normalizedProvider;
     }
 
+    @TestVisible
     private static String buildExpiryMessage(String providerLabel, Date expiryDate, Integer daysUntilExpiry) {
         String expiryText = String.valueOf(expiryDate);
         if (daysUntilExpiry < 0) {
@@ -346,6 +563,7 @@ public with sharing class PaymentMetadataService {
             ' (' + expiryText + '). Please renew the subscription.';
     }
 
+    @TestVisible
     private static List<User> getActiveSystemAdmins() {
         return [
             SELECT Id, Email
@@ -357,6 +575,7 @@ public with sharing class PaymentMetadataService {
         ];
     }
 
+    @TestVisible
     private static void sendRenewalEmailToSystemAdmins(IntegrationExpiryAlert alert) {
         try {
             List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
@@ -384,6 +603,7 @@ public with sharing class PaymentMetadataService {
         }
     }
 
+    @TestVisible
     private static void sendRenewalNotification(IntegrationExpiryAlert alert) {
         try {
             List<CustomNotificationType> notificationTypes = [

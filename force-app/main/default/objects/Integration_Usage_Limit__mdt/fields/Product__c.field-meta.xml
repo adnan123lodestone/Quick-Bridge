@@ -9,13 +9,41 @@
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>QuickBooks</fullName><default>false</default><label>QuickBooks</label></value>
-            <value><fullName>Shopify</fullName><default>false</default><label>Shopify</label></value>
-            <value><fullName>Stripe</fullName><default>false</default><label>Stripe</label></value>
-            <value><fullName>Authorize.Net</fullName><default>false</default><label>Authorize.Net</label></value>
-            <value><fullName>PayPal</fullName><default>false</default><label>PayPal</label></value>
-            <value><fullName>FedEx</fullName><default>false</default><label>FedEx</label></value>
-            <value><fullName>UPS</fullName><default>false</default><label>UPS</label></value>
+            <value>
+                <fullName>QuickBooks</fullName>
+                <default>false</default>
+                <label>QuickBooks</label>
+            </value>
+            <value>
+                <fullName>Shopify</fullName>
+                <default>false</default>
+                <label>Shopify</label>
+            </value>
+            <value>
+                <fullName>Stripe</fullName>
+                <default>false</default>
+                <label>Stripe</label>
+            </value>
+            <value>
+                <fullName>Authorize.Net</fullName>
+                <default>false</default>
+                <label>Authorize.Net</label>
+            </value>
+            <value>
+                <fullName>PayPal</fullName>
+                <default>false</default>
+                <label>PayPal</label>
+            </value>
+            <value>
+                <fullName>FedEx</fullName>
+                <default>false</default>
+                <label>FedEx</label>
+            </value>
+            <value>
+                <fullName>UPS</fullName>
+                <default>false</default>
+                <label>UPS</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

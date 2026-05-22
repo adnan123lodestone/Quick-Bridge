@@ -4,5 +4,6 @@
     <label>Created DateTime</label>
     <required>false</required>
     <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>DateTime</type>
 </CustomField>

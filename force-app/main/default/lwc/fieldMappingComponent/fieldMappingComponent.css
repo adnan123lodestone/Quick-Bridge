@@ -619,6 +619,15 @@ fieldset {
     }
 }
 
+/* Sync direction color coding */
+.sync-dir-two-way {
+    border: 2px solid #22c55e !important;
+}
+
+.sync-dir-one-way {
+    border: 2px solid #3b82f6 !important;
+}
+
 /* Fixed layout table - equal column distribution */
 .new-mapping-table.fixed-layout {
     table-layout: fixed;

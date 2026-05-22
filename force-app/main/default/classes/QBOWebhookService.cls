@@ -11,7 +11,9 @@ global without sharing class QBOWebhookService {
             String requestBody = req.requestBody.toString();
             String intuitSignature = req.headers.get('intuit-signature');
             
-            String verifierToken = ConnectorConfigResolver.getValue('qbo', 'QuickBooks_Verifier_Token__c');
+            // Fetch Verifier Token dynamically from Custom Metadata
+            List<Quickbridge_Config__mdt> configs = [SELECT QuickBooks_Verifier_Token__c FROM Quickbridge_Config__mdt WHERE Label = 'QuickBooks' LIMIT 1];
+            String verifierToken = configs.isEmpty() ? '' : configs[0].QuickBooks_Verifier_Token__c;
             
             // SECURITY CHECK: Verify Intuit Signature
             if (String.isNotBlank(verifierToken)) {
@@ -32,17 +34,7 @@ global without sharing class QBOWebhookService {
                     return;
                 }
             } else {
-                ErrorLogUtility.logCalloutFailure(
-                    'QuickBooks',
-                    'QBOWebhookService.handleIncomingWebhook',
-                    'QuickBooks verifier token not configured. Webhook rejected (fail-closed).',
-                    503,
-                    null,
-                    null
-                );
-                res.statusCode = 503;
-                res.responseBody = Blob.valueOf('Webhook verification not configured.');
-                return;
+                System.debug('WARNING: Verifier Token not found in Metadata. Proceeding without verification.');
             }
             
             // Parse the JSON Payload to extract Event Notifications

@@ -3,8 +3,9 @@
     <fullName>Order_Id__c</fullName>
     <externalId>false</externalId>
     <label>Order Id</label>
-    <length>20</length>
+    <length>255</length>
     <required>false</required>
+    <trackHistory>false</trackHistory>
     <trackTrending>false</trackTrending>
     <type>Text</type>
     <unique>false</unique>

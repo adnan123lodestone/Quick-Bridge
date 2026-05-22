@@ -1,10 +1,14 @@
 public with sharing class IntegrationProductSeedService {
+    @TestVisible
+    private static final String UPS_CDN_LOGO_URL = 'https://cdn.worldvectorlogo.com/logos/ups-1.svg';
+
     public static void seedDefaultProducts() {
         List<Integration_Product__c> products = defaultProducts();
         if (products.isEmpty()) {
             return;
         }
         upsert products Integration_Product__c.Product_Key__c;
+        repairKnownLogoOverrides();
         IntegrationConnectorRegistry.clearCache();
     }
 
@@ -17,8 +21,25 @@ public with sharing class IntegrationProductSeedService {
             product('Authorize.Net', 'authorizenet', 'authorizenet', 'Authorize.Net', 'authorizenet,authorize.net,authorize net,authnet', 'Payment', 40, null, 'AuthorizeNet', 'AuthorizeNet_Active__c', 'AuthorizeNet_End_Date__c', 'Company_Name__c,AuthorizeNet_API_Login_ID__c,AuthorizeNet_Public_Client_Key__c,AuthorizeNet_Webhook_Signing_Key__c,AuthorizeNet_Active__c,AuthorizeNet_Use_Sandbox__c,AuthorizeNet_Start_Date__c,AuthorizeNet_End_Date__c', true, false, false, true, true, false),
             product('PayPal', 'paypal', 'paypal', 'PayPal', 'paypal,pay pal', 'Payment', 50, 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c', 'Company_Name__c,PayPal_ClientId__c,PayPal_Active__c,PayPal_UseSandbox__c,PayPal_StartDate__c,PayPal_EndDate__c', true, false, false, true, true, false),
             product('FedEx', 'fedex', 'fedex', 'FedEx', 'fedex', 'Carrier', 60, null, 'FedEx', 'FedEx_Active__c', 'FedEx_End_Date__c', 'FedEx_Client_Id__c,FedEx_Client_Secret__c,FedEx_Account_Number__c,FedEx_Environment__c,FedEx_Default_Service_Type__c,FedEx_Default_Packaging_Type__c,FedEx_Default_Pickup_Type__c,FedEx_Active__c,FedEx_Start_Date__c,FedEx_End_Date__c', true, true, false, false, false, true),
-            product('UPS', 'ups', 'ups', 'UPS', 'ups', 'Carrier', 70, 'https://cdn.worldvectorlogo.com/logos/ups-1.svg', 'UPS', 'UPS_Active__c', 'UPS_End_Date__c', 'UPS_Client_Id__c,UPS_Client_Secret__c,UPS_Account_Number__c,UPS_Environment__c,UPS_Default_Service_Code__c,UPS_Active__c,UPS_Start_Date__c,UPS_End_Date__c', true, true, false, false, false, true)
+            product('UPS', 'ups', 'ups', 'UPS', 'ups', 'Carrier', 70, null, 'UPS', 'UPS_Active__c', 'UPS_End_Date__c', 'UPS_Client_Id__c,UPS_Client_Secret__c,UPS_Account_Number__c,UPS_Environment__c,UPS_Default_Service_Code__c,UPS_Active__c,UPS_Start_Date__c,UPS_End_Date__c', true, true, false, false, false, true)
         };
+    }
+
+    @TestVisible
+    static void repairKnownLogoOverrides() {
+        List<Integration_Product__c> productsToRepair = [
+            SELECT Id, Logo_URL__c
+            FROM Integration_Product__c
+            WHERE (Product_Key__c IN ('ups', 'UPS') OR Connector_Key__c IN ('ups', 'UPS'))
+            AND Logo_URL__c = :UPS_CDN_LOGO_URL
+        ];
+        if (productsToRepair.isEmpty()) {
+            return;
+        }
+        for (Integration_Product__c productRow : productsToRepair) {
+            productRow.Logo_URL__c = null;
+        }
+        update productsToRepair;
     }
 
     private static Integration_Product__c product(

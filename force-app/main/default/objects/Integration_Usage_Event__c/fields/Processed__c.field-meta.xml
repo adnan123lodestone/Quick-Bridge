@@ -3,5 +3,6 @@
     <fullName>Processed__c</fullName>
     <defaultValue>false</defaultValue>
     <label>Processed</label>
+    <trackTrending>false</trackTrending>
     <type>Checkbox</type>
 </CustomField>

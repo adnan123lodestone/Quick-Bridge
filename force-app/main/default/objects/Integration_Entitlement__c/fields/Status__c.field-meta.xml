@@ -4,14 +4,28 @@
     <defaultValue>&quot;Unknown&quot;</defaultValue>
     <label>Status</label>
     <required>true</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Picklist</type>
     <valueSet>
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>Active</fullName><default>false</default><label>Active</label></value>
-            <value><fullName>Inactive</fullName><default>false</default><label>Inactive</label></value>
-            <value><fullName>Unknown</fullName><default>true</default><label>Unknown</label></value>
+            <value>
+                <fullName>Active</fullName>
+                <default>false</default>
+                <label>Active</label>
+            </value>
+            <value>
+                <fullName>Inactive</fullName>
+                <default>false</default>
+                <label>Inactive</label>
+            </value>
+            <value>
+                <fullName>Unknown</fullName>
+                <default>true</default>
+                <label>Unknown</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

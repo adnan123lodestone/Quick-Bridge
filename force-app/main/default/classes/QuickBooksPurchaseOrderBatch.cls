@@ -19,6 +19,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
             List<SObject> recordsToUpdate = new List<SObject>();
 
             Map<String, String> fieldMap = QBObjectMappings.getPurchaseOrderMapping();
+            Map<String, String> lineFieldMap = QBObjectMappings.getPurchaseOrderLineMapping();
             
             Set<String> fieldsToQuery = new Set<String>{'Id', 'External_Id__c', 'Supplier__c', 'Account__c'};
             fieldsToQuery.addAll(fieldMap.keySet());
@@ -41,13 +42,13 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                 String qbId = (String)currentRecord.get('External_Id__c');
                 
                 if (qbId == null && isInitialSync) {
-                    String newQbId = createPurchaseOrder(currentRecord, childItems, fieldMap);
+                    String newQbId = createPurchaseOrder(currentRecord, childItems, fieldMap, lineFieldMap);
                     if (newQbId != null) {
                         currentRecord.put('External_Id__c', newQbId);
                         recordsToUpdate.add(currentRecord);
                     }
                 } else if (qbId != null && !isInitialSync) {
-                    updatePurchaseOrder(currentRecord, childItems, fieldMap, qbId);
+                    updatePurchaseOrder(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
                 }
             }
             
@@ -72,7 +73,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         System.debug('QuickBooksPurchaseOrderBatch completed.');
     }
     
-    private String createPurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
+    private String createPurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, Map<String, String> lineFieldMap) {
         Map<String, Object> requestBody = new Map<String, Object>();
         
         SObject vendorRef = record.getSObject('Supplier__r');
@@ -81,8 +82,8 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         }
         
         applyDynamicMappings(requestBody, record, fieldMap);
-        requestBody.put('Line', buildLineItems(lineItems, record));
-        
+        requestBody.put('Line', buildLineItems(lineItems, record, lineFieldMap));
+
         String requestJson = JSON.serialize(requestBody);
         HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder?minorversion=65', requestJson);
         
@@ -101,7 +102,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         return null;
     }
     
-    private void updatePurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, String qbId) {
+    private void updatePurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
         HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/purchaseorder/' + qbId + '?minorversion=65', null);
         if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
@@ -123,8 +124,8 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         requestBody.put('sparse', true); 
         
         applyDynamicMappings(requestBody, record, fieldMap);
-        requestBody.put('Line', buildLineItems(lineItems, record));
-        
+        requestBody.put('Line', buildLineItems(lineItems, record, lineFieldMap));
+
         String requestJson = JSON.serialize(requestBody);
         HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder?minorversion=65', requestJson);
         if (updateRes == null || updateRes.getStatusCode() != 200) {
@@ -142,13 +143,18 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     private void applyDynamicMappings(Map<String, Object> requestBody, SObject record, Map<String, String> fieldMap) {
         for (String sfField : fieldMap.keySet()) {
             String qbField = fieldMap.get(sfField);
-            Object value = record.get(sfField);
-            
+            // Skip if the top-level QB key is already set (e.g. VendorRef already resolved via relationship)
+            String topKey = qbField.contains('.') ? qbField.substringBefore('.') : qbField;
+            if (requestBody.containsKey(topKey)) continue;
+
+            Object value = null;
+            try { value = record.get(sfField); } catch(Exception e) {}
+
             if (value != null) {
                 if (value instanceof Date) {
                     value = DateTime.newInstance((Date)value, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
                 }
-                
+
                 if (qbField.contains('.')) {
                     List<String> path = qbField.split('\\.');
                     Map<String, Object> currentMap = requestBody;
@@ -165,44 +171,62 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         }
     }
     
-    private List<Map<String, Object>> buildLineItems(List<SObject> lineItems, SObject record) {
+    private List<Map<String, Object>> buildLineItems(List<SObject> lineItems, SObject record, Map<String, String> lineFieldMap) {
         List<Map<String, Object>> qbLines = new List<Map<String, Object>>();
-        
+
         SObject customerRef = record.getSObject('Account__r');
         String customerQbId = (customerRef != null) ? (String)customerRef.get('QuickbookID__c') : null;
-        
+
+        String qtyField = fieldKeyFor(lineFieldMap, 'Line.ItemBasedExpenseLineDetail.Qty', 'Quantity__c');
+        String rateField = fieldKeyFor(lineFieldMap, 'Line.ItemBasedExpenseLineDetail.UnitPrice', 'Cost_Price__c');
+        String descField = fieldKeyFor(lineFieldMap, 'Line.Description', 'Product_Description__c');
+
         for (SObject item : lineItems) {
-            Decimal quantity = (Decimal)item.get('Quantity__c');
-            Decimal rate = (Decimal)item.get('Cost_Price__c');
+            Decimal quantity = 0;
+            Decimal rate = 0;
+            try { quantity = (Decimal)item.get(qtyField); } catch(Exception e){}
+            try { rate = (Decimal)item.get(rateField); } catch(Exception e){}
             Decimal lineAmount = (quantity != null && rate != null) ? (quantity * rate) : 0;
-            
-            SObject product = item.getSObject('Product__r');
+
+            String descText = '';
+            try { descText = (String)item.get(descField); } catch(Exception e){}
+
+            SObject product = null;
+            try { product = item.getSObject('Product__r'); } catch(Exception e){}
             String productQbId = product != null ? (String)product.get('QuickbookID__c') : null;
-            
+
             Map<String, Object> lineDetail = new Map<String, Object>{
                 'DetailType' => 'ItemBasedExpenseLineDetail',
                 'Amount' => lineAmount,
-                'Description' => item.get('Product_Description__c'),
+                'Description' => descText,
                 'ItemBasedExpenseLineDetail' => new Map<String, Object>{
                     'Qty' => quantity,
                     'UnitPrice' => rate
                 }
             };
-            
+
             if(productQbId != null) {
                 ((Map<String, Object>)lineDetail.get('ItemBasedExpenseLineDetail')).put('ItemRef', new Map<String, String>{
                     'value' => productQbId
                 });
             }
-            
+
             if(customerQbId != null) {
                 ((Map<String, Object>)lineDetail.get('ItemBasedExpenseLineDetail')).put('CustomerRef', new Map<String, String>{
                     'value' => customerQbId
                 });
             }
-            
+
             qbLines.add(lineDetail);
         }
         return qbLines;
+    }
+
+    private static String fieldKeyFor(Map<String, String> fieldMap, String qbPath, String defaultSfField) {
+        if (fieldMap == null) return defaultSfField;
+        for (String sf : fieldMap.keySet()) {
+            if (fieldMap.get(sf) == qbPath) return sf;
+        }
+        return defaultSfField;
     }
 }

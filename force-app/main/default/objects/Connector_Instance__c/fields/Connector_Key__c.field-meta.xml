@@ -6,6 +6,8 @@
     <label>Connector Key</label>
     <length>80</length>
     <required>true</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Text</type>
     <unique>true</unique>
 </CustomField>

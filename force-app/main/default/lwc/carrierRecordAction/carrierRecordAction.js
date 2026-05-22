@@ -1,11 +1,15 @@
-import { LightningElement, api, track } from 'lwc';
+import { LightningElement, api, track, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import getActiveCarriers from '@salesforce/apex/CarrierRecordActionController.getActiveCarriers';
+import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import getActionsForObject from '@salesforce/apex/CarrierRecordActionController.getActionsForObject';
 import updateCarrierType from '@salesforce/apex/CarrierRecordActionController.updateCarrierType';
 import runAction from '@salesforce/apex/CarrierRecordActionController.runAction';
-import applyValidatedAddress from '@salesforce/apex/CarrierRecordActionController.applyValidatedAddress';
 import selectRateQuote from '@salesforce/apex/CarrierRecordActionController.selectRateQuote';
+
+const CARRIER_OPTIONS = [
+    { label: 'FedEx', value: 'FedEx' },
+    { label: 'UPS',   value: 'UPS'   }
+];
 
 export default class CarrierRecordAction extends LightningElement {
     @api recordId;
@@ -23,22 +27,15 @@ export default class CarrierRecordAction extends LightningElement {
     @track confirmedAddress = null;
     @track activeActionName = null;
 
-    @track carrierOptions = [];
+    carrierOptions = CARRIER_OPTIONS;
 
     connectedCallback() {
-        this.loadActiveCarriersAndPanel();
+        this.loadPanel();
     }
 
-    loadActiveCarriersAndPanel() {
+    loadPanel() {
         this.isPanelLoading = true;
-        getActiveCarriers()
-            .then((carriers) => {
-                const options = [];
-                if (carriers.fedexActive) options.push({ label: 'FedEx', value: 'FedEx' });
-                if (carriers.upsActive)   options.push({ label: 'UPS',   value: 'UPS'   });
-                this.carrierOptions = options;
-                return getActionsForObject({ recordId: this.recordId, objectApiName: this.objectApiName });
-            })
+        getActionsForObject({ recordId: this.recordId, objectApiName: this.objectApiName })
             .then((data) => {
                 this.carrierType = data.carrierType;
                 this.actions = data.actions || [];
@@ -49,10 +46,6 @@ export default class CarrierRecordAction extends LightningElement {
             .finally(() => {
                 this.isPanelLoading = false;
             });
-    }
-
-    get hasActiveCarriers() {
-        return this.carrierOptions && this.carrierOptions.length > 0;
     }
 
     get hasActions() {
@@ -136,11 +129,7 @@ export default class CarrierRecordAction extends LightningElement {
     handleConfirmAddress() {
         this.showConfirmModal = false;
         this.isLoading = true;
-        applyValidatedAddress({
-            recordId: this.recordId,
-            objectApiName: this.objectApiName,
-            validatedAddress: this.confirmedAddress
-        })
+        runAction({ recordId: this.recordId, objectApiName: this.objectApiName, actionName: 'validateAddressAndUpdate' })
             .then((res) => {
                 if (res.success) {
                     this.showToast('Success', 'Validated address applied to record.', 'success');
@@ -197,24 +186,7 @@ export default class CarrierRecordAction extends LightningElement {
 
     get confirmedAddressLines() {
         if (!this.confirmedAddress) return [];
-        const addr = this.confirmedAddress;
-
-        const rawStreet = addr.streetLines || addr.streetLinesToken || addr.STREETLINESTOKEN || addr.STREETLINES;
-        const street = Array.isArray(rawStreet)
-            ? rawStreet.filter(Boolean).join(', ')
-            : (rawStreet || null);
-
-        const fields = [
-            { key: 'Street',      value: street },
-            { key: 'City',        value: addr.city        || addr.CITY        || null },
-            { key: 'State',       value: addr.stateOrProvinceCode || addr.STATEORPROVINCECODE || null },
-            { key: 'Postal Code', value: addr.postalCode  || addr.POSTALCODE  || null },
-            { key: 'Country',     value: addr.countryCode || addr.COUNTRYCODE || null },
-            { key: 'Residential', value: addr.residential != null ? String(addr.residential)
-                                        : (addr.CLASSIFICATION ? addr.CLASSIFICATION : null) },
-        ];
-
-        return fields.filter(f => f.value != null && f.value !== '');
+        return Object.entries(this.confirmedAddress).map(([k, v]) => ({ key: k, value: v }));
     }
 
     get hasRateQuotes() {

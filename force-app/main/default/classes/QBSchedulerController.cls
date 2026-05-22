@@ -1,66 +1,66 @@
 public with sharing class QBSchedulerController {
-    
+
     @AuraEnabled(cacheable=true)
     public static List<Map<String, Object>> getScheduledJobs() {
         return GenericSchedulerController.getScheduledJobs('qbo');
     }
-    
+
     @AuraEnabled
-    public static String scheduleJob(String freqValue, String freqType, String selectedObject) {
+    public static String scheduleJob(String freqValue, String freqType, String selectedObject, Boolean isSfToQbo) {
         try {
             QuickBooksAuthHandler.validateConfiguration();
-            return GenericSchedulerController.scheduleJob('qbo', freqValue, freqType, selectedObject, null);
-            
+            return GenericSchedulerController.scheduleJob('qbo', freqValue, freqType, selectedObject, isSfToQbo == false ? 'In' : 'Out');
+
         } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.scheduleJob', e, 'Error: '); }
     }
-    
+
     @AuraEnabled
     public static String stopJob() {
         try {
             return GenericSchedulerController.stopConnectorSchedules('qbo');
         } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.stopJob', e, 'Error stopping job: '); }
     }
-    
+
     @AuraEnabled(cacheable=true)
     public static Map<String, String> getSyncSettingsSummary() {
         Map<String, String> summary = new Map<String, String>();
-        
+
         try {
             List<Field_Mapping__mdt> mappings = [
                 SELECT SF_Object__c
                 FROM Field_Mapping__mdt
                 WHERE Integration__c = 'qbonline' AND Is_Active__c = true
             ];
-            
+
             Set<String> uniqueObjects = new Set<String>();
             for (Field_Mapping__mdt fm : mappings) {
                 if (String.isNotBlank(fm.SF_Object__c)) {
                     uniqueObjects.add(fm.SF_Object__c);
                 }
             }
-            
+
             List<String> objectNames = new List<String>(uniqueObjects);
-            objectNames.sort(); 
-            
+            objectNames.sort();
+
             summary.put('objects', objectNames.isEmpty() ? 'No objects mapped' : String.join(objectNames, ', '));
-            summary.put('direction', 'Salesforce to QuickBooks Online');
+            summary.put('direction', 'Salesforce ↔ QuickBooks Online');
             summary.put('type', 'Incremental Sync');
-            
+
         } catch(Exception e) {
             System.debug('Error in getSyncSettingsSummary: ' + e.getMessage());
             logSchedulerException('QuickBooks', 'QBSchedulerController.getSyncSettingsSummary', e);
             summary.put('objects', 'Error loading objects');
-            summary.put('direction', 'Salesforce to QuickBooks Online');
+            summary.put('direction', 'Salesforce ↔ QuickBooks Online');
             summary.put('type', 'Incremental Sync');
         }
-        
+
         return summary;
     }
-    
+
     @AuraEnabled(cacheable=true)
     public static List<Map<String, Object>> getRecentRuns(String jobId) {
         List<Map<String, Object>> runList = new List<Map<String, Object>>();
-        
+
         if (String.isBlank(jobId)) {
             return runList;
         }
@@ -79,12 +79,12 @@ public with sharing class QBSchedulerController {
             runMap.put('failed', job.NumberOfErrors);
             runMap.put('icon', job.NumberOfErrors > 0 ? 'utility:warning' : 'utility:success');
             runMap.put('variant', job.NumberOfErrors > 0 ? 'warning' : 'success');
-            
+
             runList.add(runMap);
         }
         return runList;
     }
-    
+
     private static Id createLogicalSchedule(
         String integrationType,
         String selectedObject,
@@ -117,7 +117,7 @@ public with sharing class QBSchedulerController {
         }
         return trackedJob.Id;
     }
-    
+
     @AuraEnabled
     public static void togglePauseStatus(Boolean pauseIt) {
         try {
@@ -128,7 +128,7 @@ public with sharing class QBSchedulerController {
             QuickBridgeAdminGuard.audit('SCHEDULE_PAUSE_TOGGLE', 'qbo', 'Success', 'paused=' + String.valueOf(pauseIt == true), null);
         } catch (Exception e) { throw schedulerException('QuickBooks', 'QBSchedulerController.togglePauseStatus', e, 'Setting update failed: '); }
     }
-    
+
     @AuraEnabled(cacheable=true)
     public static Boolean getPauseStatus() {
         QuickBridgeAdminGuard.requireView();

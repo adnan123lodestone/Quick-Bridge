@@ -3,5 +3,6 @@
     <fullName>Occurred_At__c</fullName>
     <label>Occurred At</label>
     <required>false</required>
+    <trackTrending>false</trackTrending>
     <type>DateTime</type>
 </CustomField>

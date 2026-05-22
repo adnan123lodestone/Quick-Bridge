@@ -20,6 +20,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
             Map<String, String> fieldMap = new Map<String, String>();
             try { fieldMap = QBObjectMappings.getCreditMemoMapping(); } catch(Exception e){}
             if (fieldMap == null) fieldMap = new Map<String, String>();
+            Map<String, String> lineFieldMap = QBObjectMappings.getCreditMemoLineMapping();
             
             if (Test.isRunningTest()) {
                 fieldMap.put('Id', 'Id');
@@ -97,7 +98,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                 }
                 
                 if (qbId == null) {
-                    String newQbId = createCreditMemo(currentRecord, childItems, fieldMap);
+                    String newQbId = createCreditMemo(currentRecord, childItems, fieldMap, lineFieldMap);
                     if (newQbId != null) {
                         try { currentRecord.put('External_Id__c', newQbId); } catch(Exception e){}
                         try { currentRecord.put('QuickBridgeTLG__External_Id__c', newQbId); } catch(Exception e){}
@@ -105,7 +106,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                     }
                 }
                 else if (qbId != null && !isInitialSync) {
-                    updateCreditMemo(currentRecord, childItems, fieldMap, qbId);
+                    updateCreditMemo(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
                 }
             }
             
@@ -130,7 +131,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         System.debug('QuickBooksCreditMemoBatch completed.');
     }
     
-    private String createCreditMemo(sObject record, List<sObject> lineItems, Map<String, String> fieldMap) {
+    private String createCreditMemo(sObject record, List<sObject> lineItems, Map<String, String> fieldMap, Map<String, String> lineFieldMap) {
         Map<String, Object> requestBody = new Map<String, Object>();
         
         try {
@@ -160,7 +161,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         } catch(Exception e) { }
         
         applyDynamicMappings(requestBody, record, fieldMap);
-        requestBody.put('Line', buildLineItems(lineItems));
+        requestBody.put('Line', buildLineItems(lineItems, lineFieldMap));
         // Item Sales Tax
         String taxCodeQbId = null;
         try {
@@ -169,7 +170,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                 taxCodeQbId = (String)taxRef.get('QuickBridgeTLG__External_Id__c');
             }
         } catch(Exception e){}
-        
+
         if(taxCodeQbId != null) {
             Map<String, Object> txnTaxDetail = new Map<String, Object>{
                 'TxnTaxCodeRef' => new Map<String, String>{ 'value' => taxCodeQbId }
@@ -195,7 +196,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         return null;
     }
     
-    private void updateCreditMemo(sObject record, List<sObject> lineItems, Map<String, String> fieldMap, String qbId) {
+    private void updateCreditMemo(sObject record, List<sObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
         HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/creditmemo/' + qbId + '?minorversion=65', null);
         if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
@@ -217,7 +218,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         requestBody.put('sparse', true);
         
         applyDynamicMappings(requestBody, record, fieldMap);
-        requestBody.put('Line', buildLineItems(lineItems));
+        requestBody.put('Line', buildLineItems(lineItems, lineFieldMap));
         // Item Sales Tax
         String taxCodeQbId = null;
         try {
@@ -226,7 +227,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                 taxCodeQbId = (String)taxRef.get('QuickBridgeTLG__External_Id__c');
             }
         } catch(Exception e){}
-        
+
         if(taxCodeQbId != null) {
             Map<String, Object> txnTaxDetail = new Map<String, Object>{
                 'TxnTaxCodeRef' => new Map<String, String>{ 'value' => taxCodeQbId }
@@ -252,20 +253,24 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         if(fieldMap == null) return;
         for (String sfField : fieldMap.keySet()) {
             String qbField = fieldMap.get(sfField);
+            // Skip if the top-level QB key is already set (e.g. CustomerRef already resolved via relationship)
+            String topKey = qbField.contains('.') ? qbField.substringBefore('.') : qbField;
+            if (requestBody.containsKey(topKey)) continue;
+
             Object value = null;
             try { value = record.get(sfField); } catch(Exception e) {}
-            
+
             if (Test.isRunningTest()) {
                 if (sfField == 'TestDate') value = Date.today();
                 else if (sfField == 'TestNested') value = 'NestedValue';
                 else if (sfField == 'Id') value = 'SomeId123';
             }
-            
+
             if (value != null) {
                 if (value instanceof Date) {
                     value = DateTime.newInstance((Date)value, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
                 }
-                
+
                 if (qbField.contains('.')) {
                     List<String> path = qbField.split('\\.');
                     Map<String, Object> currentMap = requestBody;
@@ -282,36 +287,40 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         }
     }
     
-    private List<Map<String, Object>> buildLineItems(List<sObject> lineItems) {
+    private List<Map<String, Object>> buildLineItems(List<sObject> lineItems, Map<String, String> lineFieldMap) {
         List<Map<String, Object>> qbLines = new List<Map<String, Object>>();
         if(lineItems == null) return qbLines;
-        
+
+        String qtyField = fieldKeyFor(lineFieldMap, 'Line.SalesItemLineDetail.Qty', 'Quantity__c');
+        String rateField = fieldKeyFor(lineFieldMap, 'Line.SalesItemLineDetail.UnitPrice', 'Rate__c');
+        String descField = fieldKeyFor(lineFieldMap, 'Line.Description', 'Description__c');
+
         for (sObject item : lineItems) {
             Decimal quantity = 0;
             Decimal rate = 0;
-            
-            try { quantity = (Decimal)item.get('Quantity__c'); } catch(Exception e){}
+
+            try { quantity = (Decimal)item.get(qtyField); } catch(Exception e){}
             if(quantity == null || quantity == 0) {
                 try { quantity = (Decimal)item.get('QuickBridgeTLG__Quantity__c'); } catch(Exception e){}
             }
-            
-            try { rate = (Decimal)item.get('Rate__c'); } catch(Exception e){}
+
+            try { rate = (Decimal)item.get(rateField); } catch(Exception e){}
             if(rate == null || rate == 0) {
                 try { rate = (Decimal)item.get('QuickBridgeTLG__Rate__c'); } catch(Exception e){}
             }
-            
+
             Decimal lineAmount = (quantity != null && rate != null) ? (quantity * rate) : 0;
-            
+
             sObject product = null;
             try { product = item.getSObject('Product__r'); } catch(Exception e){}
             if(product == null) {
                 try { product = item.getSObject('QuickBridgeTLG__Product__r'); } catch(Exception e){}
             }
-            
+
             if (Test.isRunningTest() && product == null) {
                 product = new Product2(Name='Dummy Product');
             }
-            
+
             String productQbId = null;
             if(product != null) {
                 try { productQbId = (String)product.get('QuickbookID__c'); } catch(Exception e){}
@@ -320,28 +329,36 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                 }
                 if (Test.isRunningTest() && productQbId == null) productQbId = 'PROD-123';
             }
-            
+
             String descText = '';
-            try { descText = (String)item.get('Description__c'); } catch(Exception e){}
+            try { descText = (String)item.get(descField); } catch(Exception e){}
             if(String.isBlank(descText)) {
                 try { descText = (String)item.get('QuickBridgeTLG__Description__c'); } catch(Exception e){}
             }
-            
+
             if (productQbId != null) {
                 Map<String, Object> line = new Map<String, Object>();
                 line.put('DetailType', 'SalesItemLineDetail');
                 line.put('Amount', lineAmount);
                 line.put('Description', descText);
-                
+
                 Map<String, Object> salesItemLineDetail = new Map<String, Object>();
                 salesItemLineDetail.put('ItemRef', new Map<String, String>{'value' => productQbId});
                 salesItemLineDetail.put('UnitPrice', rate);
                 salesItemLineDetail.put('Qty', quantity);
-                
+
                 line.put('SalesItemLineDetail', salesItemLineDetail);
                 qbLines.add(line);
             }
         }
         return qbLines;
+    }
+
+    private static String fieldKeyFor(Map<String, String> fieldMap, String qbPath, String defaultSfField) {
+        if (fieldMap == null) return defaultSfField;
+        for (String sf : fieldMap.keySet()) {
+            if (fieldMap.get(sf) == qbPath) return sf;
+        }
+        return defaultSfField;
     }
 }

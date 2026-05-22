@@ -142,25 +142,13 @@ public without sharing class QuickBooksAuthHandler {
     }
 
     public static void validateConfiguration() {
-    try {
-        List<Quickbridge_Config__mdt> configs = [
-            SELECT QuickBooks_Realm_ID__c, QuickBooks_Is_Active__c
-            FROM Quickbridge_Config__mdt
-            WHERE QuickBooks_Realm_ID__c != null
-            LIMIT 1
-        ];
-        if (configs.isEmpty()) {
-            throw new AuraHandledException('QuickBooks Online configuration not found. Please enter Realm ID in Settings.');
-        }
-        Quickbridge_Config__mdt config = configs[0];
-        if (String.isBlank(config.QuickBooks_Realm_ID__c)) {
-            throw new AuraHandledException('QuickBooks Online Realm ID is missing. Please configure it in Settings.');
-        }
-        if (config.QuickBooks_Is_Active__c != true) {
+        ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig('qbo');
+        if (cfg == null || cfg.active != true) {
             throw new AuraHandledException('QuickBooks Online is inactive. Please activate it in Settings.');
         }
-    } catch (QueryException e) {
-        throw new AuraHandledException('QuickBooks Online configuration record not found. Please set up Realm ID in Settings.');
+        String realmId = cfg.values != null ? cfg.values.get('QuickBooks_Realm_ID__c') : null;
+        if (String.isBlank(realmId)) {
+            throw new AuraHandledException('QuickBooks Online Realm ID is missing. Please configure it in Settings.');
+        }
     }
-}
 }

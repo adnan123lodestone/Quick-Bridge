@@ -18,7 +18,6 @@ public class QBObjectMappings {
         'Name' => 'Name',
         'Description' => 'Description',
         'ProductCode' => 'Sku',
-        'External_Id__c' => 'Sku',
         'IsActive' => 'Active',
         'Quantity_On_Hand__c' => 'QtyOnHand',
         'Sale_Price__c' => 'UnitPrice',
@@ -58,6 +57,18 @@ public class QBObjectMappings {
         'Quantity' => 'Qty',
         'UnitPrice' => 'UnitPrice',
         'Description' => 'Description'
+    };
+
+    private static final Map<String, String> CREDIT_MEMO_LINE_FALLBACK = new Map<String, String>{
+        'Quantity__c' => 'Line.SalesItemLineDetail.Qty',
+        'Rate__c' => 'Line.SalesItemLineDetail.UnitPrice',
+        'Description__c' => 'Line.Description'
+    };
+
+    private static final Map<String, String> PURCHASE_ORDER_LINE_FALLBACK = new Map<String, String>{
+        'Quantity__c' => 'Line.ItemBasedExpenseLineDetail.Qty',
+        'Cost_Price__c' => 'Line.ItemBasedExpenseLineDetail.UnitPrice',
+        'Product_Description__c' => 'Line.Description'
     };
     
     private static final Map<String, String> TAX_CODE_FALLBACK = new Map<String, String>{
@@ -193,37 +204,29 @@ public class QBObjectMappings {
         return new Map<String, String>(ORDER_ITEM_FALLBACK);
     }
 
+    public static Map<String, String> getCreditMemoLineMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('Credit_Memo_Line__c', 'SF to QBO');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
+        return new Map<String, String>(CREDIT_MEMO_LINE_FALLBACK);
+    }
+
+    public static Map<String, String> getPurchaseOrderLineMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('Purchase_Order_Line__c', 'SF to QBO');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
+        return new Map<String, String>(PURCHASE_ORDER_LINE_FALLBACK);
+    }
+
     // Dynamic Invoice Source Detector
     public static String getInvoiceSourceObject() {
-        return 'QuickBridgeTLG__Invoice__c';
-        // try {
-            //     List<Invoice_Field_Mapping__mdt> customInvMappings = [
-            //         SELECT Target_Object_API_Name__c
-            //         FROM Invoice_Field_Mapping__mdt
-            //         WHERE Is_Active__c = true LIMIT 1
-            //     ];
-            //     if (!customInvMappings.isEmpty() && String.isNotBlank(customInvMappings[0].Target_Object_API_Name__c)) {
-                //         return customInvMappings[0].Target_Object_API_Name__c;
-            //     }
-        // } catch (Exception e) {}
-        
-        // try {
-            //     List<Field_Mapping__mdt> metadataList = [
-            //         SELECT SF_Object__c
-            //         FROM Field_Mapping__mdt
-            //         WHERE Integration__c = 'qbonline'
-            //         AND Is_Active__c = true
-            //         AND (SF_Object__c = 'Order' OR SF_Object__c = 'Invoice__c')
-            //         LIMIT 1
-            //     ];
-            //     if (!metadataList.isEmpty() && String.isNotBlank(metadataList[0].SF_Object__c)) {
-                //         return metadataList[0].SF_Object__c;
-            //     }
-        // } catch (Exception e) {
-            //     System.debug('Error finding mapped Invoice object: ' + e.getMessage());
-        // }
-        
-        // return 'Order'; // Default fallback
+        try {
+            QBOInvoiceMappingResolver.ResolverResult res = QBOInvoiceMappingResolver.resolve();
+            if (String.isNotBlank(res.invoiceSourceObject)) {
+                return res.invoiceSourceObject;
+            }
+        } catch (Exception e) {
+            System.debug('getInvoiceSourceObject fallback: ' + e.getMessage());
+        }
+        return 'Order';
     }
     
     public static Map<String, String> getSmartInvoiceMapping() {
@@ -263,10 +266,15 @@ public class QBObjectMappings {
     }
     
     public static String getInvoiceLineItemObject(String parentObject) {
-        // if (parentObject == 'Order') {
-        //     return 'OrderItem';
-        // }
-        // return parentObject.replace('__c', '') + '_Line__c';
-        return 'QuickBridgeTLG__Invoice_Line__c';
+        try {
+            QBOInvoiceMappingResolver.ResolverResult res = QBOInvoiceMappingResolver.resolve();
+            if (String.isNotBlank(res.lineSourceObject)) {
+                return res.lineSourceObject;
+            }
+        } catch (Exception e) {
+            System.debug('getInvoiceLineItemObject fallback: ' + e.getMessage());
+        }
+        if (parentObject == 'Order') return 'OrderItem';
+        return parentObject.replace('__c', '') + '_Line__c';
     }
 }

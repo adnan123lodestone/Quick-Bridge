@@ -205,16 +205,32 @@ export default class FieldMappingComponent extends LightningElement {
         const childObjectMap = {
             'Order': 'OrderItem',
             'QuickBridgeTLG__Invoice__c': 'QuickBridgeTLG__Invoice_Line__c',
-            'Invoice__c': 'Invoice_Line__c'
+            'Invoice__c': 'Invoice_Line__c',
+            'QuickBridgeTLG__Credit_Memo__c': 'QuickBridgeTLG__Credit_Memo_Line__c',
+            'Credit_Memo__c': 'Credit_Memo_Line__c',
+            'QuickBridgeTLG__Purchase_Order__c': 'QuickBridgeTLG__Purchase_Order_Line__c',
+            'Purchase_Order__c': 'Purchase_Order_Line__c'
+        };
+
+        const childQbObjectMap = {
+            'OrderItem': 'InvoiceLine',
+            'QuickBridgeTLG__Invoice_Line__c': 'InvoiceLine',
+            'Invoice_Line__c': 'InvoiceLine',
+            'QuickBridgeTLG__Credit_Memo_Line__c': 'CreditMemoLine',
+            'Credit_Memo_Line__c': 'CreditMemoLine',
+            'QuickBridgeTLG__Purchase_Order_Line__c': 'PurchaseOrderLine',
+            'Purchase_Order_Line__c': 'PurchaseOrderLine'
         };
 
         if (childObjectMap[this.selectedSFObject]) {
             this.childSfObject = childObjectMap[this.selectedSFObject];
+            this.childQbObject = childQbObjectMap[this.childSfObject] || 'InvoiceLine';
             this.showChildMapping = true;
             this.loadChildFields();
         } else {
             this.showChildMapping = false;
             this.childSfObject = '';
+            this.childQbObject = 'InvoiceLine';
             this.childMappingRows = [];
         }
 
@@ -272,6 +288,7 @@ export default class FieldMappingComponent extends LightningElement {
                 ...row,
                 sfField: currentSfFieldValid ? row.sfField : '',
                 syncDirection: selectedDirection,
+                fieldBorderClass: selectedDirection === 'Two-Way' ? 'custom-select-table sync-dir-two-way' : 'custom-select-table sync-dir-one-way',
                 isSFFieldDisabled: !row.isMandatory && !row.externalField,
                 externalFieldOptions: this.qbFieldOptions.map((option) => ({
                     ...option,
@@ -554,6 +571,7 @@ export default class FieldMappingComponent extends LightningElement {
                     isMandatory: true,
                     isSFFieldDisabled: false,
                     syncDirection: syncDir,
+                    fieldBorderClass: syncDir === 'Two-Way' ? 'custom-select-table sync-dir-two-way' : 'custom-select-table sync-dir-one-way',
                     sfFieldOptions: this.buildChildSfOptions(existing?.sfField || ''),
                     qbFieldOptions: this.buildChildQbOptions(qbField.value),
                     syncDirectionOptions: this.buildSyncDirectionOptions(syncDir)
@@ -573,6 +591,7 @@ export default class FieldMappingComponent extends LightningElement {
                     isMandatory: false,
                     isSFFieldDisabled: false,
                     syncDirection: syncDir,
+                    fieldBorderClass: syncDir === 'Two-Way' ? 'custom-select-table sync-dir-two-way' : 'custom-select-table sync-dir-one-way',
                     sfFieldOptions: this.buildChildSfOptions(mapping.sfField),
                     qbFieldOptions: this.buildChildQbOptions(mapping.externalField),
                     syncDirectionOptions: this.buildSyncDirectionOptions(syncDir)
@@ -627,6 +646,7 @@ export default class FieldMappingComponent extends LightningElement {
             isMandatory: false,
             isSFFieldDisabled: true,
             syncDirection: defaultDir,
+            fieldBorderClass: defaultDir === 'Two-Way' ? 'custom-select-table sync-dir-two-way' : 'custom-select-table sync-dir-one-way',
             sfFieldOptions: this.buildChildSfOptions(''),
             qbFieldOptions: this.buildChildQbOptions(''),
             syncDirectionOptions: this.buildSyncDirectionOptions(defaultDir)
@@ -693,6 +713,7 @@ export default class FieldMappingComponent extends LightningElement {
             return {
                 ...row,
                 syncDirection: value,
+                fieldBorderClass: value === 'Two-Way' ? 'custom-select-table sync-dir-two-way' : 'custom-select-table sync-dir-one-way',
                 syncDirectionOptions: this.buildSyncDirectionOptions(value)
             };
         }).filter(row => row);

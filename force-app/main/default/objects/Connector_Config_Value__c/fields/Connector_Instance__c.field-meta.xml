@@ -7,5 +7,7 @@
     <relationshipLabel>Connector Config Values</relationshipLabel>
     <relationshipName>Connector_Config_Values</relationshipName>
     <required>false</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Lookup</type>
 </CustomField>

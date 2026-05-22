@@ -4,6 +4,7 @@
     <columns>NAME</columns>
     <columns>Payment_Type__c</columns>
     <columns>Payload__c</columns>
+    <columns>CREATED_DATE</columns>
     <filterScope>Everything</filterScope>
     <label>All</label>
 </ListView>

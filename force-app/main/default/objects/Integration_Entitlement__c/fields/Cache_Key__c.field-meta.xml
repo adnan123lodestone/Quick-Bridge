@@ -6,6 +6,8 @@
     <label>Cache Key</label>
     <length>120</length>
     <required>true</required>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Text</type>
     <unique>true</unique>
 </CustomField>

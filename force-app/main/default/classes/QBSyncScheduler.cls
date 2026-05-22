@@ -1,9 +1,15 @@
 global class QBSyncScheduler implements Schedulable {
 
     private String targetObject;
+    private String direction;
 
     global QBSyncScheduler(String targetObject) {
+        this(targetObject, 'Out');
+    }
+
+    global QBSyncScheduler(String targetObject, String direction) {
         this.targetObject = targetObject;
+        this.direction = String.isBlank(direction) ? 'Out' : direction;
     }
 
     global void execute(SchedulableContext sc) {
@@ -24,8 +30,16 @@ global class QBSyncScheduler implements Schedulable {
                 Database.executeBatch(productBatch, 50);
             }
             else if (targetObject == 'Order' || targetObject == 'Orders') {
-                QBInvoiceToOrderSyncBatch orderBatch = new QBInvoiceToOrderSyncBatch();
-                Database.executeBatch(orderBatch, 10);
+                if (direction == 'In') {
+                    QBInvoiceToOrderSyncBatch orderBatch = new QBInvoiceToOrderSyncBatch();
+                    Database.executeBatch(orderBatch, 10);
+                } else {
+                    List<Order> unsyncedOrders = [SELECT Id FROM Order WHERE QuickbookID__c = null AND Status IN ('Draft', 'Activated')];
+                    if (!unsyncedOrders.isEmpty()) {
+                        Set<Id> orderIds = new Map<Id, Order>(unsyncedOrders).keySet();
+                        Database.executeBatch(new QBSalesOrderSyncBatch(orderIds, true), 1);
+                    }
+                }
             }
             else if (targetObject == 'Invoices' || targetObject == 'Invoice') {
                 String mappedObj = QBObjectMappings.getInvoiceSourceObject();

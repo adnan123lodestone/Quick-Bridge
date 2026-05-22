@@ -3,5 +3,7 @@
     <fullName>Has_Mapping__c</fullName>
     <defaultValue>false</defaultValue>
     <label>Has Mapping</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Checkbox</type>
 </CustomField>

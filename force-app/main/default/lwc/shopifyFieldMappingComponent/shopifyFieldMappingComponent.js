@@ -4,7 +4,6 @@ import getSalesforceObjects from '@salesforce/apex/FieldMappingController.getSal
 import getObjectFields from '@salesforce/apex/FieldMappingController.getObjectFields';
 import getShopifyFields from '@salesforce/apex/FieldMappingController.getShopifyFields';
 import getExistingMappings from '@salesforce/apex/FieldMappingController.getExistingMappings';
-import getMappingDirectionAvailability from '@salesforce/apex/FieldMappingController.getMappingDirectionAvailability';
 import saveFieldMappings from '@salesforce/apex/FieldMappingController.saveFieldMappings';
 
 export default class ShopifyFieldMappingComponent extends LightningElement {
@@ -17,13 +16,6 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
     @track sfFieldOptions = [];
     @track shopifyFieldOptions = [];
     @track isLoading = true;
-    @track directionAvailability = {
-        inboundAllowed: true,
-        outboundAllowed: true,
-        twoWayAllowed: true,
-        allDirectionsBlocked: false,
-        message: ''
-    };
 
     @track syncDirectionBaseOptions = [
         { label: 'SF to Shopify', value: 'SF to Shopify' },
@@ -88,24 +80,6 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
         });
     }
 
-    loadDirectionAvailability(objectName = this.selectedSFObject) {
-        return getMappingDirectionAvailability({
-            integration: this.selectedIntegration,
-            sfObject: objectName
-        }).then((result) => {
-            this.directionAvailability = {
-                inboundAllowed: result?.inboundAllowed !== false,
-                outboundAllowed: result?.outboundAllowed !== false,
-                twoWayAllowed: result?.twoWayAllowed !== false,
-                allDirectionsBlocked: result?.allDirectionsBlocked === true,
-                message: result?.message || '',
-                otherIntegrationLabel: result?.otherIntegrationLabel || '',
-                inboundConflictDirection: result?.inboundConflictDirection || '',
-                outboundConflictDirection: result?.outboundConflictDirection || ''
-            };
-        });
-    }
-
     updateShopifyObjectSelection(sfObject) {
         const objectMap = {
             Account:   'Customer',
@@ -131,7 +105,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
                 id: counter++,
                 sfField: existingMapping?.sfField || '',
                 externalField: field.value,
-                syncDirection: this.getAvailableDirectionValue(existingMapping?.syncDirection),
+                syncDirection: existingMapping?.syncDirection || 'Two-Way',
                 isMandatory: true
             });
         });
@@ -143,7 +117,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
                     id: counter++,
                     sfField: mapping.sfField,
                     externalField: mapping.externalField,
-                    syncDirection: this.getAvailableDirectionValue(mapping.syncDirection),
+                    syncDirection: mapping.syncDirection || 'Two-Way',
                     isMandatory: false
                 });
             }
@@ -154,7 +128,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
                 id: counter++,
                 sfField: '',
                 externalField: '',
-                syncDirection: this.getDefaultSyncDirection(),
+                syncDirection: 'Two-Way',
                 isMandatory: false
             });
         }
@@ -178,10 +152,9 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
         Promise.all([
             this.loadObjectFields(objectName),
             this.loadShopifyFields(),
-            this.loadDirectionAvailability(objectName),
             getExistingMappings({ integration: this.selectedIntegration, sfObject: objectName })
         ])
-            .then(([, , , savedMappings]) => {
+            .then(([, , savedMappings]) => {
                 this.buildMappingRows(savedMappings || []);
                 this.isLoading = false;
             })
@@ -201,10 +174,9 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
 
         Promise.all([
             this.loadShopifyFields(),
-            this.loadDirectionAvailability(this.selectedSFObject),
             getExistingMappings({ integration: this.selectedIntegration, sfObject: this.selectedSFObject })
         ])
-            .then(([, , savedMappings]) => {
+            .then(([, savedMappings]) => {
                 this.buildMappingRows(savedMappings || []);
                 this.isLoading = false;
             })
@@ -215,7 +187,6 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
     }
 
     updateRowDropdowns() {
-        const allowedDirections = this.getAllowedSyncDirectionOptions();
         this.mappingRows = this.mappingRows.map((row) => {
             const shopifyField = this.shopifyFieldOptions.find((option) => option.value === row.externalField);
             const shopifyType = shopifyField ? shopifyField.type : null;
@@ -223,13 +194,12 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
                 ? this.sfFieldOptions.filter((option) => this.isTypeMatch(option.type, shopifyType))
                 : this.sfFieldOptions;
             const currentSfFieldValid = row.sfField && availableSfOptions.some((option) => option.value === row.sfField);
-            const selectedDirection = this.getAvailableDirectionValue(row.syncDirection, allowedDirections);
 
             return {
                 ...row,
                 sfField: currentSfFieldValid ? row.sfField : '',
-                syncDirection: selectedDirection,
                 isSFFieldDisabled: !row.isMandatory && !row.externalField,
+                fieldBorderClass: row.syncDirection === 'Two-Way' ? 'custom-select-table sync-dir-two-way' : 'custom-select-table sync-dir-one-way',
                 externalFieldOptions: this.shopifyFieldOptions.map((option) => ({
                     ...option,
                     selected: option.value === row.externalField
@@ -238,9 +208,9 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
                     ...option,
                     selected: option.value === row.sfField
                 })),
-                syncDirectionOptions: allowedDirections.map((option) => ({
+                syncDirectionOptions: this.syncDirectionBaseOptions.map((option) => ({
                     ...option,
-                    selected: option.value === selectedDirection
+                    selected: option.value === row.syncDirection
                 }))
             };
         });
@@ -253,7 +223,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
                 id: this.rowCounter++,
                 sfField: '',
                 externalField: '',
-                syncDirection: this.getDefaultSyncDirection(),
+                syncDirection: 'Two-Way',
                 isMandatory: false
             }
         ];
@@ -307,11 +277,6 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
     }
 
     handleSave() {
-        if (this.isMappingBlocked) {
-            this.showToast('Validation Error', this.directionConflictMessage, 'error');
-            return;
-        }
-
         const duplicateExternalFields = this.getDuplicateExternalFields();
         if (duplicateExternalFields.length > 0) {
             this.showToast('Validation Error', 'Each Shopify field can only be mapped once.', 'error');
@@ -367,43 +332,6 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
             seen.add(row.externalField);
         });
         return duplicates;
-    }
-
-    get isMappingBlocked() {
-        return this.directionAvailability?.allDirectionsBlocked === true;
-    }
-
-    get directionConflictMessage() {
-        return this.directionAvailability?.message || '';
-    }
-
-    getAllowedSyncDirectionOptions() {
-        const allowed = this.syncDirectionBaseOptions.filter((option) => {
-            if (option.value === 'Two-Way') {
-                return this.directionAvailability.twoWayAllowed;
-            }
-            if (option.value === 'Shopify to SF') {
-                return this.directionAvailability.inboundAllowed;
-            }
-            if (option.value === 'SF to Shopify') {
-                return this.directionAvailability.outboundAllowed;
-            }
-            return true;
-        });
-        return allowed.length > 0 ? allowed : [{ label: 'No available direction', value: '' }];
-    }
-
-    getDefaultSyncDirection() {
-        const allowedDirections = this.getAllowedSyncDirectionOptions();
-        const twoWay = allowedDirections.find((option) => option.value === 'Two-Way');
-        return twoWay ? twoWay.value : allowedDirections[0]?.value || '';
-    }
-
-    getAvailableDirectionValue(value, allowedDirections = this.getAllowedSyncDirectionOptions()) {
-        const currentValue = value || this.getDefaultSyncDirection();
-        return allowedDirections.some((option) => option.value === currentValue)
-            ? currentValue
-            : this.getDefaultSyncDirection();
     }
 
     normalizeType(type) {

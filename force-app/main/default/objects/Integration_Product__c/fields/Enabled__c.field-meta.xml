@@ -3,5 +3,7 @@
     <fullName>Enabled__c</fullName>
     <defaultValue>true</defaultValue>
     <label>Enabled</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Checkbox</type>
 </CustomField>

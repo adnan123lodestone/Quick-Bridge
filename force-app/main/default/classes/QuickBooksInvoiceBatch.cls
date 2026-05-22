@@ -22,8 +22,8 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
     }
 
     public Database.QueryLocator start(Database.BatchableContext bc) {
-        // String mappedObject = QBObjectMappings.getInvoiceSourceObject();
-        String query = 'SELECT Id FROM QuickBridgeTLG__Invoice__c WHERE Id IN :recordIds';
+        String mappedObject = QBObjectMappings.getInvoiceSourceObject();
+        String query = 'SELECT Id FROM ' + mappedObject + ' WHERE Id IN :recordIds';
         return Database.getQueryLocator(query);
     }
 
@@ -35,10 +35,8 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
             List<SObject> recordsToUpdate = new List<SObject>();
             List<SObject> itemsToUpdate = new List<SObject>();
 
-            // String mappedObject = QBObjectMappings.getInvoiceSourceObject();
-            // String mappedLineObject = QBObjectMappings.getInvoiceLineItemObject(mappedObject);
-            String mappedObject = 'QuickBridgeTLG__Invoice__c';
-            String mappedLineObject = 'QuickBridgeTLG__Invoice_Line__c';
+            String mappedObject = QBObjectMappings.getInvoiceSourceObject();
+            String mappedLineObject = QBObjectMappings.getInvoiceLineItemObject(mappedObject);
             Map<String, String> fieldMap = QBObjectMappings.getSmartInvoiceMapping();
             Set<String> fieldsToQuery = new Set<String>{'Id', 'QuickBridgeTLG__External_Id__c', 'QuickBridgeTLG__Related_Account__c'};
 

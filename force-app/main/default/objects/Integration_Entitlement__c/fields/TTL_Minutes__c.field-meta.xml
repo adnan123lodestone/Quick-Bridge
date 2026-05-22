@@ -2,9 +2,13 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>TTL_Minutes__c</fullName>
     <defaultValue>15</defaultValue>
+    <externalId>false</externalId>
     <label>TTL Minutes</label>
     <precision>5</precision>
     <required>false</required>
     <scale>0</scale>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Number</type>
+    <unique>false</unique>
 </CustomField>

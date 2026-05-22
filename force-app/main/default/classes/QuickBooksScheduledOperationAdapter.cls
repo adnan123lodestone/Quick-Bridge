@@ -5,6 +5,6 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         if (Test.isRunningTest() && skipExecutionForTests == true) {
             return;
         }
-        new QBSyncScheduler(job.Source_Object__c).execute(null);
+        new QBSyncScheduler(job.Source_Object__c, job.Direction__c).execute(null);
     }
 }

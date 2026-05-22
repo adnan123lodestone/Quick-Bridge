@@ -53,10 +53,12 @@
                                 Scheduler
                             </button>
                         </template>
-                        <button class="nav-button" onclick={handleSidebarBack}>
-                            <lightning-icon icon-name="utility:back" size="x-small" class="nav-icon"></lightning-icon>
-                            Back
-                        </button>
+                        <template if:true={showSidebarBackButton}>
+                            <button class="nav-button" onclick={handleSidebarBack}>
+                                <lightning-icon icon-name="utility:back" size="x-small" class="nav-icon"></lightning-icon>
+                                Back
+                            </button>
+                        </template>
                     </template>
                     <template if:false={isLoggedIn}>
                         <button class="nav-button active" onclick={handleBackToLogin}>

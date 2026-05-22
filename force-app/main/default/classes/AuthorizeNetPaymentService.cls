@@ -206,24 +206,33 @@ public without sharing class AuthorizeNetPaymentService {
     }
     
     private static Quickbridge_Config__mdt getConfig() {
+        Quickbridge_Config__mdt config;
+        try {
+            config = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
+        } catch(Exception e) {
+            config = null;
+        }
+
         if (Test.isRunningTest()) {
             Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
             testConfig.AuthorizeNet_Active__c = true;
             testConfig.AuthorizeNet_Start_Date__c = null;
             testConfig.AuthorizeNet_End_Date__c = null;
-            testConfig.AuthorizeNet_API_Login_ID__c = 'api_login_test';
-            testConfig.AuthorizeNet_Public_Client_Key__c = 'public_client_key_test';
-            testConfig.AuthorizeNet_Use_Sandbox__c = true;
+            testConfig.AuthorizeNet_API_Login_ID__c = config == null || String.isBlank(config.AuthorizeNet_API_Login_ID__c)
+                ? 'api_login_test'
+                : config.AuthorizeNet_API_Login_ID__c;
+            testConfig.AuthorizeNet_Public_Client_Key__c = config == null || String.isBlank(config.AuthorizeNet_Public_Client_Key__c)
+                ? 'public_client_key_test'
+                : config.AuthorizeNet_Public_Client_Key__c;
+            testConfig.AuthorizeNet_Use_Sandbox__c = config == null || config.AuthorizeNet_Use_Sandbox__c == null
+                ? true
+                : config.AuthorizeNet_Use_Sandbox__c;
             return testConfig;
         }
-
-        Quickbridge_Config__mdt config = new Quickbridge_Config__mdt();
-        config.AuthorizeNet_Active__c = ConnectorConfigResolver.getBoolean('authorizenet', 'AuthorizeNet_Active__c');
-        config.AuthorizeNet_API_Login_ID__c = ConnectorConfigResolver.getValue('authorizenet', 'AuthorizeNet_API_Login_ID__c');
-        config.AuthorizeNet_Public_Client_Key__c = ConnectorConfigResolver.getValue('authorizenet', 'AuthorizeNet_Public_Client_Key__c');
-        config.AuthorizeNet_Use_Sandbox__c = ConnectorConfigResolver.getBoolean('authorizenet', 'AuthorizeNet_Use_Sandbox__c');
-        config.AuthorizeNet_Start_Date__c = ConnectorConfigResolver.getDate('authorizenet', 'AuthorizeNet_Start_Date__c');
-        config.AuthorizeNet_End_Date__c = ConnectorConfigResolver.getDate('authorizenet', 'AuthorizeNet_End_Date__c');
+        
+        if (config == null) {
+            throw new AuraHandledException('Authorize.Net configuration record was not found.');
+        }
         return config;
     }
     

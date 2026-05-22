@@ -1,7 +1,7 @@
 import { LightningElement, track } from 'lwc';
 import verifyCredentialsAndGetGateways from '@salesforce/apex/PaymentGatewayService.verifyCredentialsAndGetGateways';
-import getPaymentMetadataConfigs from '@salesforce/apex/PaymentMetadataService.getPaymentMetadataConfigs';
-import updatePaymentMetadata from '@salesforce/apex/PaymentMetadataService.updatePaymentMetadata';
+import getConnectorConfigs from '@salesforce/apex/PaymentMetadataService.getConnectorConfigs';
+import saveConnectorConfig from '@salesforce/apex/PaymentMetadataService.saveConnectorConfig';
 import getConfigPanelPreferences from '@salesforce/apex/PaymentMetadataService.getConfigPanelPreferences';
 import updateAvailableProductsVisible from '@salesforce/apex/PaymentMetadataService.updateAvailableProductsVisible';
 import checkIntegrationExpiry from '@salesforce/apex/PaymentMetadataService.checkIntegrationExpiry';
@@ -20,6 +20,7 @@ import refreshLicenses from '@salesforce/apex/PaymentGatewayService.refreshLicen
 const SESSION_STORAGE_KEY = 'qb_admin_session';
 const SESSION_TOKEN_KEY = 'qb_admin_token';
 const SESSION_EXPIRY_KEY = 'qb_admin_expiry';
+const UPS_CDN_LOGO_URL = 'https://cdn.worldvectorlogo.com/logos/ups-1.svg';
 
 const TILE_PROVIDER_ALIASES = {
     qbo: ['qbo', 'quickbooks', 'quickbooksonline', 'quickbooks online'],
@@ -106,6 +107,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     get navReportingClass() { return this.currentScreen === 'reporting' ? 'nav-button active' : 'nav-button'; }
     get navMappingClass() { return this.currentScreen === 'mapping' ? 'nav-button active' : 'nav-button'; }
     get navSchedulerClass() { return this.currentScreen === 'scheduler' ? 'nav-button active' : 'nav-button'; }
+    get showSidebarBackButton() { return this.currentScreen !== 'tiles'; }
 
     get subscribedTiles() {
         return this.allTilesDefinition.filter(tile => {
@@ -300,7 +302,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 authorizenet: Authorize_Net_logo,
                 paypal: 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg',
                 fedex: FedEx_Logo,
-                ups: 'https://cdn.worldvectorlogo.com/logos/ups-1.svg'
+                ups: UPS_Logo
             };
             const descriptors = await getConnectorDescriptors();
             const tiles = (descriptors || [])
@@ -309,7 +311,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 .map(connector => ({
                     id: connector.connectorKey,
                     label: connector.label,
-                    logoUrl: connector.logoUrl || logoById[connector.connectorKey] || QuickBridge_Logo,
+                    logoUrl: this.resolveTileLogoUrl(connector.connectorKey, connector.logoUrl, logoById[connector.connectorKey]),
                     productKey: connector.productKey,
                     aliases: this.buildTileAliases(connector),
                     activeField: connector.activeField,
@@ -327,6 +329,17 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         } catch (error) {
             console.error(error);
         }
+    }
+
+    resolveTileLogoUrl(connectorKey, descriptorLogoUrl, fallbackLogoUrl) {
+        const normalizedConnectorKey = (connectorKey || '').toLowerCase();
+        if (normalizedConnectorKey === 'ups') {
+            return UPS_Logo;
+        }
+        if (descriptorLogoUrl === UPS_CDN_LOGO_URL) {
+            return fallbackLogoUrl || QuickBridge_Logo;
+        }
+        return descriptorLogoUrl || fallbackLogoUrl || QuickBridge_Logo;
     }
 
     buildTileAliases(connector) {
@@ -564,7 +577,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     async loadMetadataConfigs() {
         try {
-            const configs = await getPaymentMetadataConfigs();
+            const configs = await getConnectorConfigs();
 
             const fieldLabels = {
                 'AuthorizeNet_API_Login_ID__c': 'API Login ID',
@@ -840,8 +853,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 }
             });
 
-            const result = await updatePaymentMetadata({
-                provider: provider,
+            const result = await saveConnectorConfig({
+                connectorKey: provider,
                 fieldValuesJson: JSON.stringify(fieldValues),
                 sessionToken: this.getSessionToken()
             });
@@ -905,7 +918,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                 });
             }
 
-            const result = await updatePaymentMetadata({ provider: provider, fieldValuesJson: JSON.stringify(fieldValues), sessionToken: this.getSessionToken() });
+            const result = await saveConnectorConfig({ connectorKey: provider, fieldValuesJson: JSON.stringify(fieldValues), sessionToken: this.getSessionToken() });
 
             if (result.success) {
                 this.showToast('Deleted', `${provider} configuration deleted successfully!`, 'success');

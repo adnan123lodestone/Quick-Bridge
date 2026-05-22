@@ -3,6 +3,8 @@
     <fullName>Raw_Response__c</fullName>
     <label>Raw Response</label>
     <length>131072</length>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>LongTextArea</type>
     <visibleLines>4</visibleLines>
 </CustomField>

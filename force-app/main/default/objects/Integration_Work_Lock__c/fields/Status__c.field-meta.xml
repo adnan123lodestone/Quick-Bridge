@@ -5,14 +5,27 @@
     <label>Status</label>
     <required>true</required>
     <trackHistory>true</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Picklist</type>
     <valueSet>
         <restricted>true</restricted>
         <valueSetDefinition>
             <sorted>false</sorted>
-            <value><fullName>Locked</fullName><default>false</default><label>Locked</label></value>
-            <value><fullName>Released</fullName><default>true</default><label>Released</label></value>
-            <value><fullName>Expired</fullName><default>false</default><label>Expired</label></value>
+            <value>
+                <fullName>Locked</fullName>
+                <default>false</default>
+                <label>Locked</label>
+            </value>
+            <value>
+                <fullName>Released</fullName>
+                <default>true</default>
+                <label>Released</label>
+            </value>
+            <value>
+                <fullName>Expired</fullName>
+                <default>false</default>
+                <label>Expired</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

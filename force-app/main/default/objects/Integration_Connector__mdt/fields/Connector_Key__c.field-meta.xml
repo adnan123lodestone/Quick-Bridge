@@ -3,6 +3,7 @@
     <fullName>Connector_Key__c</fullName>
     <caseSensitive>false</caseSensitive>
     <externalId>true</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
     <label>Connector Key</label>
     <length>80</length>
     <required>true</required>

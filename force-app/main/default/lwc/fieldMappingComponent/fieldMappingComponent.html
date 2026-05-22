@@ -96,7 +96,7 @@
                                     </td>
                                     <td class="text-center">
                                         <div class="slds-grid slds-grid_align-center">
-                                            <select class="custom-select-table sync-direction-select"
+                                            <select class={row.fieldBorderClass}
                                                 name="syncDirection" value={row.syncDirection}
                                                 onchange={handleSyncDirectionChange} data-row-id={row.id}
                                                 disabled={isMappingBlocked}>
@@ -189,7 +189,7 @@
                                             </td>
                                             <td class="text-center">
                                                 <div class="slds-grid slds-grid_align-center">
-                                                    <select class="custom-select-table sync-direction-select"
+                                                    <select class={row.fieldBorderClass}
                                                         value={row.syncDirection}
                                                         onchange={handleChildSyncDirectionChange} data-row-id={row.id}>
                                                         <template for:each={row.syncDirectionOptions} for:item="option">

@@ -2,5 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Last_Updated_At__c</fullName>
     <label>Last Updated At</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
     <type>DateTime</type>
 </CustomField>

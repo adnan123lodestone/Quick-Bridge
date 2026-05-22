@@ -2,6 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Has_Checkout__c</fullName>
     <defaultValue>false</defaultValue>
+    <fieldManageability>DeveloperControlled</fieldManageability>
     <label>Has Checkout</label>
     <type>Checkbox</type>
 </CustomField>

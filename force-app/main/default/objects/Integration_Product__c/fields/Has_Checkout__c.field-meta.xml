@@ -3,5 +3,7 @@
     <fullName>Has_Checkout__c</fullName>
     <defaultValue>false</defaultValue>
     <label>Has Checkout</label>
+    <trackHistory>false</trackHistory>
+    <trackTrending>false</trackTrending>
     <type>Checkbox</type>
 </CustomField>

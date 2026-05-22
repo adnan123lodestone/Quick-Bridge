@@ -128,11 +128,14 @@
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
-        <type>Default</type>
+        <comment>Action override created by Lightning App Builder during activation.</comment>
+        <content>Error_Log_Record_Page</content>
+        <formFactor>Large</formFactor>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
-        <formFactor>Large</formFactor>
         <type>Default</type>
     </actionOverrides>
     <actionOverrides>
@@ -143,10 +146,11 @@
     <allowInChatterGroups>false</allowInChatterGroups>
     <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
     <deploymentStatus>Deployed</deploymentStatus>
+    <description>Object used to track and manage payment gateway errors and system exceptions within the QuickBridge integration platform.</description>
     <enableActivities>true</enableActivities>
     <enableBulkApi>true</enableBulkApi>
     <enableFeeds>false</enableFeeds>
-    <enableHistory>false</enableHistory>
+    <enableHistory>true</enableHistory>
     <enableLicensing>false</enableLicensing>
     <enableReports>true</enableReports>
     <enableSearch>true</enableSearch>
@@ -156,7 +160,8 @@
     <label>Error Log</label>
     <nameField>
         <displayFormat>ERR-{00000}</displayFormat>
-        <label>Error Log #</label>
+        <label>Error Log Number</label>
+        <trackHistory>false</trackHistory>
         <type>AutoNumber</type>
     </nameField>
     <pluralLabel>Error Logs</pluralLabel>
