@@ -160,15 +160,7 @@ public with sharing class GenericSchedulerController {
   }
 
   public static String connectorKeyToIntegrationType(String connectorKey) {
-    String normalized = ConnectorRegistryService.normalize(connectorKey);
-    if (normalized == 'qbo' || normalized == 'quickbooks')
-      return 'QuickBooks';
-    if (normalized == 'shopify')
-      return 'Shopify';
-    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
-      connectorKey
-    );
-    return descriptor == null ? connectorKey : descriptor.label;
+    return ConnectorRegistryService.integrationTypeFor(connectorKey);
   }
 
   private static Map<String, Object> toUiMap(Scheduled_Integration_Job__c job) {
@@ -211,10 +203,19 @@ public with sharing class GenericSchedulerController {
     String selectedObject,
     String direction
   ) {
-    String prefix = integrationType == 'Shopify' ? 'Shopify Sync' : 'QBO Sync';
-    String directionTag = integrationType == 'Shopify'
-      ? (direction == 'Out' ? ' [Out]' : ' [In]')
-      : '';
+    String connectorKey = ConnectorRegistryService.connectorKeyForIntegrationType(
+      integrationType
+    );
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
+      connectorKey
+    );
+    String label = descriptor == null || String.isBlank(descriptor.label)
+      ? integrationType
+      : descriptor.label;
+    String prefix = label + ' Sync';
+    String directionTag = String.isBlank(direction)
+      ? ''
+      : (direction == 'Out' ? ' [Out]' : ' [In]');
     return prefix +
       ' - ' +
       selectedObject +
@@ -258,12 +259,10 @@ public with sharing class GenericSchedulerController {
     String connectorKey
   ) {
     ParsedJobName parsed = new ParsedJobName();
-    parsed.sourceObject = ConnectorRegistryService.normalize(connectorKey) ==
-      'shopify'
+    parsed.sourceObject = ConnectorRegistryService.normalize(connectorKey) == 'shopify'
       ? 'Customers'
       : 'Account';
-    parsed.direction = ConnectorRegistryService.normalize(connectorKey) ==
-      'shopify'
+    parsed.direction = ConnectorRegistryService.normalize(connectorKey) == 'shopify'
       ? 'In'
       : null;
     if (String.isBlank(jobName))

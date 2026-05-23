@@ -12,8 +12,19 @@ public with sharing class IntegrationProductSeedService {
         IntegrationConnectorRegistry.clearCache();
     }
 
+    @AuraEnabled
+    public static String reseedSystemManagedProducts() {
+        QuickBridgeAdminGuard.requireManage();
+        seedDefaultProducts();
+        return 'Success: QuickBridge system-managed integration products reseeded.';
+    }
+
     @TestVisible
     static List<Integration_Product__c> defaultProducts() {
+        List<Integration_Product__c> metadataProducts = metadataDefaultProducts();
+        if (!metadataProducts.isEmpty()) {
+            return metadataProducts;
+        }
         return new List<Integration_Product__c>{
             product('QuickBooks', 'quickbooks', 'qbo', 'QuickBooks', 'qbo,quickbooks,quickbooksonline,quickbooks online', 'Accounting', 10, null, 'QuickBooks', 'QuickBooks_Is_Active__c', 'QuickBooks_End_Date__c', 'Company_Name__c,QuickBooks_Realm_ID__c,QuickBooks_Is_Active__c,QuickBooks_Start_Date__c,QuickBooks_End_Date__c', true, true, true, false, false, false),
             product('Shopify', 'shopify', 'shopify', 'Shopify', 'shopify', 'Commerce', 20, 'https://cdn.worldvectorlogo.com/logos/shopify.svg', 'Shopify', 'Shopify_Is_Active__c', 'Shopify_End_Date__c', 'Company_Name__c,Shopify_Store_URL__c,Shopify_Access_Token__c,Shopify_API_Key__c,Shopify_API_Secret__c,Shopify_Is_Active__c,Shopify_Start_Date__c,Shopify_End_Date__c', true, true, true, false, false, false),
@@ -21,8 +32,48 @@ public with sharing class IntegrationProductSeedService {
             product('Authorize.Net', 'authorizenet', 'authorizenet', 'Authorize.Net', 'authorizenet,authorize.net,authorize net,authnet', 'Payment', 40, null, 'AuthorizeNet', 'AuthorizeNet_Active__c', 'AuthorizeNet_End_Date__c', 'Company_Name__c,AuthorizeNet_API_Login_ID__c,AuthorizeNet_Public_Client_Key__c,AuthorizeNet_Webhook_Signing_Key__c,AuthorizeNet_Active__c,AuthorizeNet_Use_Sandbox__c,AuthorizeNet_Start_Date__c,AuthorizeNet_End_Date__c', true, false, false, true, true, false),
             product('PayPal', 'paypal', 'paypal', 'PayPal', 'paypal,pay pal', 'Payment', 50, 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c', 'Company_Name__c,PayPal_ClientId__c,PayPal_Active__c,PayPal_UseSandbox__c,PayPal_StartDate__c,PayPal_EndDate__c', true, false, false, true, true, false),
             product('FedEx', 'fedex', 'fedex', 'FedEx', 'fedex', 'Carrier', 60, null, 'FedEx', 'FedEx_Active__c', 'FedEx_End_Date__c', 'FedEx_Client_Id__c,FedEx_Client_Secret__c,FedEx_Account_Number__c,FedEx_Environment__c,FedEx_Default_Service_Type__c,FedEx_Default_Packaging_Type__c,FedEx_Default_Pickup_Type__c,FedEx_Active__c,FedEx_Start_Date__c,FedEx_End_Date__c', true, true, false, false, false, true),
-            product('UPS', 'ups', 'ups', 'UPS', 'ups', 'Carrier', 70, null, 'UPS', 'UPS_Active__c', 'UPS_End_Date__c', 'UPS_Client_Id__c,UPS_Client_Secret__c,UPS_Account_Number__c,UPS_Environment__c,UPS_Default_Service_Code__c,UPS_Active__c,UPS_Start_Date__c,UPS_End_Date__c', true, true, false, false, false, true)
+            product('UPS', 'ups', 'ups', 'UPS', 'ups', 'Carrier', 70, null, 'UPS', 'UPS_Active__c', 'UPS_End_Date__c', 'UPS_Client_Id__c,UPS_Client_Secret__c,UPS_Account_Number__c,UPS_Environment__c,UPS_Default_Service_Code__c,UPS_Active__c,UPS_Start_Date__c,UPS_End_Date__c', true, true, false, false, false, true),
+            product('Klaviyo', 'klaviyo', 'klaviyo', 'Klaviyo', 'klaviyo', 'Marketing', 80, null, 'Klaviyo', null, null, null, true, true, true, false, false, false)
         };
+    }
+
+    private static List<Integration_Product__c> metadataDefaultProducts() {
+        List<Integration_Product__c> products = new List<Integration_Product__c>();
+        try {
+            for (Integration_Product_Default__mdt row : [
+                SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Aliases__c, Category__c,
+                    Display_Order__c, Logo_URL__c, Config_Record_Name__c, Active_Field__c,
+                    Expiry_Field__c, Editable_Fields__c, Enabled__c, Catalog_Active__c,
+                    Status__c, Has_Config__c, Has_Reporting__c, Has_Mapping__c,
+                    Has_Scheduler__c, Has_Checkout__c, Has_Payment__c, Has_Carrier__c
+                FROM Integration_Product_Default__mdt
+                WHERE Enabled__c = true
+                ORDER BY Display_Order__c ASC, Product_Label__c ASC
+            ]) {
+                products.add(product(
+                    row.Product_Label__c,
+                    row.Product_Key__c,
+                    row.Connector_Key__c,
+                    row.Product_Label__c,
+                    row.Aliases__c,
+                    row.Category__c,
+                    row.Display_Order__c == null ? 999 : row.Display_Order__c.intValue(),
+                    row.Logo_URL__c,
+                    row.Config_Record_Name__c,
+                    row.Active_Field__c,
+                    row.Expiry_Field__c,
+                    row.Editable_Fields__c,
+                    row.Has_Config__c == true,
+                    row.Has_Mapping__c == true,
+                    row.Has_Scheduler__c == true,
+                    row.Has_Checkout__c == true,
+                    row.Has_Payment__c == true,
+                    row.Has_Carrier__c == true
+                ));
+            }
+        } catch (Exception ignored) {
+        }
+        return products;
     }
 
     @TestVisible
@@ -84,7 +135,8 @@ public with sharing class IntegrationProductSeedService {
             Has_Scheduler__c = hasScheduler,
             Has_Checkout__c = hasCheckout,
             Has_Payment__c = hasPayment,
-            Has_Carrier__c = hasCarrier
+            Has_Carrier__c = hasCarrier,
+            System_Managed__c = true
         );
     }
 }

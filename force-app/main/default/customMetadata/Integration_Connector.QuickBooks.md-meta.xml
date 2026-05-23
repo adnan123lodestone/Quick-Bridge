@@ -17,4 +17,6 @@
     <values><field>Has_Mapping__c</field><value xsi:type="xsd:boolean" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">true</value></values>
     <values><field>Has_Reporting__c</field><value xsi:type="xsd:boolean" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">true</value></values>
     <values><field>Has_Scheduler__c</field><value xsi:type="xsd:boolean" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">true</value></values>
+    <values><field>Integration_Type__c</field><value xsi:type="xsd:string" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">QuickBooks</value></values>
+    <values><field>Counts_Toward_Schedule_Limit__c</field><value xsi:type="xsd:boolean" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">true</value></values>
 </CustomMetadata>

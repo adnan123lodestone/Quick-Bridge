@@ -9,6 +9,11 @@ private class KlaviyoCampaignMembersBatchTest {
         }
         
         public HTTPResponse respond(HTTPRequest req) {
+            System.assert(
+                req.getEndpoint().startsWith('callout:Klaviyo_API'),
+                'Klaviyo requests must use the Klaviyo_API Named Credential.'
+            );
+            System.assertEquals(null, req.getHeader('Authorization'), 'Klaviyo API keys must not be set in Apex headers.');
             HttpResponse res = new HttpResponse();
             res.setHeader('Content-Type', 'application/json');
             res.setStatusCode(200);

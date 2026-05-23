@@ -12,7 +12,7 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     }
     
     public Iterable<String> start(Database.BatchableContext bc) {
-        List<String> itemIdsList = new List<String>();
+        List<String> itemPayloads = new List<String>();
         
         try {
             String query = 'select * from Item Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
@@ -33,7 +33,7 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                                 if (itemObj != null) {
                                     Map<String, Object> item = (Map<String, Object>)itemObj;
                                     if (item.containsKey('Id')) {
-                                        itemIdsList.add((String)item.get('Id'));
+                                        itemPayloads.add(JSON.serialize(item));
                                     }
                                 }
                             }
@@ -62,7 +62,7 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
             );
         }
         
-        return itemIdsList;
+        return itemPayloads;
     }
     
     public void execute(Database.BatchableContext bc, List<String> scope) {
@@ -72,19 +72,15 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         try {
             List<Product2> productsToUpsert = new List<Product2>();
             
-            for (String itemId : scope) {
+            for (String itemPayload : scope) {
+                String itemId = getExternalIdFromPayload(itemPayload);
                 try {
-                    HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + itemId, null);
+                    Map<String, Object> itemData = resolveItemData(itemPayload);
                     
-                    if (response.getStatusCode() == 200) {
-                        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-                        Map<String, Object> itemData = (Map<String, Object>)responseMap.get('Item');
-                        
-                        if (itemData != null) {
-                            Product2 productToSync = processItemData(itemData);
-                            if (productToSync != null) {
-                                productsToUpsert.add(productToSync);
-                            }
+                    if (itemData != null) {
+                        Product2 productToSync = processItemData(itemData);
+                        if (productToSync != null) {
+                            productsToUpsert.add(productToSync);
                         }
                     }
                 } catch (Exception e) {
@@ -190,6 +186,45 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     
     public void finish(Database.BatchableContext bc) {
         System.debug('QBItemToProductSyncBatch completed');
+    }
+
+    private Map<String, Object> resolveItemData(String itemPayload) {
+        if (String.isBlank(itemPayload)) {
+            return null;
+        }
+
+        try {
+            Object parsed = JSON.deserializeUntyped(itemPayload);
+            if (parsed instanceof Map<String, Object>) {
+                return (Map<String, Object>)parsed;
+            }
+        } catch (Exception e) {
+            // Legacy payloads were raw QuickBooks ids; hydrate only those compatibility inputs.
+        }
+
+        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + itemPayload, null);
+        if (response == null || response.getStatusCode() != 200 || String.isBlank(response.getBody())) {
+            return null;
+        }
+        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+        return responseMap == null ? null : (Map<String, Object>)responseMap.get('Item');
+    }
+
+    private String getExternalIdFromPayload(String itemPayload) {
+        Map<String, Object> itemData = resolveSerializedPayload(itemPayload);
+        return itemData == null ? itemPayload : String.valueOf(itemData.get('Id'));
+    }
+
+    private Map<String, Object> resolveSerializedPayload(String payload) {
+        if (String.isBlank(payload)) {
+            return null;
+        }
+        try {
+            Object parsed = JSON.deserializeUntyped(payload);
+            return parsed instanceof Map<String, Object> ? (Map<String, Object>)parsed : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
     
     private Product2 processItemData(Map<String, Object> itemData) {

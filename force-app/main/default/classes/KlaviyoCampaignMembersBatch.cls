@@ -1,14 +1,11 @@
-global class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>, Database.AllowsCallouts, Database.Stateful {
+public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>, Database.AllowsCallouts, Database.Stateful {
 
     private Id campaignId;
     private String endpoint;
-    private String accessToken;
     private String nextUrl;
 
     public KlaviyoCampaignMembersBatch(Id campaignId) {
         this.campaignId = campaignId;
-        Integration__mdt klaviyoCredential = getAccessToken();
-        this.accessToken = klaviyoCredential.Access_Token__c;
         
         Campaign camp = [
             SELECT Id, Profile_s_URL__c
@@ -22,15 +19,13 @@ global class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
     public KlaviyoCampaignMembersBatch(Id campaignId, String nextUrl) {
         this.campaignId = campaignId;
         this.nextUrl = nextUrl;
-        Integration__mdt klaviyoCredential = getAccessToken();
-        this.accessToken = klaviyoCredential.Access_Token__c;
     }
 
-    global Iterable<SObject> start(Database.BatchableContext BC) {
+    public Iterable<SObject> start(Database.BatchableContext BC) {
         return new List<SObject>{ new Campaign(Id = campaignId) };
     }
 
-    global void execute(Database.BatchableContext BC, List<SObject> scope) {
+    public void execute(Database.BatchableContext BC, List<SObject> scope) {
         try {
             Http http = new Http();
             String workingEndpoint = (String.isNotBlank(this.nextUrl)) ? this.nextUrl : this.endpoint;
@@ -40,11 +35,7 @@ global class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
                 return;
             }
             
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint(workingEndpoint);
-            req.setMethod('GET');
-            req.setHeader('Authorization', 'Klaviyo-API-Key ' + accessToken);
-            req.setHeader('revision', '2025-01-15');
+            HttpRequest req = KlaviyoAuthService.buildGetRequest(workingEndpoint);
 
             HttpResponse httpRes = http.send(req);
             if (httpRes.getStatusCode() == 200) {
@@ -84,7 +75,7 @@ global class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
         }
     }
 
-    global void finish(Database.BatchableContext BC) {
+    public void finish(Database.BatchableContext BC) {
         if (String.isNotBlank(this.nextUrl)) {
             // ➡️ Continue fetching next page immediately with a fresh batch
             Database.executeBatch(new KlaviyoCampaignMembersBatch(this.campaignId, this.nextUrl), 1);
@@ -149,7 +140,4 @@ global class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
         }
     }
 
-    private static Integration__mdt getAccessToken() {
-        return [SELECT Access_Token__c, URL__c FROM Integration__mdt WHERE MasterLabel = 'Klaviyo' LIMIT 1];
-    }
 }

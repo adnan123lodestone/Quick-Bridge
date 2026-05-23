@@ -6,18 +6,27 @@ public with sharing class CarrierAdapterFactory {
             logAdapterFailure('Carrier type is required.');
             throw new AuraHandledException('Carrier type is required.');
         }
-        String normalized = carrierType.toLowerCase().trim();
+        String normalized = normalizeCarrierKey(carrierType);
         if (Test.isRunningTest() && testAdapters != null && testAdapters.containsKey(normalized)) {
             return testAdapters.get(normalized);
         }
-        if (normalized == 'fedex') {
-            return new FedExCarrierAdapter();
+
+        String adapterClassName = ConnectorRegistryService.adapterClassFor(normalized, 'carrier.operation');
+        if (String.isBlank(adapterClassName)) {
+            logAdapterFailure('Unsupported carrier type: ' + carrierType + '. Supported values: ' + String.join(supportedCarrierLabels(), ', ') + '.');
+            throw new AuraHandledException('Unsupported carrier type: ' + carrierType + '. Supported values: ' + String.join(supportedCarrierLabels(), ', ') + '.');
         }
-        if (normalized == 'ups') {
-            return new UPSCarrierAdapter();
+
+        ConnectorAdapterAllowlist.assertAllowed(adapterClassName);
+        Type adapterType = Type.forName(adapterClassName);
+        if (adapterType == null) {
+            adapterType = Type.forName('QuickBridgeTLG', adapterClassName);
         }
-        logAdapterFailure('Unsupported carrier type: ' + carrierType + '. Supported values: FedEx, UPS.');
-        throw new AuraHandledException('Unsupported carrier type: ' + carrierType + '. Supported values: FedEx, UPS.');
+        if (adapterType == null) {
+            logAdapterFailure('Carrier adapter class was not found: ' + adapterClassName);
+            throw new AuraHandledException('Carrier adapter class was not found: ' + adapterClassName);
+        }
+        return (ICarrierAdapter) adapterType.newInstance();
     }
 
     public static String normalizeCarrierKey(String carrierType) {
@@ -26,11 +35,20 @@ public with sharing class CarrierAdapterFactory {
     }
 
     public static Set<String> supportedCarrierKeys() {
-        return new Set<String>{ 'fedex', 'ups' };
+        Set<String> keys = new Set<String>();
+        for (ConnectorRegistryService.ConnectorDescriptor descriptor : ConnectorRegistryService.byCapability('carrier.operation')) {
+            keys.add(descriptor.connectorKey);
+        }
+        return keys;
     }
 
     public static List<String> supportedCarrierLabels() {
-        return new List<String>{ 'FedEx', 'UPS' };
+        List<String> labels = new List<String>();
+        for (ConnectorRegistryService.ConnectorDescriptor descriptor : ConnectorRegistryService.byCapability('carrier.operation')) {
+            labels.add(String.isBlank(descriptor.label) ? descriptor.connectorKey : descriptor.label);
+        }
+        labels.sort();
+        return labels;
     }
 
     private static void logAdapterFailure(String message) {

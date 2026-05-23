@@ -30,13 +30,11 @@ public class RetryDispatcher {
 
         String result;
         try {
-            if (log.Gateway_Name__c == 'QuickBooks') {
-                result = QBOErrorHandler.handle(log);
-            } else if (log.Gateway_Name__c == 'Shopify') {
-                result = ShopifyErrorHandler.handle(log);
-            } else {
+            RetryHandler handler = handlerFor(log.Gateway_Name__c);
+            if (handler == null) {
                 throw new AuraHandledException('Unsupported gateway.');
             }
+            result = handler.handle(log);
 
             log.Retry_Status__c = 'Success';
             log.Retry_History_Notes__c = appendNote(log.Retry_History_Notes__c, 'Retry succeeded at ' + Datetime.now());
@@ -49,6 +47,28 @@ public class RetryDispatcher {
             update log;
         }
         return result;
+    }
+
+    @TestVisible
+    private static RetryHandler handlerFor(String gatewayName) {
+        ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(gatewayName);
+        if (descriptor == null) {
+            descriptor = ConnectorRegistryService.byKey(ConnectorRegistryService.connectorKeyForIntegrationType(gatewayName));
+        }
+        if (descriptor == null) {
+            return null;
+        }
+
+        String handlerClassName = ConnectorRegistryService.adapterClassFor(descriptor.connectorKey, 'retry.handler');
+        if (String.isBlank(handlerClassName)) {
+            return null;
+        }
+        ConnectorAdapterAllowlist.assertAllowed(handlerClassName);
+        Type handlerType = Type.forName(handlerClassName);
+        if (handlerType == null) {
+            handlerType = Type.forName('QuickBridgeTLG', handlerClassName);
+        }
+        return handlerType == null ? null : (RetryHandler) handlerType.newInstance();
     }
 
     private static String appendNote(String existing, String newNote) {

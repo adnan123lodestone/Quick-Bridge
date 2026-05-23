@@ -513,14 +513,14 @@ global without sharing class PaymentWebhookRestResource {
         }
 
         if (paymentType == 'authorizenet') {
-            if (!Test.isRunningTest()) {
-                trace('Authorize.Net verification bypass is enabled for runtime execution.');
-                return new SignatureVerificationResult(true, 200, null);
-            }
             return verifyAuthorizeNetSignature(requestBody, request);
         }
 
-        return new SignatureVerificationResult(true, 200, null);
+        if (paymentType == 'paypal') {
+            return new SignatureVerificationResult(false, 503, 'PayPal webhook verification is not configured.');
+        }
+
+        return new SignatureVerificationResult(false, 401, 'Webhook signature verification failed.');
     }
 
     private static SignatureVerificationResult verifyStripeSignature(String requestBody, RestRequest request) {

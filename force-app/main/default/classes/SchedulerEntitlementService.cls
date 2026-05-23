@@ -1,17 +1,5 @@
 public with sharing class SchedulerEntitlementService {
   private static final Integer FALLBACK_LIMIT = 10;
-  private static final Set<String> BILLABLE_JOB_PREFIXES = new Set<String>{
-    'QBO Sync',
-    'Shopify Sync',
-    'Carrier Tracking Status Sync',
-    'FedEx Carrier Tracking Status Sync',
-    'UPS Carrier Tracking Status Sync'
-  };
-  private static final Set<String> INACTIVE_CRON_STATES = new Set<String>{
-    'DELETED',
-    'COMPLETE',
-    'ERROR'
-  };
   private static final Set<String> LIVE_TRACKED_STATUSES = new Set<String>{
     'Active',
     'Ready',
@@ -215,47 +203,21 @@ public with sharing class SchedulerEntitlementService {
     Set<String> activeKeys = new Set<String>();
 
     for (Scheduled_Integration_Job__c trackedJob : [
-      SELECT Logical_Job_Key__c
+      SELECT Logical_Job_Key__c, Integration_Type__c
       FROM Scheduled_Integration_Job__c
       WHERE Status__c IN :LIVE_TRACKED_STATUSES
     ]) {
-      if (String.isNotBlank(trackedJob.Logical_Job_Key__c)) {
+      if (
+        String.isNotBlank(trackedJob.Logical_Job_Key__c) &&
+        ConnectorRegistryService.countsTowardScheduleLimit(
+          trackedJob.Integration_Type__c
+        )
+      ) {
         activeKeys.add(normalizeLogicalJobName(trackedJob.Logical_Job_Key__c));
       }
     }
 
-    for (CronTrigger triggerRecord : [
-      SELECT CronJobDetail.Name, State
-      FROM CronTrigger
-      WHERE
-        State NOT IN :INACTIVE_CRON_STATES
-        AND (CronJobDetail.Name LIKE 'QBO Sync%'
-        OR CronJobDetail.Name LIKE 'Shopify Sync%'
-        OR CronJobDetail.Name LIKE 'Carrier Tracking Status Sync%'
-        OR CronJobDetail.Name LIKE 'FedEx Carrier Tracking Status Sync%'
-        OR CronJobDetail.Name LIKE 'UPS Carrier Tracking Status Sync%')
-    ]) {
-      String logicalName = normalizeLogicalJobName(
-        triggerRecord.CronJobDetail.Name
-      );
-      if (isBillableJobName(logicalName)) {
-        activeKeys.add(logicalName);
-      }
-    }
-
     return activeKeys.size();
-  }
-
-  private static Boolean isBillableJobName(String logicalName) {
-    if (String.isBlank(logicalName)) {
-      return false;
-    }
-    for (String prefix : BILLABLE_JOB_PREFIXES) {
-      if (logicalName.startsWith(prefix)) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private static Decimal parseDecimal(String value) {

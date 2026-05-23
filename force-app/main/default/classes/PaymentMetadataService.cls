@@ -31,36 +31,6 @@ public with sharing class PaymentMetadataService {
         @AuraEnabled public Boolean notificationSent { get; set; }
     }
 
-    private static final Map<String, List<String>> PROVIDER_FIELDS = new Map<String, List<String>>{
-        'authorizenet' => new List<String>{ 'Company_Name__c', 'AuthorizeNet_API_Login_ID__c', 'AuthorizeNet_Public_Client_Key__c', 'AuthorizeNet_Webhook_Signing_Key__c', 'AuthorizeNet_Active__c', 'AuthorizeNet_Use_Sandbox__c', 'AuthorizeNet_Start_Date__c', 'AuthorizeNet_End_Date__c' },
-        'stripe' => new List<String>{ 'Company_Name__c', 'Stripe_Publishable_Key__c', 'Stripe_Webhook_Signing_Secret__c', 'Stripe_Active__c', 'Stripe_Use_Sandbox__c', 'Stripe_Start_Date__c', 'Stripe_End_Date__c' },
-        'paypal' => new List<String>{ 'Company_Name__c', 'PayPal_ClientId__c', 'PayPal_Active__c', 'PayPal_UseSandbox__c', 'PayPal_StartDate__c', 'PayPal_EndDate__c' },
-        'shopify' => new List<String>{ 'Company_Name__c', 'Shopify_Store_URL__c', 'Shopify_Access_Token__c', 'Shopify_API_Key__c', 'Shopify_API_Secret__c', 'Shopify_Is_Active__c', 'Shopify_End_Date__c' },
-        'qbo' => new List<String>{ 'Company_Name__c', 'QuickBooks_Realm_ID__c', 'QuickBooks_Is_Active__c', 'QuickBooks_Start_Date__c', 'QuickBooks_End_Date__c' },
-        'fedex' => new List<String>{ 'FedEx_Client_Id__c', 'FedEx_Client_Secret__c', 'FedEx_Account_Number__c', 'FedEx_Environment__c', 'FedEx_Default_Service_Type__c', 'FedEx_Default_Packaging_Type__c', 'FedEx_Default_Pickup_Type__c', 'FedEx_Active__c', 'FedEx_End_Date__c' },
-        'ups' => new List<String>{ 'UPS_Client_Id__c', 'UPS_Client_Secret__c', 'UPS_Account_Number__c', 'UPS_Environment__c', 'UPS_Default_Service_Code__c', 'UPS_Active__c', 'UPS_End_Date__c' }
-    };
-
-    private static final Map<String, String> PROVIDER_LABELS = new Map<String, String>{
-        'authorizenet' => 'Authorize.Net', 'stripe' => 'Stripe', 'paypal' => 'PayPal', 'shopify' => 'Shopify', 'qbo' => 'QuickBooks',
-        'fedex' => 'FedEx', 'ups' => 'UPS'
-    };
-
-    private static final Map<String, String> PROVIDER_RECORD_NAMES = new Map<String, String>{
-        'authorizenet' => 'AuthorizeNet', 'stripe' => 'Stripe', 'paypal' => 'PayPal', 'shopify' => 'Shopify', 'qbo' => 'QuickBooks',
-        'fedex' => 'FedEx', 'ups' => 'UPS'
-    };
-
-    private static final Map<String, String> PROVIDER_EXPIRY_FIELDS = new Map<String, String>{
-        'authorizenet' => 'AuthorizeNet_End_Date__c',
-        'stripe' => 'Stripe_End_Date__c',
-        'paypal' => 'PayPal_EndDate__c',
-        'shopify' => 'Shopify_End_Date__c',
-        'qbo' => 'QuickBooks_End_Date__c',
-        'fedex' => 'FedEx_End_Date__c',
-        'ups' => 'UPS_End_Date__c'
-    };
-
     private static final String METADATA_TYPE_NAME = 'Quickbridge_Config__mdt';
     private static final Integer EXPIRY_WARNING_DAYS = 7;
     private static final String RENEWAL_NOTIFICATION_TYPE = 'QuickBridge_Renewal_Alert';
@@ -125,8 +95,8 @@ public with sharing class PaymentMetadataService {
     public static List<MetadataConfig> getPaymentMetadataConfigs() {
         List<MetadataConfig> configs = new List<MetadataConfig>();
         try {
-            for (String providerKey : PROVIDER_LABELS.keySet()) {
-                configs.add(buildMetadataConfig(providerKey));
+            for (ConnectorRegistryService.ConnectorDescriptor descriptor : configurableDescriptors()) {
+                configs.add(buildMetadataConfig(descriptor.connectorKey));
             }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'PaymentMetadataService.getPaymentMetadataConfigs exception: ' + e.getMessage());
@@ -150,8 +120,7 @@ public with sharing class PaymentMetadataService {
                 ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig(descriptor.connectorKey);
                 config.active = cfg.active == true;
 
-                // Populate expiry and start date under their legacy MDT field names so the
-                // LWC TILE_EXPIRY_FIELDS / TILE_START_FIELDS constants still work without change.
+                // Populate expiry and start date under descriptor field names for the config panel.
                 if (cfg.expiryDate != null && String.isNotBlank(descriptor.expiryField)) {
                     config.fields.put(descriptor.expiryField, String.valueOf(cfg.expiryDate));
                 }
@@ -266,24 +235,18 @@ public with sharing class PaymentMetadataService {
                 }
             }
 
-            String normalizedProvider = provider.toLowerCase().trim();
-            if (!PROVIDER_RECORD_NAMES.containsKey(normalizedProvider)) {
-                response.success = false;
-                response.message = 'Unsupported payment provider: ' + provider;
-                return response;
-            }
-
-            String recordName = PROVIDER_RECORD_NAMES.get(normalizedProvider);
-            List<String> allowedFields = PROVIDER_FIELDS.get(normalizedProvider);
-
-            if (!Test.isRunningTest()) {
-                System.enqueueJob(new MetadataDeployQueueable(
-                    normalizedProvider, fieldValues, allowedFields, recordName, METADATA_TYPE_NAME
-                ));
+            String normalizedProvider = normalizeProvider(provider);
+            for (String fieldKey : fieldValues.keySet()) {
+                Object val = fieldValues.get(fieldKey);
+                ConnectorConfigService.upsertNonSecretValue(
+                    normalizedProvider,
+                    fieldKey,
+                    val == null ? null : String.valueOf(val)
+                );
             }
 
             response.success = true;
-            response.message = 'Configuration save initiated for ' + PROVIDER_LABELS.get(normalizedProvider);
+            response.message = 'Configuration saved for ' + providerLabel(normalizedProvider);
             response.deploymentId = null;
         } catch (Exception e) {
             response.success = false;
@@ -368,7 +331,7 @@ public with sharing class PaymentMetadataService {
         try {
             String normalizedProvider = normalizeProvider(provider);
             alert.provider = normalizedProvider;
-            alert.providerLabel = PROVIDER_LABELS.get(normalizedProvider);
+            alert.providerLabel = providerLabel(normalizedProvider);
 
             ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig(normalizedProvider);
             Date expiryDate = cfg.expiryDate;
@@ -428,7 +391,7 @@ public with sharing class PaymentMetadataService {
             for (String key : allKeys) {
                 if (String.isBlank(key)) continue;
                 String normalized = key.toLowerCase().trim();
-                if (!PROVIDER_LABELS.containsKey(normalized)) {
+                if (ConnectorRegistryService.byKey(normalized) == null) {
                     response.success = false;
                     response.message = 'Unsupported product key: ' + key;
                     return response;
@@ -470,7 +433,7 @@ public with sharing class PaymentMetadataService {
             String normalized = key.toLowerCase().trim();
             if (seenKeys.contains(normalized)) continue;
             seenKeys.add(normalized);
-            String label = PROVIDER_LABELS.get(normalized);
+            String label = providerLabel(normalized);
             if (String.isNotBlank(label)) labels.add(label);
         }
         return labels;
@@ -498,35 +461,26 @@ public with sharing class PaymentMetadataService {
     private static MetadataConfig buildMetadataConfig(String provider) {
         MetadataConfig config = new MetadataConfig();
         config.provider = provider;
-        config.label = PROVIDER_LABELS.get(provider);
+        config.label = providerLabel(provider);
         config.fields = new Map<String, String>();
-        config.editableFields = PROVIDER_FIELDS.get(provider);
+        ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(provider);
+        config.editableFields = descriptor == null ? new List<String>() : descriptor.editableFields;
 
         try {
-            SObject metadataRecord;
-            String recordName = PROVIDER_RECORD_NAMES.get(provider);
-            String query = 'SELECT ' + String.join(config.editableFields, ',') + ' FROM ' + METADATA_TYPE_NAME + ' WHERE DeveloperName = :recordName LIMIT 1';
-
-            try {
-                metadataRecord = Database.query(query);
-            } catch(Exception e) {
-            }
-
-            if(metadataRecord != null) {
-                Boolean isActive = false;
-
-                for(String fieldName : config.editableFields) {
-                    if (fieldName.contains('Active')) {
-                        Object val = metadataRecord.get(fieldName);
-                        if (val != null) isActive = (Boolean)val;
+            ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig(provider);
+            config.active = cfg.active == true;
+            if (cfg.values != null) {
+                for (String fieldName : config.editableFields == null ? new List<String>() : config.editableFields) {
+                    String value = cfg.values.get(fieldName);
+                    if (value == null) {
+                        for (ConnectorRegistryService.ConfigFieldDescriptor field : ConnectorRegistryService.configFieldsFor(provider)) {
+                            if (field.legacyFieldApiName == fieldName && cfg.values.containsKey(field.fieldKey)) {
+                                value = cfg.values.get(field.fieldKey);
+                                break;
+                            }
+                        }
                     }
-                }
-
-                config.active = isActive;
-
-                for(String fieldName : config.editableFields) {
-                    Object val = metadataRecord.get(fieldName);
-                    config.fields.put(fieldName, val == null ? '' : String.valueOf(val));
+                    config.fields.put(fieldName, value == null ? '' : value);
                 }
             }
         } catch (Exception e) {
@@ -542,12 +496,27 @@ public with sharing class PaymentMetadataService {
             throw new AuraHandledException('Provider is required.');
         }
 
-        String normalizedProvider = provider.toLowerCase().trim();
-        if (!PROVIDER_RECORD_NAMES.containsKey(normalizedProvider)) {
+        ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(provider);
+        if (descriptor == null) {
             throw new AuraHandledException('Unsupported payment provider: ' + provider);
         }
 
-        return normalizedProvider;
+        return descriptor.connectorKey;
+    }
+
+    private static List<ConnectorRegistryService.ConnectorDescriptor> configurableDescriptors() {
+        List<ConnectorRegistryService.ConnectorDescriptor> descriptors = new List<ConnectorRegistryService.ConnectorDescriptor>();
+        for (ConnectorRegistryService.ConnectorDescriptor descriptor : ConnectorRegistryService.connectors()) {
+            if (descriptor.hasConfig == true) {
+                descriptors.add(descriptor);
+            }
+        }
+        return descriptors;
+    }
+
+    private static String providerLabel(String provider) {
+        ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(provider);
+        return descriptor == null || String.isBlank(descriptor.label) ? provider : descriptor.label;
     }
 
     @TestVisible

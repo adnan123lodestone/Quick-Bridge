@@ -30,6 +30,20 @@ public class IntegrationRetryPolicy {
         return isRetryableMessage(e.getMessage());
     }
 
+    public static Boolean isRetryable(Integer httpStatusCode) {
+        if (httpStatusCode == null) {
+            return false;
+        }
+        return httpStatusCode == 408 ||
+            httpStatusCode == 429 ||
+            httpStatusCode == 503 ||
+            (httpStatusCode >= 500 && httpStatusCode <= 504);
+    }
+
+    public static Boolean isRateLimited(Integer httpStatusCode) {
+        return httpStatusCode == 429;
+    }
+
     public static Boolean isRetryableMessage(String message) {
         if (String.isBlank(message)) {
             return false;

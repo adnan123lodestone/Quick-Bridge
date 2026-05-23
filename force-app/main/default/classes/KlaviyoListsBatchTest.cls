@@ -4,6 +4,11 @@ private class KlaviyoListsBatchTest {
     // Mock HTTP response for a valid API call
     private class KlaviyoHttpMock implements HttpCalloutMock {
         public HTTPResponse respond(HTTPRequest req) {
+            System.assert(
+                req.getEndpoint().startsWith('callout:Klaviyo_API'),
+                'Klaviyo requests must use the Klaviyo_API Named Credential.'
+            );
+            System.assertEquals(null, req.getHeader('Authorization'), 'Klaviyo API keys must not be set in Apex headers.');
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
@@ -34,6 +39,11 @@ private class KlaviyoListsBatchTest {
     // Mock with next URL to trigger recursive batch
     private class KlaviyoHttpMockWithNext implements HttpCalloutMock {
         public HTTPResponse respond(HTTPRequest req) {
+            System.assert(
+                req.getEndpoint().startsWith('callout:Klaviyo_API'),
+                'Klaviyo requests must use the Klaviyo_API Named Credential.'
+            );
+            System.assertEquals(null, req.getHeader('Authorization'), 'Klaviyo API keys must not be set in Apex headers.');
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
@@ -50,6 +60,11 @@ private class KlaviyoListsBatchTest {
     // Mock with invalid JSON to force exception
     private class KlaviyoBadJsonMock implements HttpCalloutMock {
         public HTTPResponse respond(HTTPRequest req) {
+            System.assert(
+                req.getEndpoint().startsWith('callout:Klaviyo_API'),
+                'Klaviyo requests must use the Klaviyo_API Named Credential.'
+            );
+            System.assertEquals(null, req.getHeader('Authorization'), 'Klaviyo API keys must not be set in Apex headers.');
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');

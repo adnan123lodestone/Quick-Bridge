@@ -72,7 +72,7 @@ public with sharing class PaymentCheckoutController {
     private static Set<String> activeGatewaysForCheckout() {
         Set<String> activeGateways = new Set<String>();
         try {
-            String raw = PaymentGatewayService.getActiveGatewaysForCheckout();
+            String raw = QuickBridgeRuntimeGatewayService.getActiveGatewaysForCheckout();
             Map<String, Object> payload = (Map<String, Object>)JSON.deserializeUntyped(raw);
             if (String.valueOf(payload.get('status')) != 'Success') {
                 return activeGateways;

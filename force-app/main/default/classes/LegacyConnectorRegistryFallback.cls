@@ -28,6 +28,10 @@ public with sharing class LegacyConnectorRegistryFallback {
             if (connector == 'fedex') return 'FedExCarrierAdapter';
             if (connector == 'ups') return 'UPSCarrierAdapter';
         }
+        if (capability == 'retryhandler') {
+            if (connector == 'qbo' || connector == 'quickbooks') return 'QBORetryHandler';
+            if (connector == 'shopify') return 'ShopifyRetryHandler';
+        }
         String workHandler = workHandlerClassFor(connectorKey, capabilityKey);
         return String.isBlank(workHandler) ? null : workHandler;
     }
@@ -112,6 +116,7 @@ public with sharing class LegacyConnectorRegistryFallback {
         descriptor.entitlementKey = productKey;
         descriptor.configSchemaKey = connectorKey;
         descriptor.configRecordName = configRecordName;
+        descriptor.integrationType = label;
         descriptor.activeField = activeField;
         descriptor.expiryField = expiryField;
         descriptor.editableFields = splitList(editableFields);
@@ -129,6 +134,7 @@ public with sharing class LegacyConnectorRegistryFallback {
         descriptor.hasCheckout = hasCheckout;
         descriptor.hasPayment = hasPayment;
         descriptor.hasCarrier = hasCarrier;
+        descriptor.countsTowardScheduleLimit = hasScheduler == true;
         return descriptor;
     }
 

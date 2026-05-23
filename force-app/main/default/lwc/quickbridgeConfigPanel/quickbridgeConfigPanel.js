@@ -1,5 +1,5 @@
 import { LightningElement, track } from 'lwc';
-import verifyCredentialsAndGetGateways from '@salesforce/apex/PaymentGatewayService.verifyCredentialsAndGetGateways';
+import verifyCredentialsAndGetGateways from '@salesforce/apex/QuickBridgeAdminControlPlaneService.verifyCredentialsAndGetGateways';
 import getConnectorConfigs from '@salesforce/apex/PaymentMetadataService.getConnectorConfigs';
 import saveConnectorConfig from '@salesforce/apex/PaymentMetadataService.saveConnectorConfig';
 import getConfigPanelPreferences from '@salesforce/apex/PaymentMetadataService.getConfigPanelPreferences';
@@ -7,48 +7,17 @@ import updateAvailableProductsVisible from '@salesforce/apex/PaymentMetadataServ
 import checkIntegrationExpiry from '@salesforce/apex/PaymentMetadataService.checkIntegrationExpiry';
 import sendProductRenewalRequest from '@salesforce/apex/PaymentMetadataService.sendProductRenewalRequest';
 import getConnectorDescriptors from '@salesforce/apex/IntegrationConnectorRegistry.getConnectorDescriptors';
-import revokeAdminSession from '@salesforce/apex/PaymentGatewayService.revokeAdminSession';
+import revokeAdminSession from '@salesforce/apex/QuickBridgeAdminControlPlaneService.revokeAdminSession';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import Authorize_Net_logo from '@salesforce/resourceUrl/Authorize_Net_logo';
 import QuickBridge_Logo from '@salesforce/resourceUrl/QuickBridge_Logo';
 import QB_Logo from '@salesforce/resourceUrl/QB_Logo';
 import FedEx_Logo from '@salesforce/resourceUrl/FedEx_Logo';
 import UPS_Logo from '@salesforce/resourceUrl/UPS_Logo';
-import recoverPin from '@salesforce/apex/PaymentGatewayService.recoverPin';
-import refreshLicenses from '@salesforce/apex/PaymentGatewayService.refreshLicenses';
+import recoverPin from '@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin';
+import refreshLicenses from '@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses';
 
-const SESSION_STORAGE_KEY = 'qb_admin_session';
-const SESSION_TOKEN_KEY = 'qb_admin_token';
-const SESSION_EXPIRY_KEY = 'qb_admin_expiry';
 const UPS_CDN_LOGO_URL = 'https://cdn.worldvectorlogo.com/logos/ups-1.svg';
-
-const TILE_PROVIDER_ALIASES = {
-    qbo: ['qbo', 'quickbooks', 'quickbooksonline', 'quickbooks online'],
-    shopify: ['shopify'],
-    stripe: ['stripe'],
-    authorizenet: ['authorizenet', 'authorize.net', 'authorize net', 'authnet'],
-    paypal: ['paypal', 'pay pal'],
-    fedex: ['fedex'],
-    ups: ['ups']
-};
-const TILE_EXPIRY_FIELDS = {
-    qbo: ['QuickBooks_End_Date__c'],
-    shopify: ['Shopify_End_Date__c'],
-    stripe: ['Stripe_End_Date__c'],
-    authorizenet: ['AuthorizeNet_End_Date__c'],
-    paypal: ['PayPal_EndDate__c'],
-    fedex: ['FedEx_End_Date__c'],
-    ups: ['UPS_End_Date__c']
-};
-const TILE_START_FIELDS = {
-    qbo: ['QuickBooks_Start_Date__c'],
-    stripe: ['Stripe_Start_Date__c'],
-    authorizenet: ['AuthorizeNet_Start_Date__c'],
-    paypal: ['PayPal_StartDate__c'],
-    fedex: ['FedEx_Start_Date__c'],
-    ups: ['UPS_Start_Date__c'],
-    shopify: ['Shopify_Start_Date__c']
-};
 
 export default class QuickbridgeConfigPanel extends LightningElement {
     @track currentScreen = 'login';
@@ -69,15 +38,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     @track selectedTile = '';
     quickBridgeLogo = QuickBridge_Logo;
 
-    allTilesDefinition = [
-        { id: 'qbo', productKey: 'quickbooks', label: 'QuickBooks', logoUrl: QB_Logo, aliases: TILE_PROVIDER_ALIASES.qbo },
-        { id: 'shopify', productKey: 'shopify', label: 'Shopify', logoUrl: 'https://cdn.worldvectorlogo.com/logos/shopify.svg', aliases: TILE_PROVIDER_ALIASES.shopify },
-        { id: 'stripe', productKey: 'stripe', label: 'Stripe', logoUrl: 'https://cdn.worldvectorlogo.com/logos/stripe-4.svg', aliases: TILE_PROVIDER_ALIASES.stripe },
-        { id: 'authorizenet', productKey: 'authorizenet', label: 'Authorize.Net', logoUrl: Authorize_Net_logo, aliases: TILE_PROVIDER_ALIASES.authorizenet },
-        { id: 'paypal', productKey: 'paypal', label: 'PayPal', logoUrl: 'https://cdn.worldvectorlogo.com/logos/paypal-3.svg', aliases: TILE_PROVIDER_ALIASES.paypal },
-        { id: 'fedex', productKey: 'fedex', label: 'FedEx', logoUrl: FedEx_Logo, aliases: TILE_PROVIDER_ALIASES.fedex },
-        { id: 'ups', productKey: 'ups', label: 'UPS', logoUrl: UPS_Logo, aliases: TILE_PROVIDER_ALIASES.ups }
-    ];
+    allTilesDefinition = [];
 
     @track paymentMetadataConfigs = [];
     metadataFormValues = {};
@@ -211,7 +172,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     getConfigForTile(tileId) {
         const tile = this.getTileDefinition(tileId);
-        const aliases = tile?.aliases || TILE_PROVIDER_ALIASES[tileId] || [tileId];
+        const aliases = tile?.aliases || [tileId];
         return this.paymentMetadataConfigs.find(config => {
             const provider = (config.provider || '').toLowerCase().replace(/\s+/g, '');
             return aliases.some(alias => provider === alias.toLowerCase().replace(/\s+/g, ''));
@@ -243,7 +204,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
         const fields = config.fields || config.formValues || {};
         const tile = this.getTileDefinition(tileId);
-        const expiryFields = tile?.expiryField ? [tile.expiryField] : (TILE_EXPIRY_FIELDS[tileId] || []);
+        const expiryFields = tile?.expiryField ? [tile.expiryField] : [];
         const expiryValue = expiryFields.map(field => fields[field]).find(value => value);
         if (!expiryValue) {
             return false;
@@ -266,8 +227,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
         const fields = config.fields || config.formValues || {};
         const tile = this.getTileDefinition(tileId);
-        const startFields = tile?.startField ? [tile.startField] : (TILE_START_FIELDS[tileId] || []);
-        const expiryFields = tile?.expiryField ? [tile.expiryField] : (TILE_EXPIRY_FIELDS[tileId] || []);
+        const startFields = tile?.startField ? [tile.startField] : [];
+        const expiryFields = tile?.expiryField ? [tile.expiryField] : [];
 
         const startValue = startFields.map(field => fields[field]).find(value => value);
         const endValue = expiryFields.map(field => fields[field]).find(value => value);
@@ -288,7 +249,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
     connectedCallback() {
         this.loadConnectorTiles();
-        this.restoreSessionFromStorage();
+        this.currentScreen = 'login';
     }
 
     handleUserIdChange(event) { this.userId = event.target.value; }
@@ -423,14 +384,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             if (response.status === 'Success') {
                 this.adminSessionToken = response.sessionToken || '';
                 this.adminSessionExpiresAt = response.sessionExpiresAt || null;
-                // Store in sessionStorage
-                if (this.adminSessionToken) {
-                    sessionStorage.setItem(SESSION_TOKEN_KEY, this.adminSessionToken);
-                    if (this.adminSessionExpiresAt) {
-                        sessionStorage.setItem(SESSION_EXPIRY_KEY, this.adminSessionExpiresAt);
-                    }
-                    sessionStorage.setItem('qb_admin_userId', this.userId);
-                }
                 this.selectedTile = '';
                 this.currentGatewayProperName = '';
                 this.currentScreen = 'reporting';
@@ -439,7 +392,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             } else {
                 this.showToast('Login Failed', response.message, 'error');
             }
-        } catch (error) {
+        } catch {
             this.showToast('Error', 'Could not connect to Server.', 'error');
         } finally {
             this.isLoggingIn = false;
@@ -454,7 +407,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         this.userId = '';
         this.adminSessionToken = '';
         this.adminSessionExpiresAt = null;
-        this.clearSessionStorage();
         this.currentScreen = 'login';
         setTimeout(() => {
             const boxes = this.template.querySelectorAll('.pin-box');
@@ -463,30 +415,13 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     getSessionToken() {
-        let token = sessionStorage.getItem(SESSION_TOKEN_KEY);
-        if (token) {
-            const storedExpiry = sessionStorage.getItem(SESSION_EXPIRY_KEY);
-            if (storedExpiry && new Date(storedExpiry).getTime() > Date.now()) {
-                this.adminSessionToken = token;
-                this.adminSessionExpiresAt = storedExpiry;
-                return token;
-            } else {
-                this.clearSessionStorage();
-                return null;
-            }
-        }
-        // fallback to component variable
-        token = this.adminSessionToken;
+        const token = this.adminSessionToken;
         if (token) {
             const expiresAt = this.adminSessionExpiresAt ? new Date(this.adminSessionExpiresAt) : null;
             if (expiresAt && expiresAt.getTime() <= Date.now()) {
-                this.clearSessionStorage();
+                this.adminSessionToken = '';
+                this.adminSessionExpiresAt = null;
                 return null;
-            }
-            // store it back to storage if missing
-            sessionStorage.setItem(SESSION_TOKEN_KEY, token);
-            if (this.adminSessionExpiresAt) {
-                sessionStorage.setItem(SESSION_EXPIRY_KEY, this.adminSessionExpiresAt);
             }
             return token;
         }
@@ -503,7 +438,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         this.userId = '';
         this.adminSessionToken = '';
         this.adminSessionExpiresAt = null;
-        this.clearSessionStorage();
         this.selectedTile = '';
         this.currentGatewayProperName = '';
         this.currentScreen = 'login';
@@ -799,7 +733,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         try {
             const alert = await checkIntegrationExpiry({ provider });
             if (!alert || alert.shouldAlert !== true) {
-                return;
             }
 
             this.integrationExpiryAlert = {
@@ -976,7 +909,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
             } else {
                 this.showToast('Notice', response.message, 'error');
             }
-        } catch (error) {
+        } catch {
             this.showToast('Error', 'Could not connect to server for PIN recovery.', 'error');
         } finally {
             this.isRecoveringPin = false;
@@ -1000,22 +933,21 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     restoreSessionFromStorage() {
-        const storedToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
-        const storedExpiry = sessionStorage.getItem(SESSION_EXPIRY_KEY);
+        const storedToken = '';
+        const storedExpiry = null;
         if (storedToken && storedExpiry) {
             const expiryDate = new Date(storedExpiry);
             if (expiryDate.getTime() > Date.now()) {
                 this.adminSessionToken = storedToken;
                 this.adminSessionExpiresAt = storedExpiry;
-                const storedUserId = sessionStorage.getItem('qb_admin_userId');
+                const storedUserId = '';
                 if (storedUserId) this.userId = storedUserId;
                 this.currentScreen = 'reporting';  // go directly to reporting
                 this.loadMetadataConfigs();
                 this.loadConfigPanelPreferences();
-                return;
             } else {
                 // expired, clear storage
-                this.clearSessionStorage();
+                this.adminSessionToken = '';
             }
         }
         // No valid session – stay on login screen
@@ -1023,9 +955,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
 
     clearSessionStorage() {
-        sessionStorage.removeItem(SESSION_TOKEN_KEY);
-        sessionStorage.removeItem(SESSION_EXPIRY_KEY);
-        sessionStorage.removeItem('qb_admin_userId');
+        this.adminSessionToken = '';
+        this.adminSessionExpiresAt = null;
     }
 
     handleCheckLicenses() {

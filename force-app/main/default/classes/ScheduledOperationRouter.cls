@@ -29,9 +29,6 @@ public with sharing class ScheduledOperationRouter {
     }
 
     public static String integrationTypeToConnectorKey(String integrationType) {
-        String normalized = ConnectorRegistryService.normalize(integrationType);
-        if (normalized == 'quickbooks') return 'qbo';
-        if (normalized == 'shopify') return 'shopify';
-        return integrationType;
+        return ConnectorRegistryService.connectorKeyForIntegrationType(integrationType);
     }
 }

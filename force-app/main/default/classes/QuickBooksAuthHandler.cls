@@ -1,35 +1,62 @@
 public without sharing class QuickBooksAuthHandler {
-    private static final String DEFAULT_NAMED_CREDENTIAL = 'QuickBridgeTLG__QuickBookSandbox';
     private static final String QB_API_PATH = '/v3/company/';
     private static final String DEFAULT_MINOR_VERSION = '65';
+
+    private class ConfigurationException extends Exception {}
 
     private class QuickBooksConnectionConfig {
         String realmId;
         String namedCredential;
         String minorVersion;
     }
+
+    @TestVisible private static String testRealmId;
+    @TestVisible private static String testNamedCredential;
+    @TestVisible private static String testMinorVersion;
+
+    @TestVisible
+    static void configureConnectionForTest(String realmId, String namedCredential, String minorVersion) {
+        testRealmId = realmId;
+        testNamedCredential = namedCredential;
+        testMinorVersion = minorVersion;
+    }
     
     private static QuickBooksConnectionConfig getConnectionConfig() {
         QuickBooksConnectionConfig result = new QuickBooksConnectionConfig();
-        result.namedCredential = DEFAULT_NAMED_CREDENTIAL;
         result.minorVersion = DEFAULT_MINOR_VERSION;
+
+        if (Test.isRunningTest() && String.isNotBlank(testRealmId) && String.isNotBlank(testNamedCredential)) {
+            result.realmId = testRealmId.trim();
+            result.namedCredential = testNamedCredential.trim();
+            result.minorVersion = String.isBlank(testMinorVersion) ? DEFAULT_MINOR_VERSION : testMinorVersion.trim();
+            return result;
+        }
 
         List<QuickBooks_Config__mdt> rows = [
             SELECT Realm_ID__c, Named_Credential__c, Minor_Version__c
             FROM QuickBooks_Config__mdt
-            WHERE Realm_ID__c != null
             LIMIT 1
         ];
-        if (!rows.isEmpty()) {
-            QuickBooks_Config__mdt config = rows[0];
-            result.realmId = config.Realm_ID__c;
-            if (String.isNotBlank(config.Named_Credential__c)) {
-                result.namedCredential = config.Named_Credential__c.trim();
-            }
-            if (String.isNotBlank(config.Minor_Version__c)) {
-                result.minorVersion = config.Minor_Version__c.trim();
-            }
+        if (rows.isEmpty()) {
+            throw new ConfigurationException('QuickBooks configuration record was not found.');
         }
+
+        QuickBooks_Config__mdt config = rows[0];
+        result.realmId = config.Realm_ID__c;
+        result.namedCredential = config.Named_Credential__c;
+        if (String.isNotBlank(config.Minor_Version__c)) {
+            result.minorVersion = config.Minor_Version__c.trim();
+        }
+
+        if (String.isBlank(result.realmId)) {
+            throw new ConfigurationException('QuickBooks Realm ID is missing.');
+        }
+        if (String.isBlank(result.namedCredential)) {
+            throw new ConfigurationException('QuickBooks Named Credential is missing.');
+        }
+
+        result.realmId = result.realmId.trim();
+        result.namedCredential = result.namedCredential.trim();
         return result;
     }
 
@@ -131,10 +158,18 @@ public without sharing class QuickBooksAuthHandler {
     }
 
     private static String buildEndpoint(String resource, String realmId, String namedCredential, String minorVersion) {
-        String safeNamedCredential = String.isBlank(namedCredential) ? DEFAULT_NAMED_CREDENTIAL : namedCredential.trim();
+        if (String.isBlank(namedCredential)) {
+            throw new ConfigurationException('QuickBooks Named Credential is missing.');
+        }
+        if (String.isBlank(realmId)) {
+            throw new ConfigurationException('QuickBooks Realm ID is missing.');
+        }
+
+        String safeNamedCredential = namedCredential.trim();
+        String safeRealmId = realmId.trim();
         String safeResource = String.isBlank(resource) ? '' : resource.trim();
         String safeMinorVersion = String.isBlank(minorVersion) ? DEFAULT_MINOR_VERSION : minorVersion.trim();
-        String endpoint = 'callout:' + safeNamedCredential + QB_API_PATH + realmId + safeResource;
+        String endpoint = 'callout:' + safeNamedCredential + QB_API_PATH + safeRealmId + safeResource;
         if (String.isBlank(safeMinorVersion) || safeResource.toLowerCase().contains('minorversion=')) {
             return endpoint;
         }
@@ -149,6 +184,10 @@ public without sharing class QuickBooksAuthHandler {
         String realmId = cfg.values != null ? cfg.values.get('QuickBooks_Realm_ID__c') : null;
         if (String.isBlank(realmId)) {
             throw new AuraHandledException('QuickBooks Online Realm ID is missing. Please configure it in Settings.');
+        }
+        QuickBooksConnectionConfig connectionConfig = getConnectionConfig();
+        if (String.isBlank(connectionConfig.namedCredential)) {
+            throw new AuraHandledException('QuickBooks Online Named Credential is missing. Please configure it in Settings.');
         }
     }
 }

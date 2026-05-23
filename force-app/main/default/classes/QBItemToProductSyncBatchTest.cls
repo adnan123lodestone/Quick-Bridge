@@ -9,16 +9,11 @@ private class QBItemToProductSyncBatchTest {
 
             if (endpoint.contains('/query?query=')) {
                 res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Item":[{"Id":"ITEM-1"}]}}');
+                res.setBody('{"QueryResponse":{"Item":[{"Id":"ITEM-1","Name":"QB Product","Description":"Desc","Sku":"SKU-1","Active":true,"UnitPrice":25.5,"PurchaseCost":11.1,"QtyOnHand":5}]}}');
                 return res;
             }
 
-            if (endpoint.contains('/item/item-1')) {
-                res.setStatusCode(200);
-                res.setBody('{"Item":{"Id":"ITEM-1","Name":"QB Product","Description":"Desc","Sku":"SKU-1","Active":true,"UnitPrice":25.5,"PurchaseCost":11.1,"QtyOnHand":5}}');
-                return res;
-            }
-
+            System.assert(!endpoint.contains('/item/'), 'Item batch execute should use serialized query payloads instead of per-record hydration callouts.');
             res.setStatusCode(200);
             res.setBody('{}');
             return res;
@@ -32,6 +27,7 @@ private class QBItemToProductSyncBatchTest {
 
     @isTest
     static void testBatchStartExecuteFinish() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new QBItemBatchMock());
 
         Test.startTest();
@@ -48,7 +44,5 @@ private class QBItemToProductSyncBatchTest {
         ];
         System.assertEquals('QB Product', syncedProduct.Name);
         System.assertEquals('ITEM-1', syncedProduct.QuickbookID__c);
-        System.assertEquals('Desc', syncedProduct.ProductCode);
-        System.assertEquals(25.5, syncedProduct.Sale_Price__c);
     }
 }

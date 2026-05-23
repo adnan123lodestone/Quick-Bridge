@@ -60,12 +60,12 @@ private class QuickBooksAuthHandlerTest {
         String endpoint = QuickBooksAuthHandler.buildEndpointForTest(
             '/query?query=select+*+from+Customer&minorversion=65',
             '12345',
-            null,
+            'Custom_QB_Named_Credential',
             null
         );
 
         System.assertEquals(
-            'callout:QuickBridgeTLG__QuickBookSandbox/v3/company/12345/query?query=select+*+from+Customer&minorversion=65',
+            'callout:Custom_QB_Named_Credential/v3/company/12345/query?query=select+*+from+Customer&minorversion=65',
             endpoint
         );
     }
@@ -75,14 +75,24 @@ private class QuickBooksAuthHandlerTest {
         String endpoint = QuickBooksAuthHandler.buildEndpointForTest(
             '/query?query=select+*+from+Customer',
             '12345',
-            '',
+            'Custom_QB_Named_Credential',
             ''
         );
 
         System.assertEquals(
-            'callout:QuickBridgeTLG__QuickBookSandbox/v3/company/12345/query?query=select+*+from+Customer&minorversion=65',
+            'callout:Custom_QB_Named_Credential/v3/company/12345/query?query=select+*+from+Customer&minorversion=65',
             endpoint
         );
+    }
+
+    @isTest
+    static void endpointRequiresConfiguredNamedCredential() {
+        try {
+            QuickBooksAuthHandler.buildEndpointForTest('/customer/1', '12345', null, null);
+            System.assert(false, 'Expected missing Named Credential to be rejected.');
+        } catch (Exception e) {
+            System.assert(e.getMessage().contains('Named Credential'), e.getMessage());
+        }
     }
 
     @isTest

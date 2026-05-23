@@ -1,25 +1,20 @@
-global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
+public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
 
     private String endpoint;
-    private String accessToken;
     private String nextUrl;
 
     public KlaviyoProfilesBatch(String endpoint) {
         this.endpoint = endpoint;
-        Integration__mdt klaviyoCredential = getAccessToken();
-        this.accessToken = klaviyoCredential.Access_Token__c;
     }
     
     public KlaviyoProfilesBatch() {
-        Integration__mdt klaviyoCredential = getAccessToken();
-        this.accessToken = klaviyoCredential.Access_Token__c;
     }
 
-    global Iterable<Integer> start(Database.BatchableContext BC) {
+    public Iterable<Integer> start(Database.BatchableContext BC) {
         return new List<Integer>{1};
     }
 
-    global void execute(Database.BatchableContext BC, List<Integer> scope) {
+    public void execute(Database.BatchableContext BC, List<Integer> scope) {
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
@@ -32,8 +27,7 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
             Integer daysAgo = Integer.valueOf(calloutControl.Days__c != null ? calloutControl.Days__c : 0);
 
             if (String.isBlank(this.endpoint)) {
-                Integration__mdt klaviyoCredential = getAccessToken();
-    			finalEndpoint = klaviyoCredential.URL__c + '/api/profiles';
+    			finalEndpoint = '/api/profiles';
                 
                 if (daysAgo != 0) {
     				String formattedDate = getPastDateTimeFormatted(daysAgo+1);
@@ -50,11 +44,7 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
   				finalEndpoint = this.endpoint;
 			}
 			
-            HttpRequest req = new HttpRequest();
-            req.setEndpoint(finalEndpoint);
-            req.setMethod('GET');
-            req.setHeader('Authorization', 'Klaviyo-API-Key ' + this.accessToken);
-            req.setHeader('revision', '2025-01-15');
+            HttpRequest req = KlaviyoAuthService.buildGetRequest(finalEndpoint);
 
             Http http = new Http();
             HttpResponse res = http.send(req);
@@ -78,10 +68,11 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
                 }
 
                 Id personAccountRTId = getPersonAccountRecordTypeId();
+                Boolean usePersonAccounts = personAccountRTId != null;
                 Map<String, Account> existingByEmail = new Map<String, Account>();
                 Map<String, Account> existingByKlaviyoId = new Map<String, Account>();
 
-                if (!emailSet.isEmpty()) {
+                if (usePersonAccounts && !emailSet.isEmpty()) {
                     for (Account acc : [
                         SELECT Id, PersonEmail, Klaviyo_ID__c FROM Account
                         WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet
@@ -91,11 +82,20 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
                 }
 
                 if (!klaviyoIdSet.isEmpty()) {
-                    for (Account acc : [
-                        SELECT Id, Klaviyo_ID__c FROM Account
-                        WHERE RecordTypeId = :personAccountRTId AND Klaviyo_ID__c IN :klaviyoIdSet
-                    ]) {
-                        existingByKlaviyoId.put(acc.Klaviyo_ID__c, acc);
+                    if (usePersonAccounts) {
+                        for (Account acc : [
+                            SELECT Id, Klaviyo_ID__c FROM Account
+                            WHERE RecordTypeId = :personAccountRTId AND Klaviyo_ID__c IN :klaviyoIdSet
+                        ]) {
+                            existingByKlaviyoId.put(acc.Klaviyo_ID__c, acc);
+                        }
+                    } else {
+                        for (Account acc : [
+                            SELECT Id, Klaviyo_ID__c FROM Account
+                            WHERE Klaviyo_ID__c IN :klaviyoIdSet
+                        ]) {
+                            existingByKlaviyoId.put(acc.Klaviyo_ID__c, acc);
+                        }
                     }
                 }
 
@@ -137,13 +137,19 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
                         acc = existingByEmail.get(email.toLowerCase());
                     } else {
                         acc = new Account();
-                        acc.RecordTypeId = personAccountRTId;
-                        acc.PersonEmail = email;
+                        if (usePersonAccounts) {
+                            acc.RecordTypeId = personAccountRTId;
+                            acc.PersonEmail = email;
+                        }
                     }
 
                     acc.Klaviyo_ID__c = klaviyoId;
-                    acc.FirstName = firstName;
-                    acc.LastName = lastName;
+                    if (usePersonAccounts) {
+                        acc.FirstName = firstName;
+                        acc.LastName = lastName;
+                    } else if (String.isBlank(acc.Name)) {
+                        acc.Name = buildBusinessAccountName(firstName, lastName, org, email, klaviyoId);
+                    }
                     acc.Phone = phone;
                     acc.BillingStreet = street.trim();
                     acc.BillingCity = city;
@@ -191,7 +197,7 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
         }
     }
 
-    global void finish(Database.BatchableContext BC) {
+    public void finish(Database.BatchableContext BC) {
         if (String.isNotBlank(this.nextUrl)) {
             Database.executeBatch(new KlaviyoProfilesBatch(this.nextUrl), 1);
         } else {
@@ -199,11 +205,10 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
         }
     }
 
-    private Integration__mdt getAccessToken() {
-        return [SELECT Access_Token__c, URL__c FROM Integration__mdt WHERE MasterLabel = 'Klaviyo' LIMIT 1];
-    }
-
     private API_Callout_Control__mdt getCalloutControl() {
+        if (Test.isRunningTest()) {
+            return new API_Callout_Control__mdt(Allow_Callouts__c = true, Days__c = 0);
+        }
         return [SELECT Allow_Callouts__c, Days__c
                 FROM API_Callout_Control__mdt 
                 WHERE MasterLabel = 'Klaviyo - Profile' AND Endpoint__c = 'profile' 
@@ -211,7 +216,31 @@ global class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
     }
 
     private Id getPersonAccountRecordTypeId() {
-        return [SELECT Id FROM RecordType WHERE SobjectType = 'Account' AND Name = 'Person Account' LIMIT 1].Id;
+        List<RecordType> recordTypes = [
+            SELECT Id
+            FROM RecordType
+            WHERE SobjectType = 'Account'
+            AND IsPersonType = true
+            LIMIT 1
+        ];
+        return recordTypes.isEmpty() ? null : recordTypes[0].Id;
+    }
+
+    private static String buildBusinessAccountName(String firstName, String lastName, String org, String email, String klaviyoId) {
+        String fullName = String.join(new List<String>{
+            String.isBlank(firstName) ? null : firstName,
+            String.isBlank(lastName) ? null : lastName
+        }, ' ').trim();
+        if (String.isNotBlank(fullName)) {
+            return fullName;
+        }
+        if (String.isNotBlank(org)) {
+            return org;
+        }
+        if (String.isNotBlank(email)) {
+            return email;
+        }
+        return klaviyoId;
     }
     
     private static String getPastDateTimeFormatted(Integer daysAgo) {

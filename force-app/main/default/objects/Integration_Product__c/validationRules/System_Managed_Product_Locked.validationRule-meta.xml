@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>System_Managed_Product_Locked</fullName>
+    <active>true</active>
+    <errorConditionFormula>AND(
+    System_Managed__c,
+    NOT($Permission.Manage_QuickBridge),
+    OR(ISCHANGED(Product_Key__c), ISCHANGED(Connector_Key__c), ISCHANGED(Enabled__c), ISCHANGED(Catalog_Active__c), ISCHANGED(Status__c))
+)</errorConditionFormula>
+    <errorMessage>System-managed QuickBridge products can only be changed by QuickBridge platform administrators.</errorMessage>
+</ValidationRule>

@@ -7,6 +7,7 @@ public with sharing class ConnectorAdapterAllowlist {
         'UPSCarrierAdapter',
         'QuickBooksScheduledOperationAdapter',
         'ShopifyScheduledOperationAdapter',
+        'KlaviyoScheduledOperationAdapter',
         'QBAccountWorker',
         'QBProductWorker',
         'QBInvoiceWorker',
@@ -16,7 +17,9 @@ public with sharing class ConnectorAdapterAllowlist {
         'UsageIntegrationWorker',
         'CarrierIntegrationWorker',
         'PaymentIntegrationWorker',
-        'QRIntegrationWorker'
+        'QRIntegrationWorker',
+        'QBORetryHandler',
+        'ShopifyRetryHandler'
     };
 
     public static void assertAllowed(String className) {

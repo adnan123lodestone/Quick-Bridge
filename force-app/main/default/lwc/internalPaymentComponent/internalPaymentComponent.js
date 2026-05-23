@@ -8,7 +8,6 @@ let acceptJsPromise;
 let stripeJsPromise;
 let paypalJsPromise;
 
-const CHECKOUT_PROVIDER_ORDER = ["authorizenet", "stripe", "paypal"];
 const FALLBACK_PAYMENT_PROVIDERS = [
   { connectorKey: "authorizenet", label: "Authorize.Net", hasPayment: true, hasCheckout: true },
   { connectorKey: "stripe", label: "Stripe", hasPayment: true, hasCheckout: true },
@@ -61,6 +60,7 @@ export default class PaymentComponent extends LightningElement {
   isPaypalInitializing = false;
   isSubmitting = false;
   paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
+  providerConfigs = {};
 
   CardPayment_lables = Object.fromEntries(
     CardPayment_lables.split("|").map((v, i) => [`index${i}`, v])
@@ -110,6 +110,7 @@ export default class PaymentComponent extends LightningElement {
   get isAuthorizeNetSelected() { return this.selectedProvider === "authorizenet"; }
   get isStripeSelected() { return this.selectedProvider === "stripe"; }
   get isPaypalSelected() { return this.selectedProvider === "paypal"; }
+  get isHostedProviderSelected() { return !!this.selectedProvider && !this.isAuthorizeNetSelected && !this.isStripeSelected && !this.isPaypalSelected; }
   get hasAvailableProviders() { return this.availableProviderCount > 0; }
   get showUnavailableState() { return !this.hasAvailableProviders; }
 
@@ -176,7 +177,8 @@ export default class PaymentComponent extends LightningElement {
     if (this.isSubmitting) return "Processing...";
     if (this.selectedProvider === "stripe") return "Proceed with Stripe";
     if (this.selectedProvider === "paypal") return "Pay with PayPal";
-    return "Proceed with Authorize.Net";
+    if (this.selectedProvider === "authorizenet") return "Proceed with Authorize.Net";
+    return `Continue with ${this.getProviderLabel(this.selectedProvider)}`;
   }
 
   get isProceedDisabled() {
@@ -199,10 +201,8 @@ export default class PaymentComponent extends LightningElement {
 
       // Auto-select provider
       if (!this.isProviderSelectable(this.selectedProvider)) {
-        if (this.isProviderSelectable("authorizenet")) this.selectedProvider = "authorizenet";
-        else if (this.isProviderSelectable("stripe")) this.selectedProvider = "stripe";
-        else if (this.isProviderSelectable("paypal")) this.selectedProvider = "paypal";
-        else this.selectedProvider = null;
+        const firstProvider = this.paymentProviderDescriptors.find((provider) => this.isProviderSelectable(provider.connectorKey));
+        this.selectedProvider = firstProvider?.connectorKey || null;
       }
 
       if (this.selectedProvider === "authorizenet" && this.isAuthorizeNetActive) this.primeAuthorizeNet();
@@ -218,29 +218,37 @@ export default class PaymentComponent extends LightningElement {
   applyCheckoutProviders(providers) {
     const providerList = Array.isArray(providers) ? providers : [];
     const normalized = providerList
-      .filter((provider) => CHECKOUT_PROVIDER_ORDER.includes(provider.connectorKey))
-      .sort((a, b) => CHECKOUT_PROVIDER_ORDER.indexOf(a.connectorKey) - CHECKOUT_PROVIDER_ORDER.indexOf(b.connectorKey));
+      .filter((provider) => provider?.connectorKey)
+      .map((provider) => ({ ...provider, connectorKey: provider.connectorKey.toLowerCase() }))
+      .sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999));
 
     this.paymentProviderDescriptors = normalized.length
       ? normalized.map((provider) => ({ ...provider, hasPayment: true, hasCheckout: true }))
       : FALLBACK_PAYMENT_PROVIDERS;
 
-    const byKey = new Map(normalized.map((provider) => [provider.connectorKey, provider]));
-    this.authorizeNetConfig = this.toLegacyProviderConfig(byKey.get("authorizenet"), "Authorize.Net is unavailable.");
-    this.stripeConfig = this.toLegacyProviderConfig(byKey.get("stripe"), "Stripe is unavailable.");
-    this.paypalConfig = this.toLegacyProviderConfig(byKey.get("paypal"), "PayPal is unavailable.");
+    this.providerConfigs = this.paymentProviderDescriptors.reduce((acc, provider) => {
+      acc[provider.connectorKey] = this.toProviderConfig(provider, `${provider.label || provider.connectorKey} is unavailable.`);
+      return acc;
+    }, {});
+    this.authorizeNetConfig = this.getProviderConfig("authorizenet") || this.buildUnavailableProviderConfig("Authorize.Net is unavailable.");
+    this.stripeConfig = this.getProviderConfig("stripe") || this.buildUnavailableProviderConfig("Stripe is unavailable.");
+    this.paypalConfig = this.getProviderConfig("paypal") || this.buildUnavailableProviderConfig("PayPal is unavailable.");
   }
 
-  toLegacyProviderConfig(provider, fallbackMessage) {
+  toProviderConfig(provider, fallbackMessage) {
     if (!provider) return this.buildUnavailableProviderConfig(fallbackMessage);
     return {
       ...(provider.config || {}),
       active: provider.active === true,
       configured: provider.configured === true,
       message: provider.message,
+      actionType: provider.actionType || "hosted",
+      connectorKey: provider.connectorKey,
+      label: provider.label,
       acceptJsUrl: provider.config?.acceptJsUrl || provider.clientScriptUrl,
       stripeJsUrl: provider.config?.stripeJsUrl || provider.clientScriptUrl,
       payPalJsUrl: provider.config?.payPalJsUrl || provider.clientScriptUrl,
+      clientScriptUrl: provider.clientScriptUrl,
     };
   }
 
@@ -257,10 +265,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   getProviderConfig(providerName) {
-    if (providerName === "authorizenet") return this.authorizeNetConfig;
-    if (providerName === "stripe") return this.stripeConfig;
-    if (providerName === "paypal") return this.paypalConfig;
-    return null;
+    return this.providerConfigs?.[providerName] || null;
   }
 
   getProviderLabel(providerName) {
@@ -312,7 +317,11 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async primeAuthorizeNet() {
-    try { await this.ensureAuthorizeNetReady(); } catch (error) {}
+    try {
+      await this.ensureAuthorizeNetReady();
+    } catch {
+      // Authorize.Net readiness is surfaced when the user submits the payment.
+    }
   }
 
   async primeStripe() {
@@ -384,8 +393,10 @@ export default class PaymentComponent extends LightningElement {
         this.resetStripeDiagnostics();
         this.logStripeStep(`Stripe submit started for amount ${resolvedAmount}`);
         await this.handleStripeSubmit(resolvedAmount);
-      } else {
+      } else if (this.selectedProvider === "authorizenet") {
         await this.handleAuthorizeNetSubmit(resolvedAmount);
+      } else {
+        await this.handleHostedSubmit(resolvedAmount);
       }
     } catch (error) {
       this.dispatchError(this.getErrorMessage(error));
@@ -521,6 +532,25 @@ export default class PaymentComponent extends LightningElement {
 
     this.clearStripeSensitiveFields();
     this.logStripeStep("Stripe payment completed successfully");
+    this.dispatchSuccess(response);
+  }
+
+  async handleHostedSubmit(resolvedAmount) {
+    const response = await initializePayment({
+      request: {
+        providerKey: this.selectedProvider,
+        amount: Number(resolvedAmount),
+        orderId: this.orderId || null,
+      },
+    });
+    if (!response?.success) {
+      this.dispatchError(response?.message || "Hosted checkout could not be started.");
+      return;
+    }
+    if (response.approveLink) {
+      window.location.assign(response.approveLink);
+      return;
+    }
     this.dispatchSuccess(response);
   }
 

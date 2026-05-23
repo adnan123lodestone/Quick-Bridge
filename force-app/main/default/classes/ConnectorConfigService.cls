@@ -38,6 +38,10 @@ public with sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfig(String connectorKey) {
+    return getConfig(connectorKey, true);
+  }
+
+  public static ConnectorConfig getConfig(String connectorKey, Boolean allowLegacyFallback) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
     );
@@ -52,10 +56,14 @@ public with sharing class ConnectorConfigService {
     config.label = descriptor.label;
     config.values = new Map<String, String>();
     hydrateFromNormalizedConfig(config, descriptor);
-    if (config.fromNormalizedConfig != true) {
+    if (config.fromNormalizedConfig != true && allowLegacyFallback == true) {
       hydrateFromLegacyConfig(config, descriptor);
     }
     return config;
+  }
+
+  public static ConnectorConfig getAuthoritativeConfig(String connectorKey) {
+    return getConfig(connectorKey, false);
   }
 
   private static void redactSecretFields(ConnectorConfig cfg) {

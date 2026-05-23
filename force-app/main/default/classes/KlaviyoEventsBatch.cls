@@ -1,25 +1,20 @@
-global class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
+public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
     
     private String endpoint;
-    private String accessToken;
     private String nextUrl;
 
     public KlaviyoEventsBatch(String endpoint) {
         this.endpoint = endpoint;
-        Integration__mdt klaviyoCredential = getAccessToken();
-        this.accessToken = klaviyoCredential.Access_Token__c;
     }
     
     public KlaviyoEventsBatch() {
-        Integration__mdt klaviyoCredential = getAccessToken();
-        this.accessToken = klaviyoCredential.Access_Token__c;
     }
 
-    global Iterable<Integer> start(Database.BatchableContext BC) {
+    public Iterable<Integer> start(Database.BatchableContext BC) {
         return new List<Integer>{1};
     }
 
-    global void execute(Database.BatchableContext BC, List<Integer> scope) {
+    public void execute(Database.BatchableContext BC, List<Integer> scope) {
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
@@ -32,8 +27,7 @@ global class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
             Integer daysAgo = Integer.valueOf(calloutControl.Days__c != null ? calloutControl.Days__c : 0);
 
             if (String.isBlank(this.endpoint)) {
-                Integration__mdt klaviyoCredential = getAccessToken();
-    			finalEndpoint = klaviyoCredential.URL__c + '/api/events';
+    			finalEndpoint = '/api/events';
                 
                 if (daysAgo != 0) {
     				String formattedDate = getPastDateTimeFormatted(daysAgo+1);
@@ -51,11 +45,7 @@ global class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
 			}
             
 			Http http = new Http();
-        	HttpRequest req = new HttpRequest();
-        	req.setEndpoint(finalEndpoint);
-            req.setMethod('GET');
-            req.setHeader('Authorization', 'Klaviyo-API-Key ' + this.accessToken);
-            req.setHeader('revision', '2025-01-15');
+        	HttpRequest req = KlaviyoAuthService.buildGetRequest(finalEndpoint);
 
         	HttpResponse res = http.send(req);
         	if (res.getStatusCode() != 200) {
@@ -158,7 +148,7 @@ global class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
         }
     }
 
-    global void finish(Database.BatchableContext BC) {
+    public void finish(Database.BatchableContext BC) {
         if (String.isNotBlank(this.nextUrl)) {
             Database.executeBatch(new KlaviyoEventsBatch(this.nextUrl), 1);
         } else {
@@ -271,11 +261,10 @@ global class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
         return formattedDateTime;
     }
     
-    private Integration__mdt getAccessToken() {
-        return [SELECT Access_Token__c, URL__c FROM Integration__mdt WHERE MasterLabel = 'Klaviyo' LIMIT 1];
-    }
-
     private API_Callout_Control__mdt getCalloutControl() {
+        if (Test.isRunningTest()) {
+            return new API_Callout_Control__mdt(Allow_Callouts__c = true, Days__c = 0);
+        }
         return [SELECT Allow_Callouts__c, Days__c
                 FROM API_Callout_Control__mdt 
                 WHERE MasterLabel = 'Klaviyo - Event' AND Endpoint__c = 'event' 

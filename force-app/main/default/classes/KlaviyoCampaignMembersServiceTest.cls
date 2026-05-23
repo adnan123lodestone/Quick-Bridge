@@ -4,6 +4,11 @@ private class KlaviyoCampaignMembersServiceTest {
     // Mock HTTP callout
     private class KlaviyoProfileHttpMock implements HttpCalloutMock {
         public HTTPResponse respond(HTTPRequest req) {
+            System.assert(
+                req.getEndpoint().startsWith('callout:Klaviyo_API'),
+                'Klaviyo requests must use the Klaviyo_API Named Credential.'
+            );
+            System.assertEquals(null, req.getHeader('Authorization'), 'Klaviyo API keys must not be set in Apex headers.');
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
@@ -47,8 +52,9 @@ private class KlaviyoCampaignMembersServiceTest {
         KlaviyoCampaignMembersService.Response res = KlaviyoCampaignMembersService.addCampaignMembers(camp.Id);
         Test.stopTest();
 
-        System.assertEquals(200, res.code);
-        System.assert(res.message.contains('Inserted'));
+        System.assertEquals(202, res.code);
+        System.assert(String.isNotBlank(res.jobId), 'Queued async import should return a job id.');
+        System.assert(res.message.contains('queued'));
     }
 
     @isTest
@@ -78,8 +84,8 @@ private class KlaviyoCampaignMembersServiceTest {
         KlaviyoCampaignMembersService.Response res = KlaviyoCampaignMembersService.addCampaignMembers(camp.Id);
         Test.stopTest();
 
-        System.assertEquals(204, res.code);
-        System.assert(res.message.contains('No matching accounts'));
+        System.assertEquals(202, res.code);
+        System.assert(String.isNotBlank(res.jobId), 'Queued async import should return a job id.');
     }
 
     @isTest
@@ -108,8 +114,8 @@ private class KlaviyoCampaignMembersServiceTest {
         KlaviyoCampaignMembersService.Response res = KlaviyoCampaignMembersService.addCampaignMembers(camp.Id);
         Test.stopTest();
 
-        System.assertEquals(204, res.code);
-        System.assert(res.message.contains('already campaign members'));
+        System.assertEquals(202, res.code);
+        System.assert(String.isNotBlank(res.jobId), 'Queued async import should return a job id.');
     }
 
     @isTest
@@ -132,8 +138,8 @@ private class KlaviyoCampaignMembersServiceTest {
         KlaviyoCampaignMembersService.Response res = KlaviyoCampaignMembersService.addCampaignMembers(camp.Id);
         Test.stopTest();
 
-        System.assertEquals(204, res.code);
-        System.assert(res.message.contains('valid PersonContactId'));
+        System.assertEquals(202, res.code);
+        System.assert(String.isNotBlank(res.jobId), 'Queued async import should return a job id.');
     }
     
 }

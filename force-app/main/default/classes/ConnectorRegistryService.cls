@@ -30,6 +30,7 @@ public with sharing class ConnectorRegistryService {
         @AuraEnabled public String entitlementKey { get; set; }
         @AuraEnabled public String configSchemaKey { get; set; }
         @AuraEnabled public String configRecordName { get; set; }
+        @AuraEnabled public String integrationType { get; set; }
         @AuraEnabled public String activeField { get; set; }
         @AuraEnabled public String expiryField { get; set; }
         @AuraEnabled public List<String> editableFields { get; set; }
@@ -50,6 +51,7 @@ public with sharing class ConnectorRegistryService {
         @AuraEnabled public Boolean hasCheckout { get; set; }
         @AuraEnabled public Boolean hasPayment { get; set; }
         @AuraEnabled public Boolean hasCarrier { get; set; }
+        @AuraEnabled public Boolean countsTowardScheduleLimit { get; set; }
     }
 
     private static List<ConnectorDescriptor> cachedDescriptors;
@@ -109,6 +111,45 @@ public with sharing class ConnectorRegistryService {
             }
         }
         return defaultAdapterClass(descriptor.connectorKey, capabilityKey);
+    }
+
+    public static String integrationTypeFor(String keyOrAlias) {
+        ConnectorDescriptor descriptor = byKey(keyOrAlias);
+        if (descriptor == null) {
+            return keyOrAlias;
+        }
+        return String.isBlank(descriptor.integrationType) ? descriptor.label : descriptor.integrationType;
+    }
+
+    public static String connectorKeyForIntegrationType(String integrationType) {
+        if (String.isBlank(integrationType)) {
+            return integrationType;
+        }
+        ConnectorDescriptor direct = byKey(integrationType);
+        if (direct != null) {
+            return direct.connectorKey;
+        }
+
+        String normalized = normalize(integrationType);
+        for (ConnectorDescriptor descriptor : connectors()) {
+            if (
+                normalize(descriptor.integrationType) == normalized ||
+                normalize(descriptor.label) == normalized ||
+                normalize(descriptor.productKey) == normalized ||
+                normalize(descriptor.connectorKey) == normalized
+            ) {
+                return descriptor.connectorKey;
+            }
+        }
+        return integrationType;
+    }
+
+    public static Boolean countsTowardScheduleLimit(String keyOrAlias) {
+        ConnectorDescriptor descriptor = byKey(keyOrAlias);
+        if (descriptor == null) {
+            descriptor = byKey(connectorKeyForIntegrationType(keyOrAlias));
+        }
+        return descriptor != null && descriptor.countsTowardScheduleLimit == true;
     }
 
     public static List<ConfigFieldDescriptor> configFieldsFor(String connectorKey) {
@@ -206,6 +247,7 @@ public with sharing class ConnectorRegistryService {
                     row.Aliases__c,
                     row.Category__c,
                     row.Config_Record_Name__c,
+                    row.Product_Label__c,
                     row.Active_Field__c,
                     row.Expiry_Field__c,
                     row.Editable_Fields__c,
@@ -216,7 +258,8 @@ public with sharing class ConnectorRegistryService {
                     row.Has_Scheduler__c == true,
                     row.Has_Checkout__c == true,
                     row.Has_Payment__c == true,
-                    row.Has_Carrier__c == true
+                    row.Has_Carrier__c == true,
+                    row.Has_Scheduler__c == true
                 );
                 descriptor.logoUrl = row.Logo_URL__c;
                 descriptor.catalogActive = row.Catalog_Active__c == true;
@@ -237,6 +280,7 @@ public with sharing class ConnectorRegistryService {
         try {
             for (Integration_Connector__mdt row : [
                 SELECT Connector_Key__c, Product_Key__c, Provider_Label__c, Aliases__c, Category__c,
+                    Integration_Type__c, Counts_Toward_Schedule_Limit__c,
                     Config_Record_Name__c, Active_Field__c, Expiry_Field__c, Editable_Fields__c,
                     Display_Order__c, Enabled__c, Has_Config__c, Has_Reporting__c, Has_Mapping__c,
                     Has_Scheduler__c, Has_Checkout__c, Has_Payment__c, Has_Carrier__c
@@ -251,6 +295,7 @@ public with sharing class ConnectorRegistryService {
                     row.Aliases__c,
                     row.Category__c,
                     row.Config_Record_Name__c,
+                    row.Integration_Type__c,
                     row.Active_Field__c,
                     row.Expiry_Field__c,
                     row.Editable_Fields__c,
@@ -261,7 +306,8 @@ public with sharing class ConnectorRegistryService {
                     row.Has_Scheduler__c == true,
                     row.Has_Checkout__c == true,
                     row.Has_Payment__c == true,
-                    row.Has_Carrier__c == true
+                    row.Has_Carrier__c == true,
+                    row.Counts_Toward_Schedule_Limit__c == true
                 ));
             }
         } catch (Exception ignored) {
@@ -386,6 +432,7 @@ public with sharing class ConnectorRegistryService {
         String aliases,
         String category,
         String configRecordName,
+        String integrationType,
         String activeField,
         String expiryField,
         String editableFields,
@@ -396,7 +443,8 @@ public with sharing class ConnectorRegistryService {
         Boolean hasScheduler,
         Boolean hasCheckout,
         Boolean hasPayment,
-        Boolean hasCarrier
+        Boolean hasCarrier,
+        Boolean countsTowardScheduleLimit
     ) {
         ConnectorDescriptor descriptor = new ConnectorDescriptor();
         descriptor.connectorKey = String.isBlank(connectorKey) ? productKey : connectorKey;
@@ -410,6 +458,7 @@ public with sharing class ConnectorRegistryService {
         descriptor.entitlementKey = descriptor.productKey;
         descriptor.configSchemaKey = descriptor.connectorKey;
         descriptor.configRecordName = configRecordName;
+        descriptor.integrationType = String.isBlank(integrationType) ? label : integrationType;
         descriptor.activeField = activeField;
         descriptor.expiryField = expiryField;
         descriptor.editableFields = splitList(editableFields);
@@ -427,6 +476,7 @@ public with sharing class ConnectorRegistryService {
         descriptor.hasCheckout = hasCheckout == true;
         descriptor.hasPayment = hasPayment == true;
         descriptor.hasCarrier = hasCarrier == true;
+        descriptor.countsTowardScheduleLimit = countsTowardScheduleLimit == true;
         return descriptor;
     }
 
@@ -505,7 +555,7 @@ public with sharing class ConnectorRegistryService {
     }
 
     private static ConnectorDescriptor cloneConnector(ConnectorDescriptor source) {
-        ConnectorDescriptor descriptor = baseDescriptor(source.connectorKey, source.productKey, source.label, source.aliases, source.category, source.configRecordName, source.activeField, source.expiryField, String.join(source.editableFields == null ? new List<String>() : source.editableFields, ','), source.sortOrder, source.hasConfig, source.hasReporting, source.hasMapping, source.hasScheduler, source.hasCheckout, source.hasPayment, source.hasCarrier);
+        ConnectorDescriptor descriptor = baseDescriptor(source.connectorKey, source.productKey, source.label, source.aliases, source.category, source.configRecordName, source.integrationType, source.activeField, source.expiryField, String.join(source.editableFields == null ? new List<String>() : source.editableFields, ','), source.sortOrder, source.hasConfig, source.hasReporting, source.hasMapping, source.hasScheduler, source.hasCheckout, source.hasPayment, source.hasCarrier, source.countsTowardScheduleLimit);
         descriptor.iconName = String.isBlank(source.iconName) ? descriptor.iconName : source.iconName;
         descriptor.logoUrl = source.logoUrl;
         descriptor.entitlementKey = source.entitlementKey;

@@ -1,12 +1,12 @@
 @IsTest
 private class IntegrationProductSeedServiceTest {
     @IsTest
-    static void seedsSevenDefaultProducts() {
+    static void seedsDefaultProductsFromManagedDefinitions() {
         Test.startTest();
         IntegrationProductSeedService.seedDefaultProducts();
         Test.stopTest();
 
-        System.assertEquals(7, [SELECT Count() FROM Integration_Product__c]);
+        System.assertEquals(8, [SELECT Count() FROM Integration_Product__c]);
         Integration_Product__c quickBooks = [
             SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Has_Scheduler__c
             FROM Integration_Product__c
@@ -25,6 +25,16 @@ private class IntegrationProductSeedServiceTest {
         ];
         System.assertEquals('ups', ups.Connector_Key__c);
         System.assertEquals(null, ups.Logo_URL__c);
+
+        Integration_Product__c klaviyo = [
+            SELECT Product_Key__c, Connector_Key__c, Product_Label__c, System_Managed__c
+            FROM Integration_Product__c
+            WHERE Product_Key__c = 'klaviyo'
+            LIMIT 1
+        ];
+        System.assertEquals('klaviyo', klaviyo.Connector_Key__c);
+        System.assertEquals('Klaviyo', klaviyo.Product_Label__c);
+        System.assertEquals(true, klaviyo.System_Managed__c);
     }
 
     @IsTest

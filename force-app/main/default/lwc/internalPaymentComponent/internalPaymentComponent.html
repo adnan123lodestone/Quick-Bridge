@@ -243,6 +243,21 @@
                     </section>
                 </template>
 
+                <template if:true={isHostedProviderSelected}>
+                    <section class="payment-panel provider-placeholder">
+                        <div class="payment-panel-header payment-panel-header-compact">
+                            <h3 class="payment-panel-title">{selectedProviderLabel}</h3>
+                            <p class="payment-panel-copy">Continue to the hosted checkout flow for this provider.</p>
+                        </div>
+                        <div class="payment-action-row slds-m-around--small slds-grid slds-grid_align-end">
+                            <lightning-button variant="neutral" label="Cancel" onclick={handleCancelClick}
+                                class="slds-m-right_small"></lightning-button>
+                            <lightning-button variant="brand" label={proceedButtonLabel} onclick={handleProceedClick}
+                                disabled={isProceedDisabled}></lightning-button>
+                        </div>
+                    </section>
+                </template>
+
             </div>
         </lightning-card>
 

@@ -6,6 +6,7 @@ public with sharing class IntegrationConnectorRegistry {
         @AuraEnabled public String aliases { get; set; }
         @AuraEnabled public String category { get; set; }
         @AuraEnabled public String configRecordName { get; set; }
+        @AuraEnabled public String integrationType { get; set; }
         @AuraEnabled public String activeField { get; set; }
         @AuraEnabled public String expiryField { get; set; }
         @AuraEnabled public List<String> editableFields { get; set; }
@@ -18,6 +19,7 @@ public with sharing class IntegrationConnectorRegistry {
         @AuraEnabled public Boolean hasCheckout { get; set; }
         @AuraEnabled public Boolean hasPayment { get; set; }
         @AuraEnabled public Boolean hasCarrier { get; set; }
+        @AuraEnabled public Boolean countsTowardScheduleLimit { get; set; }
         @AuraEnabled public String logoUrl { get; set; }
         @AuraEnabled public Boolean catalogActive { get; set; }
         @AuraEnabled public Date startDate { get; set; }
@@ -88,6 +90,7 @@ public with sharing class IntegrationConnectorRegistry {
         connector.aliases = source.aliases;
         connector.category = source.category;
         connector.configRecordName = source.configRecordName;
+        connector.integrationType = source.integrationType;
         connector.activeField = source.activeField;
         connector.expiryField = source.expiryField;
         connector.editableFields = source.editableFields == null ? new List<String>() : new List<String>(source.editableFields);
@@ -100,6 +103,7 @@ public with sharing class IntegrationConnectorRegistry {
         connector.hasCheckout = source.hasCheckout;
         connector.hasPayment = source.hasPayment;
         connector.hasCarrier = source.hasCarrier;
+        connector.countsTowardScheduleLimit = source.countsTowardScheduleLimit;
         connector.logoUrl = source.logoUrl;
         connector.catalogActive = source.catalogActive;
         connector.startDate = source.startDate;

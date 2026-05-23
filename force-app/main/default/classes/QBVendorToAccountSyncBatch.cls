@@ -12,7 +12,7 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
     }
 
     public Iterable<String> start(Database.BatchableContext bc) {
-        List<String> vendorIdsList = new List<String>();
+        List<String> vendorPayloads = new List<String>();
 
         try {
             String query = 'select * from Vendor Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
@@ -34,7 +34,7 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
                                 if (vendorObj != null) {
                                     Map<String, Object> vendor = (Map<String, Object>)vendorObj;
                                     if (vendor.containsKey('Id')) {
-                                        vendorIdsList.add((String)vendor.get('Id'));
+                                        vendorPayloads.add(JSON.serialize(vendor));
                                     }
                                 }
                             }
@@ -53,7 +53,7 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
             );
         }
 
-        return vendorIdsList;
+        return vendorPayloads;
     }
 
     public void execute(Database.BatchableContext bc, List<String> scope) {
@@ -64,20 +64,16 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
             List<Account> accountsToUpsert = new List<Account>();
             Id vendorRecordTypeId = getVendorAccountRecordTypeId();
 
-            for (String vendorId : scope) {
+            for (String vendorPayload : scope) {
+                String vendorId = getExternalIdFromPayload(vendorPayload);
                 try {
-                    HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/vendor/' + vendorId, null);
+                    Map<String, Object> vendorData = resolveVendorData(vendorPayload);
 
-                    if (response.getStatusCode() == 200) {
-                        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-                        Map<String, Object> vendorData = (Map<String, Object>)responseMap.get('Vendor');
+                    if (vendorData != null) {
+                        Account accountToSync = processVendorData(vendorData, vendorRecordTypeId);
 
-                        if (vendorData != null) {
-                            Account accountToSync = processVendorData(vendorData, vendorRecordTypeId);
-
-                            if (accountToSync != null) {
-                                accountsToUpsert.add(accountToSync);
-                            }
+                        if (accountToSync != null) {
+                            accountsToUpsert.add(accountToSync);
                         }
                     }
                 } catch (Exception e) {
@@ -121,6 +117,45 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
 
     public void finish(Database.BatchableContext bc) {
         System.debug('QBVendorToAccountSyncBatch completed');
+    }
+
+    private Map<String, Object> resolveVendorData(String vendorPayload) {
+        if (String.isBlank(vendorPayload)) {
+            return null;
+        }
+
+        try {
+            Object parsed = JSON.deserializeUntyped(vendorPayload);
+            if (parsed instanceof Map<String, Object>) {
+                return (Map<String, Object>)parsed;
+            }
+        } catch (Exception e) {
+            // Legacy payloads were raw QuickBooks ids; hydrate only those compatibility inputs.
+        }
+
+        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/vendor/' + vendorPayload, null);
+        if (response == null || response.getStatusCode() != 200 || String.isBlank(response.getBody())) {
+            return null;
+        }
+        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+        return responseMap == null ? null : (Map<String, Object>)responseMap.get('Vendor');
+    }
+
+    private String getExternalIdFromPayload(String vendorPayload) {
+        Map<String, Object> vendorData = resolveSerializedPayload(vendorPayload);
+        return vendorData == null ? vendorPayload : String.valueOf(vendorData.get('Id'));
+    }
+
+    private Map<String, Object> resolveSerializedPayload(String payload) {
+        if (String.isBlank(payload)) {
+            return null;
+        }
+        try {
+            Object parsed = JSON.deserializeUntyped(payload);
+            return parsed instanceof Map<String, Object> ? (Map<String, Object>)parsed : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private Account processVendorData(Map<String, Object> vendorData, Id vendorRecordTypeId) {

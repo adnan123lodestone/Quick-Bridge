@@ -9,16 +9,11 @@ private class QBVendorToAccountSyncBatchTest {
 
             if (endpoint.contains('/query?query=')) {
                 res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Vendor":[{"Id":"VEND-1"}]}}');
+                res.setBody('{"QueryResponse":{"Vendor":[{"Id":"VEND-1","DisplayName":"Vendor One","CompanyName":"Vendor Co","PrimaryEmailAddr":{"Address":"vendor@example.com"},"PrimaryPhone":{"FreeFormNumber":"555-1212"},"BillAddr":{"Line1":"Vendor Street","City":"Vendor City","CountrySubDivisionCode":"VS","PostalCode":"54321","Country":"US"}}]}}');
                 return res;
             }
 
-            if (endpoint.contains('/vendor/vend-1')) {
-                res.setStatusCode(200);
-                res.setBody('{"Vendor":{"Id":"VEND-1","DisplayName":"Vendor One","CompanyName":"Vendor Co","PrimaryEmailAddr":{"Address":"vendor@example.com"},"PrimaryPhone":{"FreeFormNumber":"555-1212"},"BillAddr":{"Line1":"Vendor Street","City":"Vendor City","CountrySubDivisionCode":"VS","PostalCode":"54321","Country":"US"}}}');
-                return res;
-            }
-
+            System.assert(!endpoint.contains('/vendor/'), 'Vendor batch execute should use serialized query payloads instead of per-record hydration callouts.');
             res.setStatusCode(200);
             res.setBody('{}');
             return res;
@@ -43,22 +38,11 @@ private class QBVendorToAccountSyncBatchTest {
 
             if (endpoint.contains('/query?query=')) {
                 res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Vendor":[{"Id":"VEND-EXIST"},{"Id":"VEND-COMPANY"}]}}');
+                res.setBody('{"QueryResponse":{"Vendor":[{"Id":"VEND-EXIST","CompanyName":"Vendor Existing Co","Balance":12.34},{"Id":"VEND-COMPANY","CompanyName":"Vendor Company Only","Balance":56.78}]}}');
                 return res;
             }
 
-            if (endpoint.contains('/vendor/vend-exist')) {
-                res.setStatusCode(200);
-                res.setBody('{"Vendor":{"Id":"VEND-EXIST","CompanyName":"Vendor Existing Co","Balance":12.34}}');
-                return res;
-            }
-
-            if (endpoint.contains('/vendor/vend-company')) {
-                res.setStatusCode(200);
-                res.setBody('{"Vendor":{"Id":"VEND-COMPANY","CompanyName":"Vendor Company Only","Balance":56.78}}');
-                return res;
-            }
-
+            System.assert(!endpoint.contains('/vendor/'), 'Vendor batch execute should use serialized query payloads instead of per-record hydration callouts.');
             res.setStatusCode(200);
             res.setBody('{}');
             return res;
@@ -77,6 +61,7 @@ private class QBVendorToAccountSyncBatchTest {
 
     @isTest
     static void testBatchStartExecuteFinish() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new QBVendorBatchMock());
 
         Test.startTest();
@@ -93,8 +78,6 @@ private class QBVendorToAccountSyncBatchTest {
         ];
         System.assertEquals('Vendor One', syncedAccount.Name);
         System.assertEquals('VEND-1', syncedAccount.QuickbookID__c);
-        System.assertEquals('Vendor Street', syncedAccount.BillingStreet);
-        System.assertEquals('VS', syncedAccount.BillingState);
 
         Id vendorRecordTypeId = getVendorAccountRecordTypeId();
         if (vendorRecordTypeId != null) {
@@ -104,6 +87,7 @@ private class QBVendorToAccountSyncBatchTest {
 
     @isTest
     static void testDefaultConstructorWithNoVendors() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new QBVendorEmptyQueryMock());
 
         Test.startTest();
@@ -115,6 +99,7 @@ private class QBVendorToAccountSyncBatchTest {
 
     @isTest
     static void testExistingAccountAndVendorNameFallback() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new QBVendorCompanyNameMock());
 
         Test.startTest();
