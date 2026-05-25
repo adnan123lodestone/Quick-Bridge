@@ -85,7 +85,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         requestBody.put('Line', buildLineItems(lineItems, record, lineFieldMap));
 
         String requestJson = JSON.serialize(requestBody);
-        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder?minorversion=65', requestJson);
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder', requestJson);
         
         if (res != null && res.getStatusCode() == 200) {
             Map<String, Object> responseMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('PurchaseOrder');
@@ -103,7 +103,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     }
     
     private void updatePurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
-        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/purchaseorder/' + qbId + '?minorversion=65', null);
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/purchaseorder/' + qbId, null);
         if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
@@ -127,7 +127,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         requestBody.put('Line', buildLineItems(lineItems, record, lineFieldMap));
 
         String requestJson = JSON.serialize(requestBody);
-        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder?minorversion=65', requestJson);
+        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder', requestJson);
         if (updateRes == null || updateRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',

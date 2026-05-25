@@ -1,6 +1,5 @@
 public without sharing class QuickBooksAuthHandler {
     private static final String QB_API_PATH = '/v3/company/';
-    private static final String DEFAULT_MINOR_VERSION = '65';
 
     private class ConfigurationException extends Exception {}
 
@@ -23,12 +22,11 @@ public without sharing class QuickBooksAuthHandler {
     
     private static QuickBooksConnectionConfig getConnectionConfig() {
         QuickBooksConnectionConfig result = new QuickBooksConnectionConfig();
-        result.minorVersion = DEFAULT_MINOR_VERSION;
 
         if (Test.isRunningTest() && String.isNotBlank(testRealmId) && String.isNotBlank(testNamedCredential)) {
             result.realmId = testRealmId.trim();
             result.namedCredential = testNamedCredential.trim();
-            result.minorVersion = String.isBlank(testMinorVersion) ? DEFAULT_MINOR_VERSION : testMinorVersion.trim();
+            result.minorVersion = String.isBlank(testMinorVersion) ? null : testMinorVersion.trim();
             return result;
         }
 
@@ -168,7 +166,7 @@ public without sharing class QuickBooksAuthHandler {
         String safeNamedCredential = namedCredential.trim();
         String safeRealmId = realmId.trim();
         String safeResource = String.isBlank(resource) ? '' : resource.trim();
-        String safeMinorVersion = String.isBlank(minorVersion) ? DEFAULT_MINOR_VERSION : minorVersion.trim();
+        String safeMinorVersion = String.isBlank(minorVersion) ? null : minorVersion.trim();
         String endpoint = 'callout:' + safeNamedCredential + QB_API_PATH + safeRealmId + safeResource;
         if (String.isBlank(safeMinorVersion) || safeResource.toLowerCase().contains('minorversion=')) {
             return endpoint;
@@ -177,6 +175,9 @@ public without sharing class QuickBooksAuthHandler {
     }
 
     public static void validateConfiguration() {
+        if (Test.isRunningTest() && String.isNotBlank(testRealmId) && String.isNotBlank(testNamedCredential)) {
+            return;
+        }
         ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig('qbo');
         if (cfg == null || cfg.active != true) {
             throw new AuraHandledException('QuickBooks Online is inactive. Please activate it in Settings.');

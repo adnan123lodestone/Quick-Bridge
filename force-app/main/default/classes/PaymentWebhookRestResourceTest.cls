@@ -1,5 +1,44 @@
 @IsTest
 private class PaymentWebhookRestResourceTest {
+    private class PayPalVerificationMock implements HttpCalloutMock {
+        private String verificationStatus;
+
+        private PayPalVerificationMock(String verificationStatus) {
+            this.verificationStatus = verificationStatus;
+        }
+
+        /**
+         * Mock PayPal OAuth and webhook verification endpoints.
+         * @param request HTTP request from the code under test.
+         * @return Mocked HTTP response for PayPal token or signature verification calls.
+         */
+        public HttpResponse respond(HttpRequest request) {
+            HttpResponse response = new HttpResponse();
+            response.setHeader('Content-Type', 'application/json');
+
+            if (request.getEndpoint().contains('/v1/oauth2/token')) {
+                System.assertEquals('POST', request.getMethod(), 'PayPal token request should use POST.');
+                System.assertEquals('grant_type=client_credentials', request.getBody(), 'PayPal token request should use client credentials grant.');
+                response.setStatusCode(200);
+                response.setBody('{"access_token":"test-paypal-access-token","token_type":"Bearer"}');
+                return response;
+            }
+
+            if (request.getEndpoint().contains('/v1/notifications/verify-webhook-signature')) {
+                System.assertEquals('POST', request.getMethod(), 'PayPal webhook verification request should use POST.');
+                System.assertEquals('Bearer test-paypal-access-token', request.getHeader('Authorization'), 'Verification request should use the fetched access token.');
+                System.assert(request.getBody().contains(PaymentWebhookRestResource.TEST_PAYPAL_WEBHOOK_ID), 'Verification payload should include the configured webhook ID.');
+                response.setStatusCode(200);
+                response.setBody('{"verification_status":"' + verificationStatus + '"}');
+                return response;
+            }
+
+            response.setStatusCode(404);
+            response.setBody('{"name":"NOT_FOUND"}');
+            return response;
+        }
+    }
+
     @IsTest
     static void stripeSuccess_createsWebhookLog() {
         Order orderRecord = createOrderRecord();
@@ -22,9 +61,9 @@ private class PaymentWebhookRestResourceTest {
         PaymentWebhookRestResource.WebhookResponse response = PaymentWebhookRestResource.handlePost();
         Test.stopTest();
 
-        System.assertEquals(200, RestContext.response.statusCode);
-        System.assertEquals(true, response.success);
-        System.assertEquals(true, response.recordCreated);
+        System.assertEquals(200, RestContext.response.statusCode, 'Verified PayPal webhook should return 200.');
+        System.assertEquals(true, response.success, 'Verified PayPal webhook should succeed.');
+        System.assertEquals(true, response.recordCreated, 'Verified PayPal webhook should create a transaction log.');
 
         Portal_Payment_Transaction__c logRecord = [
             SELECT Id, Order__c, Payment_Type__c, Payload__c,
@@ -176,17 +215,66 @@ private class PaymentWebhookRestResourceTest {
             '/services/apexrest/payment-webhook/paypal',
             payload
         );
+        addPayPalSignatureHeaders(RestContext.request);
+        RestContext.response = new RestResponse();
+        Test.setMock(HttpCalloutMock.class, new PayPalVerificationMock('SUCCESS'));
+
+        Test.startTest();
+        PaymentWebhookRestResource.WebhookResponse response = PaymentWebhookRestResource.handlePost();
+        Test.stopTest();
+
+        System.assertEquals(200, RestContext.response.statusCode);
+        System.assertEquals(true, response.success);
+        System.assertEquals(true, response.recordCreated);
+
+        Portal_Payment_Transaction__c logRecord = [
+            SELECT Id, Order__c, Payment_Type__c, Gateway_Transaction_Id__c
+            FROM Portal_Payment_Transaction__c
+            LIMIT 1
+        ];
+        System.assertEquals(orderRecord.Id, logRecord.Order__c, 'PayPal webhook log should link to the referenced order.');
+        System.assertEquals('PayPal', logRecord.Payment_Type__c, 'Payment type should be PayPal.');
+    }
+
+    @IsTest
+    static void payPalInvalidSignature_returnsUnauthorized() {
+        Order orderRecord = createOrderRecord();
+        String payload = '{"id":"WH-124","event_type":"PAYMENT.CAPTURE.COMPLETED","resource":{"custom_id":"' + orderRecord.Id + '"}}';
+        RestContext.request = buildRequest(
+            '/services/apexrest/payment-webhook/paypal',
+            payload
+        );
+        addPayPalSignatureHeaders(RestContext.request);
+        RestContext.response = new RestResponse();
+        Test.setMock(HttpCalloutMock.class, new PayPalVerificationMock('FAILURE'));
+
+        Test.startTest();
+        PaymentWebhookRestResource.WebhookResponse response = PaymentWebhookRestResource.handlePost();
+        Test.stopTest();
+
+        System.assertEquals(401, RestContext.response.statusCode, 'Failed PayPal verification should return 401.');
+        System.assertEquals(false, response.success, 'Failed PayPal verification should not succeed.');
+        System.assertEquals(false, response.recordCreated, 'Failed PayPal verification should not create a transaction log.');
+        System.assertEquals(0, [SELECT COUNT() FROM Portal_Payment_Transaction__c], 'Failed PayPal verification should not persist transactions.');
+    }
+
+    @IsTest
+    static void payPalMissingSignatureHeaders_returnsUnauthorized() {
+        String payload = '{"id":"WH-125","event_type":"PAYMENT.CAPTURE.COMPLETED"}';
+        RestContext.request = buildRequest(
+            '/services/apexrest/payment-webhook/paypal',
+            payload
+        );
         RestContext.response = new RestResponse();
 
         Test.startTest();
         PaymentWebhookRestResource.WebhookResponse response = PaymentWebhookRestResource.handlePost();
         Test.stopTest();
 
-        // PayPal webhook signature verification is not yet implemented — webhook is rejected fail-closed (503)
-        // until a proper IPN/OAuth verification path is wired up.
-        System.assertEquals(503, RestContext.response.statusCode);
-        System.assertEquals(false, response.success);
-        System.assertEquals(0, [SELECT COUNT() FROM Portal_Payment_Transaction__c]);
+        System.assertEquals(401, RestContext.response.statusCode, 'Missing PayPal signature headers should return 401.');
+        System.assertEquals(false, response.success, 'Missing PayPal signature headers should not succeed.');
+        System.assertEquals(false, response.recordCreated, 'Missing PayPal signature headers should not create a transaction log.');
+        System.assertEquals(0, [SELECT COUNT() FROM Portal_Payment_Transaction__c], 'Missing PayPal signature headers should not persist transactions.');
     }
 
     @IsTest
@@ -346,6 +434,14 @@ private class PaymentWebhookRestResourceTest {
         request.addHeader('Content-Type', 'application/json');
         request.requestBody = Blob.valueOf(body);
         return request;
+    }
+
+    private static void addPayPalSignatureHeaders(RestRequest request) {
+        request.addHeader('PayPal-Auth-Algo', 'SHA256withRSA');
+        request.addHeader('PayPal-Cert-Url', 'https://api-m.sandbox.paypal.com/v1/notifications/certs/test');
+        request.addHeader('PayPal-Transmission-Id', 'test-transmission-id');
+        request.addHeader('PayPal-Transmission-Sig', 'test-transmission-signature');
+        request.addHeader('PayPal-Transmission-Time', '2026-05-25T12:00:00Z');
     }
 
     private static String buildStripeSignatureHeader(String payload) {

@@ -1,7 +1,7 @@
 @IsTest
 private class IntegrationProductSeedServiceTest {
     @IsTest
-    static void seedsDefaultProductsFromManagedDefinitions() {
+    static void seedsDefaultProductsFromMetadataDefinitions() {
         Test.startTest();
         IntegrationProductSeedService.seedDefaultProducts();
         Test.stopTest();

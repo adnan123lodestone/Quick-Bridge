@@ -10,6 +10,14 @@ private class QBSchedulerControllerTest {
     }
   }
 
+  private static void configureQuickBooksAuth() {
+    QuickBooksAuthHandler.configureConnectionForTest(
+      '12345',
+      'QuickBooks_Test_Named_Credential',
+      '70'
+    );
+  }
+
   @testSetup
   static void setupData() {
     Account acc = new Account(Name = 'Scheduler Test Account');
@@ -25,19 +33,21 @@ private class QBSchedulerControllerTest {
 
   @isTest
   static void testScheduleJobMinutesAndDeleteSpecificJob() {
+    configureQuickBooksAuth();
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String jobId = QBSchedulerController.scheduleJob(
+    String jobId = GenericSchedulerController.scheduleJob(
+      'qbo',
       '15',
       'Minutes',
       'Account',
-      true
+      'Out'
     );
     Test.stopTest();
 
     System.assertNotEquals(null, jobId);
 
-    List<Map<String, Object>> jobs = QBSchedulerController.getScheduledJobs();
+    List<Map<String, Object>> jobs = GenericSchedulerController.getScheduledJobs('qbo');
     System.assertNotEquals(null, jobs);
     System.assertEquals(
       1,
@@ -46,26 +56,29 @@ private class QBSchedulerControllerTest {
     );
     System.assertEquals('Ready', (String) jobs[0].get('status'));
 
-    QBSchedulerController.deleteSpecificJob('QBO Sync - Account');
+    GenericSchedulerController.deleteJob('QBO Sync - Account');
   }
 
   @isTest
   static void testScheduleJobHoursDaysWeeksMonths() {
+    configureQuickBooksAuth();
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String hoursJob = QBSchedulerController.scheduleJob(
+    String hoursJob = GenericSchedulerController.scheduleJob(
+      'qbo',
       '2',
       'Hours',
       'Contact',
-      true
+      'Out'
     );
-    String daysJob = QBSchedulerController.scheduleJob('3', 'Days', 'Product2', true);
-    String weeksJob = QBSchedulerController.scheduleJob('1', 'Weeks', 'Order', false);
-    String monthsJob = QBSchedulerController.scheduleJob(
+    String daysJob = GenericSchedulerController.scheduleJob('qbo', '3', 'Days', 'Product2', 'Out');
+    String weeksJob = GenericSchedulerController.scheduleJob('qbo', '1', 'Weeks', 'Order', 'In');
+    String monthsJob = GenericSchedulerController.scheduleJob(
+      'qbo',
       '1',
       'Months',
       'Invoice__c',
-      true
+      'Out'
     );
     Test.stopTest();
 
@@ -77,9 +90,10 @@ private class QBSchedulerControllerTest {
 
   @isTest
   static void testScheduleJobInvalidInputThrowsHandledException() {
+    configureQuickBooksAuth();
     Boolean didThrow = false;
     try {
-      QBSchedulerController.scheduleJob('abc', 'Hours', 'Account', true);
+      GenericSchedulerController.scheduleJob('qbo', 'abc', 'Hours', 'Account', 'Out');
     } catch (Exception e) {
       didThrow = true;
     }
@@ -88,25 +102,22 @@ private class QBSchedulerControllerTest {
 
   @isTest
   static void testStopJobNoMatchNoticePath() {
-    String result = QBSchedulerController.stopJob();
+    String result = GenericSchedulerController.stopConnectorSchedules('qbo');
     System.assert(result != null);
   }
 
   @isTest
   static void testSummaryPauseAndRecentRunsBlankPath() {
-    Map<String, String> summary = QBSchedulerController.getSyncSettingsSummary();
-    System.assertEquals(
-      'Salesforce ↔ QuickBooks Online',
-      summary.get('direction')
-    );
+    Map<String, String> summary = GenericSchedulerController.getSyncSettingsSummary('qbo');
+    System.assertEquals('Salesforce <-> QuickBooks', summary.get('direction'));
 
-    QBSchedulerController.togglePauseStatus(true);
-    System.assertEquals(true, QBSchedulerController.getPauseStatus());
+    GenericSchedulerController.togglePauseStatus('qbo', true);
+    System.assertEquals(true, GenericSchedulerController.getPauseStatus('qbo'));
 
-    QBSchedulerController.togglePauseStatus(false);
-    System.assertEquals(false, QBSchedulerController.getPauseStatus());
+    GenericSchedulerController.togglePauseStatus('qbo', false);
+    System.assertEquals(false, GenericSchedulerController.getPauseStatus('qbo'));
 
-    List<Map<String, Object>> runs = QBSchedulerController.getRecentRuns(null);
+    List<Map<String, Object>> runs = GenericSchedulerController.getRecentRuns(null);
     System.assertEquals(0, runs.size());
   }
 
@@ -185,9 +196,11 @@ private class QBSchedulerControllerTest {
 
   @isTest
   static void testEditSpecificJobAndDeleteJob() {
+    configureQuickBooksAuth();
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String msg = QBSchedulerController.editSpecificJob(
+    String msg = GenericSchedulerController.editJob(
+      'qbo',
       'QBO Sync - Account',
       '10',
       'Minutes'
@@ -195,20 +208,22 @@ private class QBSchedulerControllerTest {
     Test.stopTest();
 
     System.assert(msg != null);
-    QBSchedulerController.deleteSpecificJob('QBO Sync - Account');
+    GenericSchedulerController.deleteJob('QBO Sync - Account');
   }
 
   @isTest
   static void testShopifyLogicalScheduleLifecycle() {
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String jobId = QBSchedulerController.scheduleShopifyJob(
+    String jobId = GenericSchedulerController.scheduleJob(
+      'shopify',
       '15',
       'Minutes',
       'Customers',
-      false
+      'In'
     );
-    String editMessage = QBSchedulerController.editShopifyJob(
+    String editMessage = GenericSchedulerController.editJob(
+      'shopify',
       'Shopify Sync - Customers [In]',
       '1',
       'Hours'
@@ -219,31 +234,32 @@ private class QBSchedulerControllerTest {
     System.assert(editMessage.contains('Success'));
     System.assertNotEquals(
       null,
-      QBSchedulerController.getShopifyScheduledJobs()
+      GenericSchedulerController.getScheduledJobs('shopify')
     );
-    QBSchedulerController.deleteShopifyJob('Shopify Sync - Customers [In]');
-    System.assertNotEquals(null, QBSchedulerController.stopShopifyJob());
+    GenericSchedulerController.deleteJob('Shopify Sync - Customers [In]');
+    System.assertNotEquals(null, GenericSchedulerController.stopConnectorSchedules('shopify'));
   }
 
   @isTest
   static void testShopifySummaryAndInvalidSchedulePaths() {
-    Map<String, String> summary = QBSchedulerController.getShopifySyncSettingsSummary();
+    Map<String, String> summary = GenericSchedulerController.getSyncSettingsSummary('shopify');
     System.assertEquals('Incremental Sync', summary.get('type'));
 
     Boolean didThrow = false;
     try {
-      QBSchedulerController.scheduleShopifyJob(
+      GenericSchedulerController.scheduleJob(
+        'shopify',
         'abc',
         'Hours',
         'Customers',
-        false
+        'In'
       );
     } catch (Exception e) {
       didThrow = true;
     }
     System.assertEquals(true, didThrow);
 
-    List<Map<String, Object>> runs = QBSchedulerController.getRecentRuns(
+    List<Map<String, Object>> runs = GenericSchedulerController.getRecentRuns(
       '08e000000000000AAA'
     );
     System.assertEquals(0, runs.size());
@@ -328,7 +344,7 @@ private class QBSchedulerControllerTest {
     };
 
     Test.startTest();
-    List<Map<String, Object>> jobs = QBSchedulerController.getScheduledJobs();
+    List<Map<String, Object>> jobs = GenericSchedulerController.getScheduledJobs('qbo');
     SchedulerEntitlementService.UsageSummary usage = SchedulerEntitlementService.getUsageSummary();
     Test.stopTest();
 

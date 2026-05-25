@@ -5,8 +5,18 @@ global without sharing class PaymentWebhookRestResource {
     private static final String TRACE_PREFIX = '[PaymentWebhookRestResource] ';
     private static final String AUTHORIZE_NET_SIGNATURE_HEADER = 'X-ANET-Signature';
     private static final String AUTHORIZE_NET_SIGNATURE_PREFIX = 'sha512=';
+    private static final String PAYPAL_SANDBOX_API_ENDPOINT = 'callout:PayPal_API_Sandbox';
+    private static final String PAYPAL_PRODUCTION_API_ENDPOINT = 'callout:PayPal_API_Production';
+    private static final String PAYPAL_CLIENT_ID_MERGE_FIELD = '{!$Credential.PayPal_Credentials.ClientId}';
+    private static final String PAYPAL_CLIENT_SECRET_MERGE_FIELD = '{!$Credential.PayPal_Credentials.ClientSecret}';
+    private static final String PAYPAL_AUTH_ALGO_HEADER = 'PayPal-Auth-Algo';
+    private static final String PAYPAL_CERT_URL_HEADER = 'PayPal-Cert-Url';
+    private static final String PAYPAL_TRANSMISSION_ID_HEADER = 'PayPal-Transmission-Id';
+    private static final String PAYPAL_TRANSMISSION_SIG_HEADER = 'PayPal-Transmission-Sig';
+    private static final String PAYPAL_TRANSMISSION_TIME_HEADER = 'PayPal-Transmission-Time';
     @TestVisible private static final String TEST_STRIPE_WEBHOOK_SIGNING_SECRET = 'whsec_test_inventorymagic';
     @TestVisible private static final String TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY = '00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF';
+    @TestVisible private static final String TEST_PAYPAL_WEBHOOK_ID = 'WH-TEST-QUICKBRIDGE';
 
     private static final Set<String> SUPPORTED_PAYMENT_TYPES = new Set<String>{
         'stripe',
@@ -58,6 +68,8 @@ global without sharing class PaymentWebhookRestResource {
             this.message = message;
         }
     }
+
+    private class PayPalWebhookVerificationException extends Exception {}
 
     @HttpPost
     global static WebhookResponse handlePost() {
@@ -517,7 +529,7 @@ global without sharing class PaymentWebhookRestResource {
         }
 
         if (paymentType == 'paypal') {
-            return new SignatureVerificationResult(false, 503, 'PayPal webhook verification is not configured.');
+            return verifyPayPalSignature(requestBody, request);
         }
 
         return new SignatureVerificationResult(false, 401, 'Webhook signature verification failed.');
@@ -640,6 +652,71 @@ global without sharing class PaymentWebhookRestResource {
         return new SignatureVerificationResult(false, 401, 'Authorize.Net signature verification failed.');
     }
 
+    private static SignatureVerificationResult verifyPayPalSignature(String requestBody, RestRequest request) {
+        String webhookId = getPayPalWebhookId();
+        if (String.isBlank(webhookId)) {
+            return new SignatureVerificationResult(false, 503, 'PayPal webhook ID is not configured.');
+        }
+
+        String authAlgo = getHeaderValue(request, PAYPAL_AUTH_ALGO_HEADER);
+        String certUrl = getHeaderValue(request, PAYPAL_CERT_URL_HEADER);
+        String transmissionId = getHeaderValue(request, PAYPAL_TRANSMISSION_ID_HEADER);
+        String transmissionSig = getHeaderValue(request, PAYPAL_TRANSMISSION_SIG_HEADER);
+        String transmissionTime = getHeaderValue(request, PAYPAL_TRANSMISSION_TIME_HEADER);
+        if (String.isBlank(authAlgo) || String.isBlank(certUrl) || String.isBlank(transmissionId) ||
+            String.isBlank(transmissionSig) || String.isBlank(transmissionTime)) {
+            return new SignatureVerificationResult(false, 401, 'PayPal signature headers are missing.');
+        }
+
+        Map<String, Object> webhookEvent;
+        try {
+            webhookEvent = (Map<String, Object>) JSON.deserializeUntyped(requestBody);
+        } catch (Exception e) {
+            return new SignatureVerificationResult(false, 400, 'Webhook payload must be valid JSON.');
+        }
+
+        try {
+            String baseEndpoint = getPayPalBaseEndpoint();
+            String accessToken = fetchPayPalAccessToken(baseEndpoint);
+
+            Map<String, Object> verificationRequest = new Map<String, Object>{
+                'auth_algo' => authAlgo,
+                'cert_url' => certUrl,
+                'transmission_id' => transmissionId,
+                'transmission_sig' => transmissionSig,
+                'transmission_time' => transmissionTime,
+                'webhook_id' => webhookId,
+                'webhook_event' => webhookEvent
+            };
+
+            HttpRequest httpRequest = new HttpRequest();
+            httpRequest.setEndpoint(baseEndpoint + '/v1/notifications/verify-webhook-signature');
+            httpRequest.setMethod('POST');
+            httpRequest.setHeader('Authorization', 'Bearer ' + accessToken);
+            httpRequest.setHeader('Content-Type', 'application/json');
+            httpRequest.setTimeout(20000);
+            httpRequest.setBody(JSON.serialize(verificationRequest));
+
+            HttpResponse httpResponse = new Http().send(httpRequest);
+            if (httpResponse == null || httpResponse.getStatusCode() < 200 || httpResponse.getStatusCode() >= 300) {
+                return new SignatureVerificationResult(false, 503, 'PayPal webhook verification request failed.');
+            }
+
+            Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(httpResponse.getBody());
+            String verificationStatus = parsed == null || !parsed.containsKey('verification_status')
+                ? null
+                : String.valueOf(parsed.get('verification_status'));
+            if (verificationStatus == 'SUCCESS') {
+                return new SignatureVerificationResult(true, 200, null);
+            }
+
+            return new SignatureVerificationResult(false, 401, 'PayPal signature verification failed.');
+        } catch (Exception e) {
+            trace('PayPal verification failed: ' + e.getTypeName() + ': ' + e.getMessage());
+            return new SignatureVerificationResult(false, 503, 'PayPal webhook verification request failed.');
+        }
+    }
+
     private static String getEventMarker(String paymentType, Map<String, Object> payload) {
         if (paymentType == 'stripe') {
             return getStringValue(payload, 'type');
@@ -721,6 +798,54 @@ global without sharing class PaymentWebhookRestResource {
         }
 
         return config == null ? null : config.AuthorizeNet_Webhook_Signing_Key__c;
+    }
+
+    private static String getPayPalWebhookId() {
+        if (Test.isRunningTest()) {
+            return TEST_PAYPAL_WEBHOOK_ID;
+        }
+
+        PayPal_Config__mdt config;
+        try {
+            config = PayPal_Config__mdt.getInstance('Default');
+        } catch (Exception e) {}
+
+        return config == null ? null : config.WebhookId__c;
+    }
+
+    private static String getPayPalBaseEndpoint() {
+        PayPal_Config__mdt config;
+        try {
+            config = PayPal_Config__mdt.getInstance('Default');
+        } catch (Exception e) {}
+
+        Boolean useSandbox = config != null && config.UseSandbox__c;
+        return useSandbox ? PAYPAL_SANDBOX_API_ENDPOINT : PAYPAL_PRODUCTION_API_ENDPOINT;
+    }
+
+    private static String fetchPayPalAccessToken(String baseEndpoint) {
+        String credentials = PAYPAL_CLIENT_ID_MERGE_FIELD + ':' + PAYPAL_CLIENT_SECRET_MERGE_FIELD;
+        HttpRequest tokenRequest = new HttpRequest();
+        tokenRequest.setEndpoint(baseEndpoint + '/v1/oauth2/token');
+        tokenRequest.setMethod('POST');
+        tokenRequest.setHeader('Authorization', 'Basic ' + EncodingUtil.base64Encode(Blob.valueOf(credentials)));
+        tokenRequest.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        tokenRequest.setTimeout(20000);
+        tokenRequest.setBody('grant_type=client_credentials');
+
+        HttpResponse tokenResponse = new Http().send(tokenRequest);
+        if (tokenResponse == null || tokenResponse.getStatusCode() < 200 || tokenResponse.getStatusCode() >= 300) {
+            throw new PayPalWebhookVerificationException('PayPal OAuth token request failed.');
+        }
+
+        Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(tokenResponse.getBody());
+        String accessToken = parsed == null || !parsed.containsKey('access_token')
+            ? null
+            : String.valueOf(parsed.get('access_token'));
+        if (String.isBlank(accessToken)) {
+            throw new PayPalWebhookVerificationException('PayPal OAuth token response did not include access_token.');
+        }
+        return accessToken;
     }
 
     private static String getHeaderValue(RestRequest request, String headerName) {

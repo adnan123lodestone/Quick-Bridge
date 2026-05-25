@@ -38,6 +38,90 @@ public with sharing class GenericSchedulerController {
     return jobList;
   }
 
+  @AuraEnabled(cacheable=true)
+  public static Map<String, String> getSyncSettingsSummary(String connectorKey) {
+    QuickBridgeAdminGuard.requireView();
+    Map<String, String> summary = new Map<String, String>();
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
+      connectorKey
+    );
+    String label = descriptor == null || String.isBlank(descriptor.label)
+      ? connectorKey
+      : descriptor.label;
+
+    try {
+      Set<String> mappingKeys = mappingIntegrationKeys(descriptor, connectorKey);
+      List<Field_Mapping__mdt> mappings = [
+        SELECT SF_Object__c
+        FROM Field_Mapping__mdt
+        WHERE Integration__c IN :mappingKeys AND Is_Active__c = true
+      ];
+
+      Set<String> uniqueObjects = new Set<String>();
+      for (Field_Mapping__mdt mapping : mappings) {
+        if (String.isNotBlank(mapping.SF_Object__c)) {
+          uniqueObjects.add(mapping.SF_Object__c);
+        }
+      }
+
+      List<String> objectNames = new List<String>(uniqueObjects);
+      objectNames.sort();
+      summary.put(
+        'objects',
+        objectNames.isEmpty() ? 'No objects mapped' : String.join(objectNames, ', ')
+      );
+      summary.put('direction', 'Salesforce <-> ' + label);
+      summary.put('type', 'Incremental Sync');
+    } catch (Exception e) {
+      ErrorLogUtility.logException(
+        label,
+        'GenericSchedulerController.getSyncSettingsSummary',
+        e,
+        null,
+        null
+      );
+      summary.put('objects', 'Error loading objects');
+      summary.put('direction', 'Salesforce <-> ' + label);
+      summary.put('type', 'Incremental Sync');
+    }
+
+    return summary;
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static List<Map<String, Object>> getRecentRuns(String jobId) {
+    QuickBridgeAdminGuard.requireView();
+    List<Map<String, Object>> runList = new List<Map<String, Object>>();
+    if (String.isBlank(jobId)) {
+      return runList;
+    }
+
+    for (AsyncApexJob job : [
+      SELECT Id, CompletedDate, Status, TotalJobItems, NumberOfErrors
+      FROM AsyncApexJob
+      WHERE
+        JobType = 'BatchApex'
+        AND CronTriggerId = :jobId
+        AND CompletedDate != null
+      ORDER BY CompletedDate DESC
+      LIMIT 5
+    ]) {
+      Map<String, Object> runMap = new Map<String, Object>();
+      runMap.put('id', job.Id);
+      runMap.put('date', job.CompletedDate.format());
+      runMap.put('status', job.Status == 'Completed' ? 'Success' : job.Status);
+      runMap.put('processed', job.TotalJobItems);
+      runMap.put('failed', job.NumberOfErrors);
+      runMap.put(
+        'icon',
+        job.NumberOfErrors > 0 ? 'utility:warning' : 'utility:success'
+      );
+      runMap.put('variant', job.NumberOfErrors > 0 ? 'warning' : 'success');
+      runList.add(runMap);
+    }
+    return runList;
+  }
+
   @AuraEnabled
   public static String scheduleJob(
     String connectorKey,
@@ -47,6 +131,7 @@ public with sharing class GenericSchedulerController {
     String direction
   ) {
     QuickBridgeAdminGuard.requireRunSync();
+    validateScheduleConfiguration(connectorKey);
     SchedulerEntitlementService.assertCanCreateSchedule();
     Integer safeValue = Integer.valueOf(freqValue.trim());
     String integrationType = connectorKeyToIntegrationType(connectorKey);
@@ -163,6 +248,28 @@ public with sharing class GenericSchedulerController {
     return ConnectorRegistryService.integrationTypeFor(connectorKey);
   }
 
+  @AuraEnabled
+  public static void togglePauseStatus(String connectorKey, Boolean pauseIt) {
+    QuickBridgeAdminGuard.requireRunSync();
+    Sync_Settings__c settings = Sync_Settings__c.getOrgDefaults();
+    settings.Is_Paused__c = pauseIt == true;
+    upsert settings;
+    QuickBridgeAdminGuard.audit(
+      'SCHEDULE_PAUSE_TOGGLE',
+      connectorKey,
+      'Success',
+      'paused=' + String.valueOf(pauseIt == true),
+      null
+    );
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static Boolean getPauseStatus(String connectorKey) {
+    QuickBridgeAdminGuard.requireView();
+    Sync_Settings__c settings = Sync_Settings__c.getOrgDefaults();
+    return settings.Is_Paused__c;
+  }
+
   private static Map<String, Object> toUiMap(Scheduled_Integration_Job__c job) {
     Map<String, Object> jobMap = new Map<String, Object>();
     String fullName = String.isBlank(job.Scheduler_Name__c)
@@ -196,6 +303,64 @@ public with sharing class GenericSchedulerController {
       formatFrequency(job.Frequency_Value__c, job.Frequency_Type__c)
     );
     return jobMap;
+  }
+
+  private static Set<String> mappingIntegrationKeys(
+    ConnectorRegistryService.ConnectorDescriptor descriptor,
+    String connectorKey
+  ) {
+    Set<String> keys = new Set<String>();
+    addMappingKey(keys, connectorKey);
+    if (descriptor != null) {
+      addMappingKey(keys, descriptor.connectorKey);
+      addMappingKey(keys, descriptor.productKey);
+      addMappingKey(keys, descriptor.label);
+      addMappingKey(keys, descriptor.integrationType);
+      for (String aliasValue : splitList(descriptor.aliases)) {
+        addMappingKey(keys, aliasValue);
+      }
+    }
+    if (keys.isEmpty()) {
+      keys.add(connectorKey);
+    }
+    return keys;
+  }
+
+  private static void addMappingKey(Set<String> keys, String value) {
+    if (String.isNotBlank(value)) {
+      keys.add(value.trim());
+    }
+  }
+
+  private static List<String> splitList(String rawValue) {
+    List<String> values = new List<String>();
+    if (String.isBlank(rawValue)) {
+      return values;
+    }
+    for (String value : rawValue.split(',')) {
+      if (String.isNotBlank(value)) {
+        values.add(value.trim());
+      }
+    }
+    return values;
+  }
+
+  private static void validateScheduleConfiguration(String connectorKey) {
+    String validatorClassName = ConnectorRegistryService.adapterClassFor(
+      connectorKey,
+      'scheduler.validator'
+    );
+    if (String.isBlank(validatorClassName)) {
+      return;
+    }
+    ConnectorAdapterAllowlist.assertAllowed(validatorClassName);
+    Type validatorType = Type.forName(validatorClassName);
+    if (validatorType == null) {
+      validatorType = Type.forName('QuickBridgeTLG', validatorClassName);
+    }
+    if (validatorType != null) {
+      ((SchedulerConfigurationValidator) validatorType.newInstance()).validate();
+    }
   }
 
   private static String buildLogicalJobName(

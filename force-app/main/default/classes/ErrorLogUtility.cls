@@ -416,26 +416,30 @@ public without sharing class ErrorLogUtility {
     }
     
     private static Boolean isRetryableError(LogContext ctx) {
-        // Layer 1: HTTP status code
-        if (ctx.httpStatusCode != null) {
-            if (ctx.httpStatusCode == 408 || ctx.httpStatusCode == 429 ||
-            (ctx.httpStatusCode >= 500 && ctx.httpStatusCode <= 504)) {
-                return true;
-            }
+        if (ctx == null) {
             return false;
         }
+
+        if (ctx.httpStatusCode != null) {
+            return IntegrationRetryPolicy.isRetryable(ctx.httpStatusCode);
+        }
         
-        // Layer 2: Exception message keywords
         String msg = ctx.errorMessage?.toLowerCase();
         if (msg != null) {
-            if (msg.contains('timeout') || msg.contains('read timed out') ||
-                msg.contains('connection reset') || msg.contains('rate limit') ||
-            msg.contains('unable to lock row')) {
+            Integer parsedStatusCode = IntegrationRetryPolicy.httpStatusCodeFromMessage(msg);
+            if (parsedStatusCode != null) {
+                return IntegrationRetryPolicy.isRetryable(parsedStatusCode);
+            }
+            if (IntegrationRetryPolicy.isRetryableMessage(msg) ||
+                msg.contains('connection reset') ||
+                msg.contains('rate limit')) {
                 return true;
             }
-            if (msg.contains('invalid') || msg.contains('required field') ||
-                msg.contains('mismatch') || msg.contains('not found') ||
-            msg.contains('duplicate')) {
+            if (msg.contains('invalid') ||
+                msg.contains('required field') ||
+                msg.contains('mismatch') ||
+                msg.contains('not found') ||
+                msg.contains('duplicate')) {
                 return false;
             }
         }

@@ -18,7 +18,13 @@ private class LockSafeDmlTest {
         System.assertEquals(false, IntegrationRetryPolicy.isRetryableMessage('Required field missing'));
         System.assertEquals(true, IntegrationRetryPolicy.isRetryable(429));
         System.assertEquals(true, IntegrationRetryPolicy.isRetryable(503));
+        System.assertEquals(true, IntegrationRetryPolicy.isRetryable(500));
+        System.assertEquals(true, IntegrationRetryPolicy.isPermanentFailure(400));
+        System.assertEquals(true, IntegrationRetryPolicy.isPermanentFailure(422));
         System.assertEquals(false, IntegrationRetryPolicy.isRetryable(404));
+        System.assertEquals(false, IntegrationRetryPolicy.isRetryable(401));
+        System.assertEquals(false, IntegrationRetryPolicy.isRetryable(422));
+        System.assertEquals(503, IntegrationRetryPolicy.httpStatusCodeFromMessage('Callout failed with HTTP 503: unavailable'));
         System.assert(IntegrationRetryPolicy.nextAttemptAt(1) > System.now());
     }
 

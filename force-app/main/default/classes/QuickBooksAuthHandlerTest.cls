@@ -71,7 +71,7 @@ private class QuickBooksAuthHandlerTest {
     }
 
     @isTest
-    static void endpointAddsMinorVersionWithAmpersandForExistingQueryString() {
+    static void endpointDoesNotAddMinorVersionWhenUnconfigured() {
         String endpoint = QuickBooksAuthHandler.buildEndpointForTest(
             '/query?query=select+*+from+Customer',
             '12345',
@@ -80,7 +80,7 @@ private class QuickBooksAuthHandlerTest {
         );
 
         System.assertEquals(
-            'callout:Custom_QB_Named_Credential/v3/company/12345/query?query=select+*+from+Customer&minorversion=65',
+            'callout:Custom_QB_Named_Credential/v3/company/12345/query?query=select+*+from+Customer',
             endpoint
         );
     }

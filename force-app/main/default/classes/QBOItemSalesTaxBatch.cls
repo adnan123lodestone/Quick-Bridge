@@ -1,180 +1,164 @@
-public class QBOItemSalesTaxBatch implements Database.Batchable<SObject>, Database.AllowsCallouts, Database.Stateful {
+public class QBOItemSalesTaxBatch implements Database.Batchable<Object>, Database.AllowsCallouts, Database.Stateful {
     
-    public Integer successCount = 0;
-    public Integer errorCount = 0;
-    public Datetime lastSyncDate;
+    private Integer successCount = 0;
+    private Integer errorCount = 0;
+    private Integer currentPosition = 1;
+    private Boolean hasMoreRecords = true;
     
-    public QBOItemSalesTaxBatch(Datetime inputDate){
-        if(inputDate != null){
-            lastSyncDate = inputDate;
-        } else {
-            lastSyncDate = System.now().addDays(-1);
-        }
+    public Iterable<Object> start(Database.BatchableContext bc) {
+        return new List<Object>{ currentPosition };
     }
     
-    public QBOItemSalesTaxBatch(){
-        lastSyncDate = System.now().addDays(-1);
-    }
-    
-    // START
-    public Database.QueryLocator start(Database.BatchableContext bc){
-        String query = 'SELECT Id, Name, QuickBridgeTLG__External_Id__c, ' +
-            'QuickBridgeTLG__Is_Active__c, QuickBridgeTLG__Is_Synced__c, ' +
-            'QuickBridgeTLG__Item_Description__c, ' +
-            'QuickBridgeTLG__Tax_Rate_Per__c, LastModifiedDate ' +
-            'FROM QuickBridgeTLG__Item_Sales_Tax__c ' +
-            'WHERE LastModifiedDate >= :lastSyncDate';
-        return Database.getQueryLocator(query);
-    }
-    
-    // EXECUTE
-    public void execute(Database.BatchableContext bc, List<QuickBridgeTLG__Item_Sales_Tax__c> scope){
-        List<QuickBridgeTLG__Item_Sales_Tax__c> recordsToUpdate = new List<QuickBridgeTLG__Item_Sales_Tax__c>();
+    public void execute(Database.BatchableContext bc, List<Object> scope) {
+        List<Error_Log__c> bulkErrorLogsToInsert = new List<Error_Log__c>();
+        List<QuickBridgeTLG__Item_Sales_Tax__c> recordsToUpsert = new List<QuickBridgeTLG__Item_Sales_Tax__c>();
         
-        for(QuickBridgeTLG__Item_Sales_Tax__c tax : scope){
-            try{
-                if(String.isBlank(tax.QuickBridgeTLG__External_Id__c)){
-                    createTaxRate(tax);
-                } else {
-                    updateTaxRate(tax);
-                }
-                
-                tax.QuickBridgeTLG__Is_Synced__c = true;
-                recordsToUpdate.add(tax);
-                successCount++;
-                
-            } catch(Exception e){
-                errorCount++;
-                System.debug('Error processing Tax Record ' + tax.Id + ': ' + e.getMessage());
-                ErrorLogUtility.logException(
-                    'QuickBooks',
-                    'QBOItemSalesTaxBatch.execute.processTax',
-                    e,
-                    'Item_Sales_Tax__c',
-                    tax == null ? null : tax.Id
-                );
-            }
-        }
-        
-        // Safe Update - Partial success allowed
-        if(!recordsToUpdate.isEmpty()){
-            Database.SaveResult[] updateResults = Database.update(recordsToUpdate, false);
-            ErrorLogUtility.logDmlResults(
-                'QuickBooks',
-                'QBOItemSalesTaxBatch.execute.updateTaxes',
-                'update',
-                recordsToUpdate,
-                updateResults,
-                null,
-                null
-            );
-        }
-    }
-    
-    // FINISH
-    public void finish(Database.BatchableContext bc){
-        System.debug('QBOItemSalesTaxBatch Completed.');
-        System.debug('Total Success: ' + successCount);
-        System.debug('Total Errors: ' + errorCount);
-    }
-    
-    // ===============================
-    // CREATE TAX RATE IN QBO (AST SUPPORTED - DYNAMIC MAPPING)
-    // ===============================
-    private void createTaxRate(QuickBridgeTLG__Item_Sales_Tax__c tax){
-        
-        String agencyId = '1'; 
         try {
-            QuickBridgeTLG__Quickbridge_Config__mdt config = [
-                SELECT QuickBridgeTLG__Quickbooks_Default_Tax_Agency_Id__c 
-                FROM QuickBridgeTLG__Quickbridge_Config__mdt 
-                WHERE DeveloperName = 'QuickBooks' LIMIT 1
-            ];
-            if(String.isNotBlank(config.QuickBridgeTLG__Quickbooks_Default_Tax_Agency_Id__c)) {
-                agencyId = config.QuickBridgeTLG__Quickbooks_Default_Tax_Agency_Id__c;
-            }
-        } catch (Exception ex) {}
-
-        // 1. Dynamic Mapping 
-        Map<String, String> fieldMapping = QBObjectMappings.getTaxCodeMapping();
-        
-        Map<String, Object> taxRateDetails = new Map<String, Object>();
-        taxRateDetails.put('TaxAgencyId', agencyId);
-        taxRateDetails.put('TaxApplicableOn', 'Sales');
-
-        Map<String, Object> body = new Map<String, Object>();
-
-        for(String sfField : fieldMapping.keySet()) {
-            String qbField = fieldMapping.get(sfField);
-            Object value = tax.get(sfField);
+            String query = 'SELECT * FROM TaxCode WHERE Active = true STARTPOSITION ' + currentPosition + ' MAXRESULTS 100';
+            String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
+            String resource = '/query?query=' + encodedQuery;
             
-            if(value != null) {
-                if(qbField == 'RateValue' || qbField == 'TaxRateName') {
-                    taxRateDetails.put(qbField, value);
+            HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', resource, null);
+            if (res == null || res.getStatusCode() != 200) {
+                throw new CalloutException('Failed to fetch tax codes: ' + (res == null ? 'Null' : res.getBody()));
+            }
+            
+            Map<String, Object> response = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            Map<String, Object> queryResponse = (Map<String, Object>) response.get('QueryResponse');
+            
+            if (queryResponse == null) {
+                hasMoreRecords = false;
+                return;
+            }
+            
+            List<Object> taxCodes = (List<Object>) queryResponse.get('TaxCode');
+            if (taxCodes == null || taxCodes.isEmpty()) {
+                hasMoreRecords = false;
+                return;
+            }
+            
+            Map<String, String> inboundMapping = QBObjectMappings.getTaxCodeInboundMapping();
+            
+            for (Object taxObj : taxCodes) {
+                try {
+                    Map<String, Object> taxCode = (Map<String, Object>) taxObj;
+                    String taxCodeId = (String) taxCode.get('Id');
+                    if (String.isBlank(taxCodeId)) continue;
+                    
+                    QuickBridgeTLG__Item_Sales_Tax__c sfTax = new QuickBridgeTLG__Item_Sales_Tax__c();
+                    sfTax.QuickBridgeTLG__External_Id__c = taxCodeId;
+                    
+                    for (String qboField : inboundMapping.keySet()) {
+                        String sfField = inboundMapping.get(qboField);
+                        Object value = getNestedValue(taxCode, qboField);
+                        if (value != null) {
+                            sfTax.put(sfField, value);
+                        }
+                    }
+                    
+                    // Bulk Validation Fallbacks
+                    if (String.isBlank((String) sfTax.get('Name'))) {
+                        sfTax.Name = (String) taxCode.get('Name');
+                    }
+                    if (sfTax.get('QuickBridgeTLG__Is_Active__c') == null) {
+                        sfTax.QuickBridgeTLG__Is_Active__c = (Boolean) taxCode.get('Active');
+                    }
+                    if (sfTax.get('QuickBridgeTLG__Item_Description__c') == null) {
+                        sfTax.QuickBridgeTLG__Item_Description__c = (String) taxCode.get('Description');
+                    }
+                    if (sfTax.get('QuickBridgeTLG__Tax_Rate_Per__c') == null) {
+                        Object rate = getNestedValue(taxCode, 'SalesTaxRateList.TaxRateDetail[0].TaxRateRef.value');
+                        if (rate != null) {
+                            sfTax.QuickBridgeTLG__Tax_Rate_Per__c = Decimal.valueOf(String.valueOf(rate));
+                        }
+                    }
+                    
+                    sfTax.QuickBridgeTLG__Is_Synced__c = true;
+                    recordsToUpsert.add(sfTax);
+                    successCount++;
+                    
+                } catch (Exception innerEx) {
+                    errorCount++;
+                    ErrorLogUtility.logException(
+                        'QuickBooks',
+                    'QBOItemSalesTaxBatch.execute.processRow',
+                    innerEx,
+                    'Item_Sales_Tax__c',
+                    null
+                        );
                 }
-                else {
-                    if(qbField == 'TaxCode' || qbField == 'Active' || qbField == 'Description') {
-                        body.put(qbField, value);
+            }
+            
+            Integer maxResults = (Integer) queryResponse.get('maxResults');
+            Integer totalCount = (Integer) queryResponse.get('totalCount');
+            
+            if (currentPosition + maxResults <= totalCount) {
+                currentPosition += maxResults;
+                hasMoreRecords = true;
+            } else {
+                hasMoreRecords = false;
+            }
+            
+        } catch (Exception fatalEx) {
+            errorCount++;
+            System.debug('Fatal batch chunk failure exception triggered: ' + fatalEx.getMessage());
+            ErrorLogUtility.logException('QuickBooks', 'QBOItemSalesTaxBatch.execute', fatalEx, null, null);
+            hasMoreRecords = false;
+        } finally {
+            if (!recordsToUpsert.isEmpty()) {
+                Database.UpsertResult[] results = Database.upsert(recordsToUpsert,
+                QuickBridgeTLG__Item_Sales_Tax__c.QuickBridgeTLG__External_Id__c, false);
+                
+                for (Integer i = 0; i < results.size(); i++) {
+                    if (!results[i].isSuccess()) {
+                        errorCount++;
+                        successCount--;
+                        String errorMsg = results[i].getErrors()[0].getMessage();
+                        System.debug('Upsert failed for record ID: ' + recordsToUpsert[i].QuickBridgeTLG__External_Id__c + ' Error: ' + errorMsg);
+                        // Log as an error record
+                        ErrorLogUtility.logCalloutFailure(
+                            'QuickBooks',
+                        'QBOItemSalesTaxBatch.execute.upsert',
+                        'Upsert failed for External_Id__c ' + recordsToUpsert[i].QuickBridgeTLG__External_Id__c + ': ' + errorMsg,
+                        null,
+                        'Item_Sales_Tax__c',
+                        null
+                            );
                     }
                 }
             }
-        }
-        
-        if(!body.containsKey('TaxCode')) {
-            body.put('TaxCode', tax.Name);
-        }
-        if(!taxRateDetails.containsKey('TaxRateName')) {
-            taxRateDetails.put('TaxRateName', tax.Name);
-        }
-
-        // Finalize AST Body Structure
-        body.put('TaxRateDetails', new List<Object>{ taxRateDetails });
-
-        String requestBody = JSON.serialize(body);
-        
-        // API Call for Creation
-        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/taxservice/taxcode', requestBody);
-
-        if(res.getStatusCode() == 200){
-            Map<String,Object> parsed = (Map<String,Object>) JSON.deserializeUntyped(res.getBody());
-            
-            if(parsed.containsKey('TaxCodeId')){
-                tax.QuickBridgeTLG__External_Id__c = String.valueOf(parsed.get('TaxCodeId'));
-            } else if(parsed.containsKey('TaxCode')) {
-                 Map<String,Object> tc = (Map<String,Object>) parsed.get('TaxCode');
-                 tax.QuickBridgeTLG__External_Id__c = (String) tc.get('Id');
-            }
-        } else {
-            throw new CalloutException('Create Failed: ' + res.getBody());
+            recordsToUpsert.clear();
         }
     }
     
-    // ===============================
-    // UPDATE TAX RATE IN QBO
-    // ===============================
-    private void updateTaxRate(QuickBridgeTLG__Item_Sales_Tax__c tax){
-        HttpResponse queryRes = QuickBooksAuthHandler.makeApiCall('GET', '/taxcode/' + tax.QuickBridgeTLG__External_Id__c, null);
+    public void finish(Database.BatchableContext bc) {
+        System.debug('QBOItemSalesTaxBatch Bulk Execution Pipeline Completed. Success Rows: ' + successCount + ', Error Rows: ' + errorCount);
         
-        if (queryRes.getStatusCode() != 200) {
-            throw new CalloutException('Error querying existing Tax Code: ' + queryRes.getBody());
+        if (hasMoreRecords) {
+            QBOItemSalesTaxBatch nextJob = new QBOItemSalesTaxBatch();
+            nextJob.currentPosition = this.currentPosition;
+            Database.executeBatch(nextJob, 1);
         }
-        
-        Map<String, Object> existingData = (Map<String, Object>) JSON.deserializeUntyped(queryRes.getBody());
-        Map<String, Object> existingTaxCode = (Map<String, Object>) existingData.get('TaxCode');
-        String syncToken = (String) existingTaxCode.get('SyncToken');
-        
-        Map<String, Object> body = new Map<String, Object>{
-            'Id' => tax.QuickBridgeTLG__External_Id__c,
-            'SyncToken' => syncToken,
-            'Name' => tax.Name,
-            'Active' => tax.QuickBridgeTLG__Is_Active__c
-        };
-        
-        String requestBody = JSON.serialize(body);
-        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/taxcode', requestBody);
-        
-        if(updateRes.getStatusCode() != 200){
-            throw new CalloutException('Update Failed: ' + updateRes.getBody());
+    }
+    
+    private Object getNestedValue(Map<String, Object> obj, String fieldPath) {
+        if (String.isBlank(fieldPath)) return null;
+        String[] parts = fieldPath.split('\\.');
+        Object current = obj;
+        for (String part : parts) {
+            if (current == null) return null;
+            if (part.contains('[') && part.contains(']')) {
+                String arrayName = part.substringBefore('[');
+                Integer index = Integer.valueOf(part.substringBetween('[', ']'));
+                Map<String, Object> mapCurrent = (Map<String, Object>) current;
+                List<Object> arr = (List<Object>) mapCurrent.get(arrayName);
+                if (arr == null || arr.size() <= index) return null;
+                current = arr[index];
+            } else {
+                Map<String, Object> mapCurrent = (Map<String, Object>) current;
+                current = mapCurrent.get(part);
+            }
         }
+        return current;
     }
 }

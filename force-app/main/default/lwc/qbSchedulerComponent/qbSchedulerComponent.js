@@ -1,16 +1,17 @@
 import { LightningElement, track, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { refreshApex } from '@salesforce/apex';
-import getScheduledJobs from '@salesforce/apex/QBSchedulerController.getScheduledJobs';
-import scheduleJob from '@salesforce/apex/QBSchedulerController.scheduleJob';
-import stopJob from '@salesforce/apex/QBSchedulerController.stopJob';
-import getSyncSettingsSummary from '@salesforce/apex/QBSchedulerController.getSyncSettingsSummary';
-import getRecentRuns from '@salesforce/apex/QBSchedulerController.getRecentRuns';
-import togglePauseStatus from '@salesforce/apex/QBSchedulerController.togglePauseStatus';
-import deleteSpecificJob from '@salesforce/apex/QBSchedulerController.deleteSpecificJob';
-import editSpecificJob from '@salesforce/apex/QBSchedulerController.editSpecificJob';
+import getScheduledJobs from '@salesforce/apex/GenericSchedulerController.getScheduledJobs';
+import scheduleJob from '@salesforce/apex/GenericSchedulerController.scheduleJob';
+import stopConnectorSchedules from '@salesforce/apex/GenericSchedulerController.stopConnectorSchedules';
+import getSyncSettingsSummary from '@salesforce/apex/GenericSchedulerController.getSyncSettingsSummary';
+import getRecentRuns from '@salesforce/apex/GenericSchedulerController.getRecentRuns';
+import togglePauseStatus from '@salesforce/apex/GenericSchedulerController.togglePauseStatus';
+import deleteJob from '@salesforce/apex/GenericSchedulerController.deleteJob';
+import editJob from '@salesforce/apex/GenericSchedulerController.editJob';
 import getUsageSummary from '@salesforce/apex/SchedulerEntitlementService.getUsageSummary';
 export default class QbSchedulerComponent extends LightningElement {
+    connectorKey = 'qbo';
     @track isNewScheduleView = false;
     @track frequency = '10';
     @track hasJobs = false;
@@ -42,7 +43,7 @@ export default class QbSchedulerComponent extends LightningElement {
         { label: '60', value: '60' }
     ];
 
-    @wire(getScheduledJobs)
+    @wire(getScheduledJobs, { connectorKey: '$connectorKey' })
     wiredJobs(result) {
         this.wiredJobsResult = result;
         if (result.data) {
@@ -74,7 +75,7 @@ export default class QbSchedulerComponent extends LightningElement {
         }
     }
 
-    @wire(getSyncSettingsSummary)
+    @wire(getSyncSettingsSummary, { connectorKey: '$connectorKey' })
     wiredSettings({ error, data }) {
         if (data) {
             this.syncSettings = data;
@@ -178,10 +179,11 @@ export default class QbSchedulerComponent extends LightningElement {
             console.log(JSON.stringify(selectedObj));
             const objectNameToSend = selectedObj ? selectedObj.id : 'Accounts';
             const newCreatedJobId = await scheduleJob({
+                connectorKey: this.connectorKey,
                 freqValue: this.freqValue,
                 freqType: this.freqType,
                 selectedObject: objectNameToSend,
-                isSfToQbo: this.isSfToQboSync
+                direction: this.isSfToQboSync ? 'Out' : 'In'
             });
 
             this.showToast('Success', 'Schedule created successfully!', 'success');
@@ -199,7 +201,7 @@ export default class QbSchedulerComponent extends LightningElement {
 
     async handleStopSchedule() {
         try {
-            const result = await stopJob();
+            const result = await stopConnectorSchedules({ connectorKey: this.connectorKey });
             this.showToast('Schedule Stopped', result, 'info');
             await refreshApex(this.wiredUsageResult);
             return refreshApex(this.wiredJobsResult);
@@ -280,8 +282,9 @@ export default class QbSchedulerComponent extends LightningElement {
     async handlePause() {
         const isCurrentlyPaused = this.selectedJob?.displayStatus === 'Paused';
         try {
-            await togglePauseStatus({ pauseIt: !isCurrentlyPaused });
+            await togglePauseStatus({ connectorKey: this.connectorKey, pauseIt: !isCurrentlyPaused });
             this.showToast('Success', !isCurrentlyPaused ? 'Scheduler Paused Successfully' : 'Scheduler Resumed!', 'success');
+            await refreshApex(this.wiredUsageResult);
             return refreshApex(this.wiredJobsResult);
         } catch (error) {
             this.showToast('Error', error.body?.message, 'error');
@@ -307,7 +310,7 @@ export default class QbSchedulerComponent extends LightningElement {
 
     async handleDelete() {
         try {
-            await deleteSpecificJob({ jobName: this.selectedJob.name });
+            await deleteJob({ jobName: this.selectedJob.name });
             this.showToast('Success', 'Schedule deleted successfully', 'success');
 
             this.selectedJobId = null;
@@ -321,7 +324,8 @@ export default class QbSchedulerComponent extends LightningElement {
 
     async handleSaveEdit() {
         try {
-            await editSpecificJob({
+            await editJob({
+                connectorKey: this.connectorKey,
                 jobName: this.selectedJob.name,
                 freqValue: this.editFreqValue,
                 freqType: this.editFreqType

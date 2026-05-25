@@ -42,11 +42,11 @@ private class QuickBridgeArchitectureRefactorTest {
     );
 
     insert new Integration_Product__c(
-      Name = 'Klaviyo',
-      Product_Key__c = 'klaviyo',
-      Connector_Key__c = 'klaviyo',
-      Product_Label__c = 'Klaviyo',
-      Aliases__c = 'klaviyo,email',
+      Name = 'MailPulse',
+      Product_Key__c = 'mailpulse',
+      Connector_Key__c = 'mailpulse',
+      Product_Label__c = 'MailPulse',
+      Aliases__c = 'mailpulse,email',
       Category__c = 'Marketing',
       Display_Order__c = 80,
       Enabled__c = true,
@@ -62,12 +62,12 @@ private class QuickBridgeArchitectureRefactorTest {
     );
 
     ConnectorRegistryService.clearCache();
-    ConnectorRegistryService.ConnectorDescriptor klaviyo = ConnectorRegistryService.byKey(
+    ConnectorRegistryService.ConnectorDescriptor mailPulse = ConnectorRegistryService.byKey(
       'email'
     );
-    System.assertNotEquals(null, klaviyo);
-    System.assertEquals('klaviyo', klaviyo.connectorKey);
-    System.assert(klaviyo.capabilities.contains('config.admin'));
+    System.assertNotEquals(null, mailPulse);
+    System.assertEquals('mailpulse', mailPulse.connectorKey);
+    System.assert(mailPulse.capabilities.contains('config.admin'));
   }
 
   @IsTest
@@ -453,6 +453,12 @@ private class QuickBridgeArchitectureRefactorTest {
 
   @IsTest
   static void genericSchedulerCreatesListsAndDeletesLogicalSchedules() {
+    QuickBooksAuthHandler.configureConnectionForTest(
+      '12345',
+      'QuickBooks_Test_Named_Credential',
+      '70'
+    );
+
     Test.startTest();
     String scheduleId = GenericSchedulerController.scheduleJob(
       'qbo',
@@ -502,62 +508,37 @@ private class QuickBridgeArchitectureRefactorTest {
       )
     );
 
-    String qbWrapperId = QBSchedulerController.scheduleJob(
-      '4',
-      'Hours',
-      'Account'
-    );
-    System.assertNotEquals(null, qbWrapperId);
-    System.assertNotEquals(null, QBSchedulerController.getScheduledJobs());
-    System.assert(
-      QBSchedulerController.editSpecificJob('QBO Sync - Account', '5', 'Hours')
-        .contains('Success')
-    );
-    QBSchedulerController.deleteSpecificJob('QBO Sync - Account');
-    System.assertNotEquals(null, QBSchedulerController.stopJob());
     System.assertEquals(
       'Incremental Sync',
-      QBSchedulerController.getSyncSettingsSummary().get('type')
+      GenericSchedulerController.getSyncSettingsSummary('qbo').get('type')
     );
     System.assertEquals(
       'Incremental Sync',
-      QBSchedulerController.getShopifySyncSettingsSummary().get('type')
+      GenericSchedulerController.getSyncSettingsSummary('shopify').get('type')
     );
-    System.assertEquals(0, QBSchedulerController.getRecentRuns(null).size());
-    String shopifyWrapperId = QBSchedulerController.scheduleShopifyJob(
-      '6',
-      'Hours',
-      'Customers',
-      false
-    );
-    System.assertNotEquals(null, shopifyWrapperId);
-    System.assertNotEquals(
-      null,
-      QBSchedulerController.getShopifyScheduledJobs()
-    );
-    QBSchedulerController.deleteShopifyJob('Shopify Sync - Customers [In]');
-    System.assertNotEquals(null, QBSchedulerController.stopShopifyJob());
+    System.assertEquals(0, GenericSchedulerController.getRecentRuns(null).size());
     try {
-      QBSchedulerController.scheduleJob('abc', 'Hours', 'Account');
+      GenericSchedulerController.scheduleJob('qbo', 'abc', 'Hours', 'Account', 'Out');
       System.assert(false, 'Expected invalid QuickBooks schedule value.');
     } catch (Exception expected) {
       System.assertNotEquals(null, expected);
     }
     try {
-      QBSchedulerController.scheduleShopifyJob(
+      GenericSchedulerController.scheduleJob(
+        'shopify',
         'abc',
         'Hours',
         'Customers',
-        false
+        'In'
       );
       System.assert(false, 'Expected invalid Shopify schedule value.');
     } catch (Exception expected) {
       System.assertNotEquals(null, expected);
     }
-    QBSchedulerController.togglePauseStatus(true);
-    System.assertEquals(true, QBSchedulerController.getPauseStatus());
-    QBSchedulerController.togglePauseStatus(false);
-    System.assertEquals(false, QBSchedulerController.getPauseStatus());
+    GenericSchedulerController.togglePauseStatus('qbo', true);
+    System.assertEquals(true, GenericSchedulerController.getPauseStatus('qbo'));
+    GenericSchedulerController.togglePauseStatus('qbo', false);
+    System.assertEquals(false, GenericSchedulerController.getPauseStatus('qbo'));
 
     QuickBooksScheduledOperationAdapter.skipExecutionForTests = true;
     ShopifyScheduledOperationAdapter.skipExecutionForTests = true;

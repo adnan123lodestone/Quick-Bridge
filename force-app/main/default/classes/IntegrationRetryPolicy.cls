@@ -2,6 +2,14 @@ public class IntegrationRetryPolicy {
     public static final Integer DEFAULT_MAX_ATTEMPTS = 5;
     private static final Integer BASE_DELAY_SECONDS = 60;
     private static final Integer MAX_DELAY_SECONDS = 3600;
+    private static final Set<Integer> PERMANENT_FAILURE_STATUS_CODES = new Set<Integer>{
+        400,
+        401,
+        403,
+        404,
+        409,
+        422
+    };
 
     public static Integer getMaxAttempts(Integration_Work_Item__c item) {
         if (item != null && item.Max_Attempts__c != null && item.Max_Attempts__c > 0) {
@@ -27,11 +35,22 @@ public class IntegrationRetryPolicy {
         if (e == null || String.isBlank(e.getMessage())) {
             return false;
         }
+        Integer httpStatusCode = httpStatusCodeFromMessage(e.getMessage());
+        if (httpStatusCode != null) {
+            return isRetryable(httpStatusCode);
+        }
         return isRetryableMessage(e.getMessage());
+    }
+
+    public static Boolean isRetryable(HttpResponse response) {
+        return response != null && isRetryable(response.getStatusCode());
     }
 
     public static Boolean isRetryable(Integer httpStatusCode) {
         if (httpStatusCode == null) {
+            return false;
+        }
+        if (isPermanentFailure(httpStatusCode)) {
             return false;
         }
         return httpStatusCode == 408 ||
@@ -42,6 +61,10 @@ public class IntegrationRetryPolicy {
 
     public static Boolean isRateLimited(Integer httpStatusCode) {
         return httpStatusCode == 429;
+    }
+
+    public static Boolean isPermanentFailure(Integer httpStatusCode) {
+        return httpStatusCode != null && PERMANENT_FAILURE_STATUS_CODES.contains(httpStatusCode);
     }
 
     public static Boolean isRetryableMessage(String message) {
@@ -56,5 +79,20 @@ public class IntegrationRetryPolicy {
             || lower.contains('timed out')
             || lower.contains('temporarily unavailable')
             || lower.contains('read timed out');
+    }
+
+    public static Integer httpStatusCodeFromMessage(String message) {
+        if (String.isBlank(message)) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile('(?i)(?:http|status|status code)\\s*[:=]?\\s*(\\d{3})').matcher(message);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(matcher.group(1));
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

@@ -17,7 +17,7 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
         try {
             String query = 'select * from Vendor Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
             String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
-            String resourcePath = '/query?query=' + encodedQuery + '&minorversion=65';
+            String resourcePath = '/query?query=' + encodedQuery;
 
             HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
 

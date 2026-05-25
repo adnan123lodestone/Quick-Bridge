@@ -56,46 +56,69 @@ private class QBSyncSchedulerTest {
         }
     }
 
+    private static void configureQuickBooksAuth() {
+        QuickBooksAuthHandler.configureConnectionForTest(
+            '12345',
+            'QuickBooks_Test_Named_Credential',
+            '70'
+        );
+    }
+
     @isTest
-    static void testSchedulerAccountAndProductTargets() {
+    static void testAdapterAccountTarget() {
+        configureQuickBooksAuth();
         Test.setMock(HttpCalloutMock.class, new QBSchedulerCalloutMock());
 
         Test.startTest();
-        System.schedule('Sched-Acc-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Account'));
-        System.schedule('Sched-Prod-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Product'));
+        QuickBooksScheduledOperationAdapter.run('Account', null);
         Test.stopTest();
 
         System.assert(true);
     }
 
     @isTest
-    static void testSchedulerOrderTarget() {
-        Test.setMock(HttpCalloutMock.class, new QBSchedulerCalloutMock());
-        Test.startTest();
-        System.schedule('Sched-Ord-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Order'));
-        Test.stopTest();
-        System.assert(true);
-    }
-
-    @isTest
-    static void testSchedulerVendorTarget() {
+    static void testAdapterProductTarget() {
+        configureQuickBooksAuth();
         Test.setMock(HttpCalloutMock.class, new QBSchedulerCalloutMock());
 
         Test.startTest();
-        System.schedule('Sched-Vend-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Vendors'));
+        QuickBooksScheduledOperationAdapter.run('Product', null);
         Test.stopTest();
 
         System.assert(true);
     }
 
     @isTest
-    static void testSchedulerOutboundTargetsWithNoUnsyncedRecords() {
+    static void testAdapterOrderTarget() {
+        configureQuickBooksAuth();
+        Test.setMock(HttpCalloutMock.class, new QBSchedulerCalloutMock());
+        Test.startTest();
+        QuickBooksScheduledOperationAdapter.run('Order', 'In');
+        Test.stopTest();
+        System.assert(true);
+    }
+
+    @isTest
+    static void testAdapterVendorTarget() {
+        configureQuickBooksAuth();
         Test.setMock(HttpCalloutMock.class, new QBSchedulerCalloutMock());
 
         Test.startTest();
-        System.schedule('Sched-Inv-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Invoice'));
-        System.schedule('Sched-CM-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Credit Memo'));
-        System.schedule('Sched-PO-' + Datetime.now().getTime(), '0 0 0 1 1 ? 2099', new QBSyncScheduler('Purchase Order'));
+        QuickBooksScheduledOperationAdapter.run('Vendors', null);
+        Test.stopTest();
+
+        System.assert(true);
+    }
+
+    @isTest
+    static void testAdapterOutboundTargetsWithNoUnsyncedRecords() {
+        configureQuickBooksAuth();
+        Test.setMock(HttpCalloutMock.class, new QBSchedulerCalloutMock());
+
+        Test.startTest();
+        QuickBooksScheduledOperationAdapter.run('Invoice', 'Out');
+        QuickBooksScheduledOperationAdapter.run('Credit Memo', 'Out');
+        QuickBooksScheduledOperationAdapter.run('Purchase Order', 'Out');
         Test.stopTest();
 
         System.assert(true);

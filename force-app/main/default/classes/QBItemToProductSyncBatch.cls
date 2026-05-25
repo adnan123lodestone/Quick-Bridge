@@ -17,7 +17,7 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         try {
             String query = 'select * from Item Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
             String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
-            String resourcePath = '/query?query=' + encodedQuery + '&minorversion=65';
+            String resourcePath = '/query?query=' + encodedQuery;
             
             HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
             if (response != null && response.getStatusCode() == 200) {

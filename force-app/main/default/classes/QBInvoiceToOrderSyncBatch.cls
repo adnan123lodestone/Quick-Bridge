@@ -40,8 +40,7 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
             // First encode the query
             String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
 
-            // Construct the resource path with both query and minorversion parameters
-            String resourcePath = '/query?query=' + encodedQuery + '&minorversion=65';
+            String resourcePath = '/query?query=' + encodedQuery;
 
             HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
 

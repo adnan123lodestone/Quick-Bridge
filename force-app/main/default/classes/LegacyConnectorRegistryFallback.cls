@@ -5,7 +5,7 @@ public with sharing class LegacyConnectorRegistryFallback {
             descriptor('shopify', 'shopify', 'Shopify', 'shopify', 'Commerce', 'Shopify', 'Shopify_Is_Active__c', 'Shopify_End_Date__c', 'Company_Name__c,Shopify_Store_URL__c,Shopify_Access_Token__c,Shopify_API_Key__c,Shopify_API_Secret__c,Shopify_Is_Active__c,Shopify_Start_Date__c,Shopify_End_Date__c', 20, true, true, true, true, false, false, false),
             descriptor('stripe', 'stripe', 'Stripe', 'stripe', 'Payment', 'Stripe', 'Stripe_Active__c', 'Stripe_End_Date__c', 'Company_Name__c,Stripe_Publishable_Key__c,Stripe_Webhook_Signing_Secret__c,Stripe_Active__c,Stripe_Use_Sandbox__c,Stripe_Start_Date__c,Stripe_End_Date__c', 30, true, true, false, false, true, true, false),
             descriptor('authorizenet', 'authorizenet', 'Authorize.Net', 'authorizenet,authorize.net,authorize net,authnet', 'Payment', 'AuthorizeNet', 'AuthorizeNet_Active__c', 'AuthorizeNet_End_Date__c', 'Company_Name__c,AuthorizeNet_API_Login_ID__c,AuthorizeNet_Public_Client_Key__c,AuthorizeNet_Webhook_Signing_Key__c,AuthorizeNet_Active__c,AuthorizeNet_Use_Sandbox__c,AuthorizeNet_Start_Date__c,AuthorizeNet_End_Date__c', 40, true, true, false, false, true, true, false),
-            descriptor('paypal', 'paypal', 'PayPal', 'paypal,pay pal', 'Payment', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c', 'Company_Name__c,PayPal_ClientId__c,PayPal_Active__c,PayPal_UseSandbox__c,PayPal_StartDate__c,PayPal_EndDate__c', 50, true, true, false, false, true, true, false),
+            descriptor('paypal', 'paypal', 'PayPal', 'paypal,pay pal', 'Payment', 'PayPal', 'PayPal_Active__c', 'PayPal_EndDate__c', 'Company_Name__c,PayPal_ClientId__c,WebhookId__c,PayPal_Active__c,PayPal_UseSandbox__c,PayPal_StartDate__c,PayPal_EndDate__c', 50, true, true, false, false, true, true, false),
             descriptor('fedex', 'fedex', 'FedEx', 'fedex', 'Carrier', 'FedEx', 'FedEx_Active__c', 'FedEx_End_Date__c', 'FedEx_Client_Id__c,FedEx_Client_Secret__c,FedEx_Account_Number__c,FedEx_Environment__c,FedEx_Default_Service_Type__c,FedEx_Default_Packaging_Type__c,FedEx_Default_Pickup_Type__c,FedEx_Active__c,FedEx_Start_Date__c,FedEx_End_Date__c', 60, true, true, false, false, false, false, true),
             descriptor('ups', 'ups', 'UPS', 'ups', 'Carrier', 'UPS', 'UPS_Active__c', 'UPS_End_Date__c', 'UPS_Client_Id__c,UPS_Client_Secret__c,UPS_Account_Number__c,UPS_Environment__c,UPS_Default_Service_Code__c,UPS_Active__c,UPS_Start_Date__c,UPS_End_Date__c', 70, true, true, false, false, false, false, true)
         };
@@ -32,8 +32,11 @@ public with sharing class LegacyConnectorRegistryFallback {
             if (connector == 'qbo' || connector == 'quickbooks') return 'QBORetryHandler';
             if (connector == 'shopify') return 'ShopifyRetryHandler';
         }
-        String workHandler = workHandlerClassFor(connectorKey, capabilityKey);
-        return String.isBlank(workHandler) ? null : workHandler;
+        if (capability.startsWith('work')) {
+            String workHandler = workHandlerClassFor(connectorKey, capabilityKey);
+            return String.isBlank(workHandler) ? null : workHandler;
+        }
+        return null;
     }
 
     public static String workHandlerClassFor(String connectorKey, String operationOrCapability) {

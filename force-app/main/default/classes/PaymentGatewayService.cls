@@ -76,7 +76,7 @@ public with sharing class PaymentGatewayService {
       if (String.isBlank(username)) {
         throw new AuraHandledException('Username is required to recover your PIN.');
       }
-      AdminLoginRateLimiter.checkAndIncrement(username);
+      AdminLoginRateLimiter.checkAndIncrement(username, AdminLoginRateLimiter.PIN_RECOVERY_BUCKET);
 
       Map<String, String> requestBody = new Map<String, String>();
       requestBody.put('username', username.trim());
@@ -92,6 +92,9 @@ public with sharing class PaymentGatewayService {
       Http http = new Http();
       HttpResponse res = http.send(req);
       logServerOrgFailureIfNeeded('PaymentGatewayService.recoverPin', res);
+      if (res != null && res.getStatusCode() >= 200 && res.getStatusCode() < 300) {
+        AdminLoginRateLimiter.clearOnSuccess(username, AdminLoginRateLimiter.PIN_RECOVERY_BUCKET);
+      }
       
       return res.getBody();
     } catch (Exception e) {

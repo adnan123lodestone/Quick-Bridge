@@ -179,7 +179,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         }
         //
         String requestJson = JSON.serialize(requestBody);
-        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/creditmemo?minorversion=65', requestJson);
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/creditmemo', requestJson);
         
         if (res != null && res.getStatusCode() == 200) {
             Map<String, Object> responseMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('CreditMemo');
@@ -197,7 +197,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
     }
     
     private void updateCreditMemo(sObject record, List<sObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
-        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/creditmemo/' + qbId + '?minorversion=65', null);
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/creditmemo/' + qbId, null);
         if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
@@ -236,7 +236,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         }
         //
         String requestJson = JSON.serialize(requestBody);
-        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/creditmemo?minorversion=65', requestJson);
+        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/creditmemo', requestJson);
         if (updateRes == null || updateRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',

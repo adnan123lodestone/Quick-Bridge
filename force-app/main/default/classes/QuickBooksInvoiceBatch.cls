@@ -110,7 +110,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
         requestBody.put('Line', buildLineItems(lineItems));
 
         String requestJson = JSON.serialize(requestBody);
-        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/invoice', requestJson);
 
         if (res != null && res.getStatusCode() == 200) {
             Map<String, Object> invoiceMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('Invoice');
@@ -129,7 +129,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
 
     private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
         String qbId = (String)record.get('QuickBridgeTLG__External_Id__c');
-        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId + '?minorversion=65', null);
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId, null);
         if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
@@ -153,7 +153,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
         requestBody.put('Line', buildLineItems(lineItems));
 
         String requestJson = JSON.serialize(requestBody);
-        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/invoice?minorversion=65', requestJson);
+        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/invoice', requestJson);
 
         if (updateRes != null && updateRes.getStatusCode() == 200) {
             Map<String, Object> invoiceMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(updateRes.getBody())).get('Invoice');

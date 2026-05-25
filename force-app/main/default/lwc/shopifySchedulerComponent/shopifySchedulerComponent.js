@@ -1,17 +1,18 @@
 import { LightningElement, track, wire } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { refreshApex } from "@salesforce/apex";
-import getShopifyScheduledJobs from "@salesforce/apex/QBSchedulerController.getShopifyScheduledJobs";
-import scheduleShopifyJob from "@salesforce/apex/QBSchedulerController.scheduleShopifyJob";
-import stopShopifyJob from "@salesforce/apex/QBSchedulerController.stopShopifyJob";
-import getShopifySyncSettingsSummary from "@salesforce/apex/QBSchedulerController.getShopifySyncSettingsSummary";
-import getRecentRuns from "@salesforce/apex/QBSchedulerController.getRecentRuns";
-import togglePauseStatus from "@salesforce/apex/QBSchedulerController.togglePauseStatus";
-import deleteShopifyJob from "@salesforce/apex/QBSchedulerController.deleteShopifyJob";
-import editShopifyJob from "@salesforce/apex/QBSchedulerController.editShopifyJob";
+import getScheduledJobs from "@salesforce/apex/GenericSchedulerController.getScheduledJobs";
+import scheduleJob from "@salesforce/apex/GenericSchedulerController.scheduleJob";
+import stopConnectorSchedules from "@salesforce/apex/GenericSchedulerController.stopConnectorSchedules";
+import getSyncSettingsSummary from "@salesforce/apex/GenericSchedulerController.getSyncSettingsSummary";
+import getRecentRuns from "@salesforce/apex/GenericSchedulerController.getRecentRuns";
+import togglePauseStatus from "@salesforce/apex/GenericSchedulerController.togglePauseStatus";
+import deleteJob from "@salesforce/apex/GenericSchedulerController.deleteJob";
+import editJob from "@salesforce/apex/GenericSchedulerController.editJob";
 import getUsageSummary from "@salesforce/apex/SchedulerEntitlementService.getUsageSummary";
 
 export default class ShopifySchedulerComponent extends LightningElement {
+  connectorKey = "shopify";
   @track isNewScheduleView = false;
   @track hasJobs = false;
   wiredJobsResult;
@@ -75,7 +76,7 @@ export default class ShopifySchedulerComponent extends LightningElement {
     { label: "60", value: "60" }
   ];
 
-  @wire(getShopifyScheduledJobs)
+  @wire(getScheduledJobs, { connectorKey: "$connectorKey" })
   wiredJobs(result) {
     this.wiredJobsResult = result;
     if (result.data) {
@@ -118,7 +119,7 @@ export default class ShopifySchedulerComponent extends LightningElement {
     }
   }
 
-  @wire(getShopifySyncSettingsSummary)
+  @wire(getSyncSettingsSummary, { connectorKey: "$connectorKey" })
   wiredSettings({ error, data }) {
     if (data) {
       this.syncSettings = data;
@@ -231,11 +232,12 @@ export default class ShopifySchedulerComponent extends LightningElement {
     try {
       const selectedObj = this.syncObjects.find((obj) => obj.isSelected);
       const objectNameToSend = selectedObj ? selectedObj.id : "Customers";
-      const newCreatedJobId = await scheduleShopifyJob({
+      const newCreatedJobId = await scheduleJob({
+        connectorKey: this.connectorKey,
         freqValue: this.freqValue,
         freqType: this.freqType,
         selectedObject: objectNameToSend,
-        isSfToShopify: this.isSfToShopifySync
+        direction: this.isSfToShopifySync ? "Out" : "In"
       });
 
       this.showToast(
@@ -255,7 +257,7 @@ export default class ShopifySchedulerComponent extends LightningElement {
 
   async handleStopSchedule() {
     try {
-      const result = await stopShopifyJob();
+      const result = await stopConnectorSchedules({ connectorKey: this.connectorKey });
       this.showToast("Schedule Stopped", result, "info");
       await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
@@ -326,7 +328,7 @@ export default class ShopifySchedulerComponent extends LightningElement {
   async handlePause() {
     const isCurrentlyPaused = this.selectedJob?.displayStatus === "Paused";
     try {
-      await togglePauseStatus({ pauseIt: !isCurrentlyPaused });
+      await togglePauseStatus({ connectorKey: this.connectorKey, pauseIt: !isCurrentlyPaused });
       this.showToast(
         "Success",
         !isCurrentlyPaused
@@ -334,6 +336,7 @@ export default class ShopifySchedulerComponent extends LightningElement {
           : "Scheduler Resumed!",
         "success"
       );
+      await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
@@ -362,7 +365,7 @@ export default class ShopifySchedulerComponent extends LightningElement {
 
   async handleDelete() {
     try {
-      await deleteShopifyJob({ jobName: this.selectedJob.name });
+      await deleteJob({ jobName: this.selectedJob.name });
       this.showToast(
         "Success",
         "Shopify schedule deleted successfully",
@@ -380,7 +383,8 @@ export default class ShopifySchedulerComponent extends LightningElement {
 
   async handleSaveEdit() {
     try {
-      await editShopifyJob({
+      await editJob({
+        connectorKey: this.connectorKey,
         jobName: this.selectedJob.name,
         freqValue: this.editFreqValue,
         freqType: this.editFreqType

@@ -52,19 +52,19 @@ public class QBObjectMappings {
         //'TotalAmount' => 'TotalAmt',
         'Description' => 'CustomerMemo.value'
     };
-
+    
     private static final Map<String, String> ORDER_ITEM_FALLBACK = new Map<String, String>{
         'Quantity' => 'Qty',
         'UnitPrice' => 'UnitPrice',
         'Description' => 'Description'
     };
-
+    
     private static final Map<String, String> CREDIT_MEMO_LINE_FALLBACK = new Map<String, String>{
         'Quantity__c' => 'Line.SalesItemLineDetail.Qty',
         'Rate__c' => 'Line.SalesItemLineDetail.UnitPrice',
         'Description__c' => 'Line.Description'
     };
-
+    
     private static final Map<String, String> PURCHASE_ORDER_LINE_FALLBACK = new Map<String, String>{
         'Quantity__c' => 'Line.ItemBasedExpenseLineDetail.Qty',
         'Cost_Price__c' => 'Line.ItemBasedExpenseLineDetail.UnitPrice',
@@ -78,6 +78,20 @@ public class QBObjectMappings {
         'QuickBridgeTLG__Item_Description__c' => 'Description'
     };
     
+    public static Map<String, String> getTaxCodeInboundMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('Item_Sales_Tax__c', 'QBO to SF');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) {
+            return reverseMapping(dynamicMap);
+        }
+        
+        // Fallback
+        Map<String, String> fallback = new Map<String, String>();
+        for (String sfField : TAX_CODE_FALLBACK.keySet()) {
+            String qboField = TAX_CODE_FALLBACK.get(sfField);
+            fallback.put(qboField, sfField);
+        }
+        return fallback;
+    }
     private static Map<String, String> getDynamicMapping(String objectName, String syncDirection) {
         Map<String, String> mapping = new Map<String, String>();
         
@@ -203,19 +217,19 @@ public class QBObjectMappings {
         if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
         return new Map<String, String>(ORDER_ITEM_FALLBACK);
     }
-
+    
     public static Map<String, String> getCreditMemoLineMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('Credit_Memo_Line__c', 'SF to QBO');
         if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
         return new Map<String, String>(CREDIT_MEMO_LINE_FALLBACK);
     }
-
+    
     public static Map<String, String> getPurchaseOrderLineMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('Purchase_Order_Line__c', 'SF to QBO');
         if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
         return new Map<String, String>(PURCHASE_ORDER_LINE_FALLBACK);
     }
-
+    
     // Dynamic Invoice Source Detector
     public static String getInvoiceSourceObject() {
         try {
