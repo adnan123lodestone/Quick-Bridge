@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types>
         <members>CarrierAdapterFactory</members>
@@ -29,11 +29,17 @@
         <members>PaymentCheckoutController</members>
         <members>PaymentMetadataService</members>
         <members>PaymentWebhookRestResource</members>
+        <members>QBOInvoiceSyncQueueable</members>
+        <members>QBOInvoiceSyncQueueableTest</members>
         <members>QBORetryHandler</members>
+        <members>QBOWebhookService</members>
+        <members>QBOWebhookServiceTest</members>
         <members>QBItemToProductSyncBatch</members>
         <members>QBItemToProductSyncBatchTest</members>
         <members>QBVendorToAccountSyncBatch</members>
         <members>QBVendorToAccountSyncBatchTest</members>
+        <members>QuickBooksBulkQueryService</members>
+        <members>QuickBooksBulkQueryServiceTest</members>
         <members>QuickBooksAuthHandler</members>
         <members>QuickBooksAuthHandlerTest</members>
         <members>QuickBridgeAdminControlPlaneService</members>
@@ -62,8 +68,10 @@
         <members>Integration_Connector.Stripe</members>
         <members>Integration_Connector.UPS</members>
         <members>Integration_Connector_Capability.Klaviyo_Scheduler</members>
-        <members>Integration_Connector_Capability.QuickBooks_Retry_Handler</members>
-        <members>Integration_Connector_Capability.Shopify_Retry_Handler</members>
+        <members
+    >Integration_Connector_Capability.QuickBooks_Retry_Handler</members>
+        <members
+    >Integration_Connector_Capability.Shopify_Retry_Handler</members>
         <members>Integration_Product_Default.AuthorizeNet</members>
         <members>Integration_Product_Default.FedEx</members>
         <members>Integration_Product_Default.Klaviyo</members>
@@ -79,14 +87,16 @@
         <name>CustomObject</name>
     </types>
     <types>
-        <members>Integration_Connector__mdt.Counts_Toward_Schedule_Limit__c</members>
+        <members
+    >Integration_Connector__mdt.Counts_Toward_Schedule_Limit__c</members>
         <members>Integration_Connector__mdt.Integration_Type__c</members>
         <members>Integration_Product__c.System_Managed__c</members>
         <members>Integration_Product_Default__mdt.Active_Field__c</members>
         <members>Integration_Product_Default__mdt.Aliases__c</members>
         <members>Integration_Product_Default__mdt.Catalog_Active__c</members>
         <members>Integration_Product_Default__mdt.Category__c</members>
-        <members>Integration_Product_Default__mdt.Config_Record_Name__c</members>
+        <members
+    >Integration_Product_Default__mdt.Config_Record_Name__c</members>
         <members>Integration_Product_Default__mdt.Connector_Key__c</members>
         <members>Integration_Product_Default__mdt.Display_Order__c</members>
         <members>Integration_Product_Default__mdt.Editable_Fields__c</members>

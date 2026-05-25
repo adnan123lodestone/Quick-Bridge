@@ -1,24 +1,6 @@
 public without sharing class ErrorLogUtility {
     private static final Integer ERROR_MESSAGE_MAX_LENGTH = 32000;
     private static final Integer STACK_TRACE_MAX_LENGTH = 32768;
-    private static final Map<String, String> PARENT_LOOKUP_FIELD_BY_OBJECT = new Map<String, String>{
-        'Order' => 'Order__c',
-        'Invoice__c' => 'Invoice__c',
-        'Account' => 'Account__c',
-        'Portal_Payment_Transaction__c' => 'Portal_Payment_Transaction__c',
-        'QuickBridgeTLG__Carrier_Shipment__c' => 'QuickBridgeTLG__Carrier_Shipment__c',
-        'Carrier_Package__c' => 'Carrier_Package__c',
-        'Carrier_Rate_Quote__c' => 'Carrier_Rate_Quote__c',
-        'Carrier_Tracking_Event__c' => 'Carrier_Tracking_Event__c',
-        'Shipment' => 'Shipment__c',
-        'Case' => 'Case__c',
-        'Product2' => 'Product__c',
-        'Contact' => 'Contact__c',
-        'OrderItem' => 'Order_Item__c',
-        'Credit_Memo__c' => 'Credit_Memo__c',
-        'Purchase_Order__c' => 'Purchase_Order__c',
-        'Item_Sales_Tax__c' => 'Item_Sales_Tax__c'
-    };
     
     public class LogContext {
         public String gatewayName;
@@ -210,9 +192,6 @@ public without sharing class ErrorLogUtility {
             putIfPresent(errorRecord, 'Http_Status_Code__c', context.httpStatusCode);
             putIfPresent(errorRecord, 'External_Reference__c', context.externalReference);
             putIfPresent(errorRecord, 'Stack_Trace__c', abbreviate(context.stackTrace, STACK_TRACE_MAX_LENGTH));
-            
-            assignParentLookup(errorRecord, context);
-            
             Database.SaveResult result = Database.insert(errorRecord, false);
             if (result != null && result.isSuccess()) {
                 createGenericLinks(result.getId(), context);
@@ -248,40 +227,6 @@ public without sharing class ErrorLogUtility {
             Linked_Record_Id__c = resolvedRecordId,
             Relationship_Role__c = role
         ));
-    }
-    
-    private static void assignParentLookup(Error_Log__c errorRecord, LogContext context) {
-        Id parentId = context.sourceRecordId;
-        String objectApiName = context.sourceObjectApiName;
-        
-        if (parentId == null && context.actionSourceRecordId != null) {
-            parentId = context.actionSourceRecordId;
-            objectApiName = context.actionSourceObjectApiName;
-        }
-        if (parentId == null) {
-            return;
-        }
-        
-        try {
-            String describedObjectApiName = parentId.getSObjectType().getDescribe().getName();
-            for (String supportedObjectApiName : PARENT_LOOKUP_FIELD_BY_OBJECT.keySet()) {
-                if (objectApiNameMatches(objectApiName, supportedObjectApiName) ||
-                objectApiNameMatches(describedObjectApiName, supportedObjectApiName)) {
-                    putIfPresent(errorRecord, PARENT_LOOKUP_FIELD_BY_OBJECT.get(supportedObjectApiName), parentId);
-                    return;
-                }
-            }
-        } catch (Exception e) {
-            System.debug(LoggingLevel.WARN, 'Error Log parent lookup assignment skipped: ' + e.getMessage());
-        }
-    }
-    
-    private static Boolean objectApiNameMatches(String actualObjectApiName, String supportedObjectApiName) {
-        if (String.isBlank(actualObjectApiName) || String.isBlank(supportedObjectApiName)) {
-            return false;
-        }
-        return actualObjectApiName == supportedObjectApiName ||
-            actualObjectApiName.endsWith('__' + supportedObjectApiName);
     }
     
     private static Id parseId(String rawId) {

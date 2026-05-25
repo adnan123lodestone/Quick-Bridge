@@ -24,6 +24,8 @@ private class LockSafeDmlTest {
         System.assertEquals(false, IntegrationRetryPolicy.isRetryable(404));
         System.assertEquals(false, IntegrationRetryPolicy.isRetryable(401));
         System.assertEquals(false, IntegrationRetryPolicy.isRetryable(422));
+        System.assertEquals(true, IntegrationRetryPolicy.isRetryable(IntegrationRetryPolicy.exceptionForStatus(503, 'QBO unavailable')));
+        System.assertEquals(false, IntegrationRetryPolicy.isRetryable(IntegrationRetryPolicy.exceptionForStatus(422, 'Validation failed')));
         System.assertEquals(503, IntegrationRetryPolicy.httpStatusCodeFromMessage('Callout failed with HTTP 503: unavailable'));
         System.assert(IntegrationRetryPolicy.nextAttemptAt(1) > System.now());
     }

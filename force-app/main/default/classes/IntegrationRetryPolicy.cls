@@ -11,6 +11,10 @@ public class IntegrationRetryPolicy {
         422
     };
 
+    public class StatusCodeException extends Exception {
+        public Integer statusCode;
+    }
+
     public static Integer getMaxAttempts(Integration_Work_Item__c item) {
         if (item != null && item.Max_Attempts__c != null && item.Max_Attempts__c > 0) {
             return Integer.valueOf(item.Max_Attempts__c);
@@ -35,11 +39,20 @@ public class IntegrationRetryPolicy {
         if (e == null || String.isBlank(e.getMessage())) {
             return false;
         }
+        if (e instanceof StatusCodeException) {
+            return isRetryable(((StatusCodeException) e).statusCode);
+        }
         Integer httpStatusCode = httpStatusCodeFromMessage(e.getMessage());
         if (httpStatusCode != null) {
             return isRetryable(httpStatusCode);
         }
         return isRetryableMessage(e.getMessage());
+    }
+
+    public static StatusCodeException exceptionForStatus(Integer httpStatusCode, String message) {
+        StatusCodeException ex = new StatusCodeException(message);
+        ex.statusCode = httpStatusCode;
+        return ex;
     }
 
     public static Boolean isRetryable(HttpResponse response) {

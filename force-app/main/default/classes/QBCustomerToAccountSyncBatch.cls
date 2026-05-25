@@ -14,36 +14,12 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     }
     
     public Iterable<String> start(Database.BatchableContext bc) {
-        List<String> customerIdsList = new List<String>();
-        
+        List<String> customerPayloads = new List<String>();
+
         try {
-            String query = 'select * from Customer Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
-            String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
-            String resourcePath = '/query?query=' + encodedQuery;
-            
-            HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
-            
-            if (response != null && response.getStatusCode() == 200 && String.isNotBlank(response.getBody())) {
-                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-                
-                if (responseMap != null && responseMap.containsKey('QueryResponse')) {
-                    Map<String, Object> queryResponse = (Map<String, Object>)responseMap.get('QueryResponse');
-                    
-                    if (queryResponse != null && queryResponse.containsKey('Customer')) {
-                        List<Object> customers = (List<Object>)queryResponse.get('Customer');
-                        if (customers != null) {
-                            for (Object customerObj : customers) {
-                                if (customerObj != null) {
-                                    Map<String, Object> customer = (Map<String, Object>)customerObj;
-                                    if (customer.containsKey('Id')) {
-                                        customerIdsList.add(JSON.serialize(customer));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            customerPayloads = QuickBooksBulkQueryService.serializeRecords(
+                QuickBooksBulkQueryService.queryUpdatedSince('Customer', lastSyncDate)
+            );
         } catch (Exception e) {
             System.debug('Error querying QuickBooks customers: ' + e.getMessage());
             ErrorLogUtility.logException(
@@ -54,8 +30,8 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             null
                 );
         }
-        
-        return customerIdsList;
+
+        return customerPayloads;
     }
     
     public void execute(Database.BatchableContext bc, List<String> scope) {
@@ -197,11 +173,8 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         if (trimmedValue.startsWith('{')) {
             return (Map<String, Object>) JSON.deserializeUntyped(trimmedValue);
         }
-        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/customer/' + customerScopeValue, null);
-        if (response != null && response.getStatusCode() == 200) {
-            Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-            return (Map<String, Object>)responseMap.get('Customer');
-        }
+        // Scheduled/batch execution must receive hydrated payloads from start().
+        // Single-record hydration remains in processSingleCustomer().
         return null;
     }
     

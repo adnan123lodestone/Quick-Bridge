@@ -38,7 +38,7 @@ public with sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfig(String connectorKey) {
-    return getConfig(connectorKey, true);
+    return getConfig(connectorKey, false);
   }
 
   public static ConnectorConfig getConfig(String connectorKey, Boolean allowLegacyFallback) {
@@ -64,6 +64,10 @@ public with sharing class ConnectorConfigService {
 
   public static ConnectorConfig getAuthoritativeConfig(String connectorKey) {
     return getConfig(connectorKey, false);
+  }
+
+  public static ConnectorConfig getConfigForMigration(String connectorKey) {
+    return getConfig(connectorKey, true);
   }
 
   private static void redactSecretFields(ConnectorConfig cfg) {

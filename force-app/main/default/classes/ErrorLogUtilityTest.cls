@@ -79,23 +79,31 @@ private class ErrorLogUtilityTest {
     @isTest
     static void testLogPaymentErrorParentsValidOrderId() {
         Order ord = [SELECT Id FROM Order LIMIT 1];
+        String orderIdText = String.valueOf(ord.Id);
 
         Test.startTest();
-        ErrorLogUtility.logPaymentError('Stripe', 'StripePaymentService.processPayment', 'Declined', String.valueOf(ord.Id));
+        ErrorLogUtility.logPaymentError('Stripe', 'StripePaymentService.processPayment', 'Declined', orderIdText);
         Test.stopTest();
 
         Error_Log__c logRecord = [
-            SELECT Order__c, Order_Id__c, Source_Object__c, Source_Record_Id__c, Error_Category__c
+            SELECT Id, Order__c, Order_Id__c, Source_Object__c, Source_Record_Id__c, Error_Category__c
             FROM Error_Log__c
-            WHERE Order__c = :ord.Id
+            WHERE Source_Record_Id__c = :orderIdText
             ORDER BY CreatedDate DESC
             LIMIT 1
         ];
-        System.assertEquals(ord.Id, logRecord.Order__c);
-        System.assertEquals(String.valueOf(ord.Id), logRecord.Order_Id__c);
+        System.assertEquals(null, logRecord.Order__c);
+        System.assertEquals(orderIdText, logRecord.Order_Id__c);
         System.assertEquals('Order', logRecord.Source_Object__c);
-        System.assertEquals(String.valueOf(ord.Id), logRecord.Source_Record_Id__c);
+        System.assertEquals(orderIdText, logRecord.Source_Record_Id__c);
         System.assertEquals('Payment Error', logRecord.Error_Category__c);
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :logRecord.Id
+            AND Linked_Object_API_Name__c = 'Order'
+            AND Linked_Record_Id__c = :orderIdText
+        ]);
     }
 
     @isTest
@@ -103,6 +111,9 @@ private class ErrorLogUtilityTest {
         Account acc = [SELECT Id FROM Account LIMIT 1];
         Invoice__c inv = [SELECT Id FROM Invoice__c LIMIT 1];
         Portal_Payment_Transaction__c txn = [SELECT Id FROM Portal_Payment_Transaction__c LIMIT 1];
+        String accountIdText = String.valueOf(acc.Id);
+        String invoiceIdText = String.valueOf(inv.Id);
+        String transactionIdText = String.valueOf(txn.Id);
 
         ErrorLogUtility.LogContext invoiceContext = new ErrorLogUtility.LogContext();
         invoiceContext.gatewayName = 'Stripe';
@@ -138,14 +149,20 @@ private class ErrorLogUtilityTest {
         Test.stopTest();
 
         List<Error_Log__c> invoiceLogs = [
-            SELECT Stack_Trace__c
+            SELECT Id, Stack_Trace__c
             FROM Error_Log__c
-            WHERE Invoice__c = :inv.Id
+            WHERE Source_Record_Id__c = :invoiceIdText
         ];
         System.assertEquals(1, invoiceLogs.size());
         System.assertEquals('stack', invoiceLogs[0].Stack_Trace__c);
-        System.assertEquals(1, [SELECT Count() FROM Error_Log__c WHERE Account__c = :acc.Id AND Dml_Operation__c = 'update']);
-        System.assertEquals(1, [SELECT Count() FROM Error_Log__c WHERE Portal_Payment_Transaction__c = :txn.Id AND Http_Status_Code__c = 500]);
+        System.assertEquals(1, [SELECT Count() FROM Error_Log__c WHERE Source_Record_Id__c = :accountIdText AND Dml_Operation__c = 'update']);
+        System.assertEquals(1, [SELECT Count() FROM Error_Log__c WHERE Source_Record_Id__c = :transactionIdText AND Http_Status_Code__c = 500]);
+        List<String> linkedIds = new List<String>{ invoiceIdText, accountIdText, transactionIdText };
+        System.assertEquals(3, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Linked_Record_Id__c IN :linkedIds
+        ]);
     }
 
     @isTest
@@ -172,6 +189,7 @@ private class ErrorLogUtilityTest {
     @isTest
     static void testLogErrorAssignsCarrierShipmentLookup() {
         Carrier_Shipment__c shipment = [SELECT Id FROM Carrier_Shipment__c LIMIT 1];
+        String shipmentIdText = String.valueOf(shipment.Id);
 
         ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
         context.gatewayName = 'FedEx';
@@ -186,21 +204,28 @@ private class ErrorLogUtilityTest {
         Test.stopTest();
 
         Error_Log__c logRecord = [
-            SELECT Carrier_Shipment__c, Source_Object__c, Source_Record_Id__c, Error_Category__c
+            SELECT Id, Carrier_Shipment__c, Source_Object__c, Source_Record_Id__c, Error_Category__c
             FROM Error_Log__c
-            WHERE Carrier_Shipment__c = :shipment.Id
+            WHERE Source_Record_Id__c = :shipmentIdText
             ORDER BY CreatedDate DESC
             LIMIT 1
         ];
-        System.assertEquals(shipment.Id, logRecord.Carrier_Shipment__c);
+        System.assertEquals(null, logRecord.Carrier_Shipment__c);
         System.assertEquals('QuickBridgeTLG__Carrier_Shipment__c', logRecord.Source_Object__c);
-        System.assertEquals(String.valueOf(shipment.Id), logRecord.Source_Record_Id__c);
+        System.assertEquals(shipmentIdText, logRecord.Source_Record_Id__c);
         System.assertEquals('Callout Failure', logRecord.Error_Category__c);
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :logRecord.Id
+            AND Linked_Record_Id__c = :shipmentIdText
+        ]);
     }
 
     @isTest
     static void testLogDmlFailureCreatesRecord() {
         Account acc = [SELECT Id FROM Account LIMIT 1];
+        String accountIdText = String.valueOf(acc.Id);
 
         Test.startTest();
         ErrorLogUtility.logDmlFailure(
@@ -216,19 +241,26 @@ private class ErrorLogUtilityTest {
         Test.stopTest();
 
         Error_Log__c logRecord = [
-            SELECT Account__c, Gateway_Name__c, Error_Category__c, Dml_Operation__c,
+            SELECT Id, Account__c, Gateway_Name__c, Error_Category__c, Dml_Operation__c,
                    Source_Object__c, Source_Record_Id__c, Error_Message__c
             FROM Error_Log__c
-            WHERE Account__c = :acc.Id
+            WHERE Source_Record_Id__c = :accountIdText
             ORDER BY CreatedDate DESC
             LIMIT 1
         ];
+        System.assertEquals(null, logRecord.Account__c);
         System.assertEquals('Shopify', logRecord.Gateway_Name__c);
         System.assertEquals('DML Failure', logRecord.Error_Category__c);
         System.assertEquals('upsert', logRecord.Dml_Operation__c);
         System.assertEquals('Account', logRecord.Source_Object__c);
         System.assertEquals(String.valueOf(acc.Id), logRecord.Source_Record_Id__c);
         System.assert(logRecord.Error_Message__c.contains('Validation failed'));
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :logRecord.Id
+            AND Linked_Object_API_Name__c = 'Account'
+        ]);
     }
 
     @isTest

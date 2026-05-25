@@ -13,44 +13,11 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     
     public Iterable<String> start(Database.BatchableContext bc) {
         List<String> itemPayloads = new List<String>();
-        
+
         try {
-            String query = 'select * from Item Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
-            String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
-            String resourcePath = '/query?query=' + encodedQuery;
-            
-            HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
-            if (response != null && response.getStatusCode() == 200) {
-                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-                
-                if (responseMap != null && responseMap.containsKey('QueryResponse')) {
-                    Map<String, Object> queryResponse = (Map<String, Object>)responseMap.get('QueryResponse');
-                    
-                    if (queryResponse != null && queryResponse.containsKey('Item')) {
-                        List<Object> items = (List<Object>)queryResponse.get('Item');
-                        if (items != null) {
-                            for (Object itemObj : items) {
-                                if (itemObj != null) {
-                                    Map<String, Object> item = (Map<String, Object>)itemObj;
-                                    if (item.containsKey('Id')) {
-                                        itemPayloads.add(JSON.serialize(item));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else if (response != null) {
-                System.debug('QuickBooks API returned status code: ' + response.getStatusCode());
-                ErrorLogUtility.logCalloutFailure(
-                    'QuickBooks',
-                    'QBItemToProductSyncBatch.start',
-                    'QuickBooks item query returned HTTP ' + response.getStatusCode() + ': ' + response.getBody(),
-                    response.getStatusCode(),
-                    null,
-                    null
-                );
-            }
+            itemPayloads = QuickBooksBulkQueryService.serializeRecords(
+                QuickBooksBulkQueryService.queryUpdatedSince('Item', lastSyncDate)
+            );
         } catch (Exception e) {
             System.debug('Error querying QuickBooks items: ' + e.getMessage());
             ErrorLogUtility.logException(
@@ -202,12 +169,9 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
             // Legacy payloads were raw QuickBooks ids; hydrate only those compatibility inputs.
         }
 
-        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + itemPayload, null);
-        if (response == null || response.getStatusCode() != 200 || String.isBlank(response.getBody())) {
-            return null;
-        }
-        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-        return responseMap == null ? null : (Map<String, Object>)responseMap.get('Item');
+        // Scheduled/batch execution must receive hydrated payloads from start().
+        // Single-record hydration remains in syncItemFromQBO().
+        return null;
     }
 
     private String getExternalIdFromPayload(String itemPayload) {

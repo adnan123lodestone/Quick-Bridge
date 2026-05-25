@@ -1,5 +1,11 @@
 @RestResource(urlMapping='/qbo/webhook/*')
-global without sharing class QBOWebhookService {
+global with sharing class QBOWebhookService {
+    @TestVisible private static String testVerifierToken;
+
+    @TestVisible
+    static void configureVerifierTokenForTest(String verifierToken) {
+        testVerifierToken = verifierToken;
+    }
     
     @HttpPost
     global static void handleIncomingWebhook() {
@@ -10,31 +16,38 @@ global without sharing class QBOWebhookService {
             // Get the payload and signature from the incoming request
             String requestBody = req.requestBody.toString();
             String intuitSignature = req.headers.get('intuit-signature');
-            
-            // Fetch Verifier Token dynamically from Custom Metadata
-            List<Quickbridge_Config__mdt> configs = [SELECT QuickBooks_Verifier_Token__c FROM Quickbridge_Config__mdt WHERE Label = 'QuickBooks' LIMIT 1];
-            String verifierToken = configs.isEmpty() ? '' : configs[0].QuickBooks_Verifier_Token__c;
-            
+
+            String verifierToken = resolveVerifierToken();
+            if (String.isBlank(verifierToken)) {
+                ErrorLogUtility.logCalloutFailure(
+                    'QuickBooks',
+                    'QBOWebhookService.handleIncomingWebhook',
+                    'QuickBooks webhook verifier token is not configured.',
+                    503,
+                    null,
+                    null
+                );
+                res.statusCode = 503;
+                res.responseBody = Blob.valueOf('QuickBooks webhook verification is not configured.');
+                return;
+            }
+
             // SECURITY CHECK: Verify Intuit Signature
-            if (String.isNotBlank(verifierToken)) {
-                Blob mac = Crypto.generateMac('HmacSHA256', Blob.valueOf(requestBody), Blob.valueOf(verifierToken));
-                String expectedSignature = EncodingUtil.base64Encode(mac);
-                
-                if (intuitSignature != expectedSignature) {
-                    System.debug('SECURITY ALERT: Invalid Webhook Signature Detected!');
-                    ErrorLogUtility.logCalloutFailure(
-                        'QuickBooks',
-                        'QBOWebhookService.handleIncomingWebhook',
-                        'Invalid QuickBooks webhook signature.',
-                        401,
-                        null,
-                        null
-                    );
-                    res.statusCode = 401; // Unauthorized Request (Rejecting the fake payload)
-                    return;
-                }
-            } else {
-                System.debug('WARNING: Verifier Token not found in Metadata. Proceeding without verification.');
+            Blob mac = Crypto.generateMac('HmacSHA256', Blob.valueOf(requestBody), Blob.valueOf(verifierToken));
+            String expectedSignature = EncodingUtil.base64Encode(mac);
+
+            if (String.isBlank(intuitSignature) || intuitSignature != expectedSignature) {
+                System.debug('SECURITY ALERT: Invalid Webhook Signature Detected!');
+                ErrorLogUtility.logCalloutFailure(
+                    'QuickBooks',
+                    'QBOWebhookService.handleIncomingWebhook',
+                    'Invalid QuickBooks webhook signature.',
+                    401,
+                    null,
+                    null
+                );
+                res.statusCode = 401; // Unauthorized Request (Rejecting the fake payload)
+                return;
             }
             
             // Parse the JSON Payload to extract Event Notifications
@@ -87,5 +100,21 @@ global without sharing class QBOWebhookService {
             );
             res.statusCode = 500;
         }
+    }
+
+    private static String resolveVerifierToken() {
+        if (Test.isRunningTest()) {
+            return testVerifierToken;
+        }
+
+        ConnectorConfigService.ConnectorConfig config = ConnectorConfigService.getAuthoritativeConfig('qbo');
+        if (config == null || config.values == null) {
+            return null;
+        }
+        String verifierToken = config.values.get('verifierTokenRef');
+        if (String.isBlank(verifierToken)) {
+            verifierToken = config.values.get('QuickBooks_Verifier_Token__c');
+        }
+        return verifierToken;
     }
 }

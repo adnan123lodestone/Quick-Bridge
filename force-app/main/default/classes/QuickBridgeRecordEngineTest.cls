@@ -54,23 +54,32 @@ private class QuickBridgeRecordEngineTest {
 
     @isTest
     static void testProcessIncomingInvoiceFailureLogsAgainstOrder() {
-        Order ord = [SELECT Id FROM Order LIMIT 1];
+        Account acc = [SELECT Id FROM Account WHERE Name = 'Record Engine Account' LIMIT 1];
 
         Map<String, Object> payload = new Map<String, Object>{
-            'Amount__c' => 'not-a-decimal',
-            'Order__c' => ord.Id,
+            'Amount__c' => 10,
+            'Related_Account__c' => acc.Id,
             'Reference_number__c' => 'REF-BAD'
         };
+        QuickBridgeRecordEngine.forcePipelineFailureForTest = true;
 
         Test.startTest();
         QuickBridgeRecordEngine.processIncomingInvoice(payload);
         Test.stopTest();
 
+        String accountIdText = String.valueOf(acc.Id);
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Order__c = :ord.Id
+            WHERE Source_Record_Id__c = :accountIdText
             AND Class_Method_Name__c = 'QuickBridgeRecordEngine.processIncomingInvoice'
+        ]);
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Linked_Object_API_Name__c = 'Account'
+            AND Linked_Record_Id__c = :accountIdText
+            AND Relationship_Role__c = 'Source'
         ]);
     }
 
@@ -145,7 +154,7 @@ private class QuickBridgeRecordEngineTest {
 
         // Verify error log was created with dynamic object name
         Error_Log__c errorLog = [
-            SELECT Source_Object__c, Source_Record_Id__c, Invoice__c, Error_Category__c, Dml_Operation__c
+            SELECT Id, Source_Object__c, Source_Record_Id__c, Invoice__c, Error_Category__c, Dml_Operation__c
             FROM Error_Log__c
             WHERE Class_Method_Name__c = 'QuickBridgeRecordEngine.checkAndCreateClientMappedRecord'
             AND Error_Category__c = 'DML Failure'
@@ -154,7 +163,14 @@ private class QuickBridgeRecordEngineTest {
         
         System.assertEquals('Account', errorLog.Source_Object__c, 'Should use dynamic target object name');
         System.assertEquals(null, errorLog.Source_Record_Id__c, 'Failed insert has no record ID');
-        System.assertNotEquals(null, errorLog.Invoice__c, 'Should parent to Invoice that triggered the action');
+        System.assertEquals(null, errorLog.Invoice__c, 'Object-specific lookups are historical only for new logs');
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :errorLog.Id
+            AND Relationship_Role__c = 'Action Source'
+            AND Linked_Object_API_Name__c = 'Invoice__c'
+        ]);
         System.assertEquals('insert', errorLog.Dml_Operation__c);
     }
 }

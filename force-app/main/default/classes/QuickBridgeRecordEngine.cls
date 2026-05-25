@@ -1,30 +1,27 @@
 public with sharing class QuickBridgeRecordEngine {
     @TestVisible private static List<Invoice_Field_Mapping__mdt> testActiveMappings;
+    @TestVisible private static Boolean forcePipelineFailureForTest = false;
+    private static Map<String, Schema.SObjectType> objectTypeByApiName = new Map<String, Schema.SObjectType>();
+    private class PipelineException extends Exception {}
+
+    private class PipelineResult {
+        Id canonicalInvoiceId;
+    }
+
+    private class PipelineTarget {
+        String objectApiName;
+        Map<String, String> sourceToTargetFields = new Map<String, String>();
+        Map<String, Object> defaultValues = new Map<String, Object>();
+        String methodName;
+    }
 
     public static void processIncomingInvoice(Map<String, Object> incomingData) {
         try {
-            Invoice__c standardInvoice = new Invoice__c();
-
-            if(incomingData.containsKey('Amount__c')) {
-                standardInvoice.Amount__c = (Decimal)incomingData.get('Amount__c');
+            if (Test.isRunningTest() && forcePipelineFailureForTest) {
+                throw new PipelineException('Forced invoice pipeline failure for logging coverage.');
             }
-            if(incomingData.containsKey('Order__c')) {
-                standardInvoice.Order__c = (Id)incomingData.get('Order__c');
-            }
-            if(incomingData.containsKey('Related_Account__c')) {
-                standardInvoice.Related_Account__c = (Id)incomingData.get('Related_Account__c');
-            }
-            if(incomingData.containsKey('Reference_number__c')) {
-                standardInvoice.Reference_number__c = (String)incomingData.get('Reference_number__c');
-            }
-            standardInvoice.Status__c = 'Paid';
-            standardInvoice.Invoice_Date__c = Date.today();
-
-            insert standardInvoice;
-            System.debug('QuickBridge Invoice Created: ' + standardInvoice.Id);
-
-            checkAndCreateClientMappedRecord(incomingData, standardInvoice.Id);
-
+            PipelineResult result = runInvoicePipeline(incomingData == null ? new Map<String, Object>() : incomingData);
+            checkAndCreateClientMappedRecord(incomingData, result.canonicalInvoiceId);
         } catch (Exception e) {
             System.debug('QuickBridge Engine Error: ' + e.getMessage());
             Id orderId = getIdValue(incomingData, 'Order__c');
@@ -37,6 +34,52 @@ public with sharing class QuickBridgeRecordEngine {
                 ErrorLogUtility.logException('Payment', 'QuickBridgeRecordEngine.processIncomingInvoice', e, null, null);
             }
         }
+    }
+
+    private static PipelineResult runInvoicePipeline(Map<String, Object> incomingData) {
+        PipelineResult result = new PipelineResult();
+        for (PipelineTarget target : defaultInvoiceTargets()) {
+            SObject record = buildRecord(target, incomingData);
+            insert record;
+            if (target.objectApiName == 'Invoice__c') {
+                result.canonicalInvoiceId = (Id) record.get('Id');
+                System.debug('QuickBridge Invoice Created: ' + result.canonicalInvoiceId);
+            }
+        }
+        return result;
+    }
+
+    private static List<PipelineTarget> defaultInvoiceTargets() {
+        PipelineTarget invoiceTarget = new PipelineTarget();
+        invoiceTarget.objectApiName = 'Invoice__c';
+        invoiceTarget.methodName = 'QuickBridgeRecordEngine.processIncomingInvoice';
+        invoiceTarget.sourceToTargetFields.put('Amount__c', 'Amount__c');
+        invoiceTarget.sourceToTargetFields.put('Order__c', 'Order__c');
+        invoiceTarget.sourceToTargetFields.put('Related_Account__c', 'Related_Account__c');
+        invoiceTarget.sourceToTargetFields.put('Reference_number__c', 'Reference_number__c');
+        invoiceTarget.defaultValues.put('Status__c', 'Paid');
+        invoiceTarget.defaultValues.put('Invoice_Date__c', Date.today());
+        return new List<PipelineTarget>{ invoiceTarget };
+    }
+
+    private static SObject buildRecord(PipelineTarget target, Map<String, Object> incomingData) {
+        Schema.SObjectType objectType = objectTypeFor(target.objectApiName);
+        if (objectType == null) {
+            throw new AuraHandledException('Unsupported invoice pipeline target: ' + target.objectApiName);
+        }
+
+        SObject record = objectType.newSObject();
+        Map<String, Schema.SObjectField> fields = objectType.getDescribe().fields.getMap();
+        for (String fieldName : target.defaultValues.keySet()) {
+            putIfFieldExists(record, fields, fieldName, target.defaultValues.get(fieldName));
+        }
+        for (String sourceField : target.sourceToTargetFields.keySet()) {
+            if (incomingData.containsKey(sourceField)) {
+                String targetField = target.sourceToTargetFields.get(sourceField);
+                putIfFieldExists(record, fields, targetField, incomingData.get(sourceField));
+            }
+        }
+        return record;
     }
 
     private static void checkAndCreateClientMappedRecord(Map<String, Object> incomingData, Id standardInvoiceId) {
@@ -60,34 +103,86 @@ public with sharing class QuickBridgeRecordEngine {
         }
 
         for (String targetObjName : mappingsByTarget.keySet()) {
-            SObjectType customObjType = Schema.getGlobalDescribe().get(targetObjName);
+            Schema.SObjectType customObjType = objectTypeFor(targetObjName);
+            if (customObjType == null) {
+                continue;
+            }
 
-            if (customObjType != null) {
-                SObject clientRecord = customObjType.newSObject();
-                for (Invoice_Field_Mapping__mdt m : mappingsByTarget.get(targetObjName)) {
-                    if (incomingData.containsKey(m.Source_Field_API_Name__c)) {
-                        clientRecord.put(m.Target_Field_API_Name__c, incomingData.get(m.Source_Field_API_Name__c));
-                    }
-                }
-                try {
-                    insert clientRecord;
-                    System.debug('Client Specific Record Created: ' + clientRecord.Id);
-                } catch (Exception e) {
-                    // Use dynamic target object name for the failed record
-                    // Action source remains Invoice__c since that's what triggered this
-                    ErrorLogUtility.logDmlFailure(
-                        'Payment',
-                        'QuickBridgeRecordEngine.checkAndCreateClientMappedRecord',
-                        'insert',
-                        targetObjName,
-                        null, // clientRecord.Id would be null on insert failure
-                        e.getTypeName() + ': ' + e.getMessage(),
-                        'Invoice__c',
-                        standardInvoiceId
-                    );
+            SObject clientRecord = customObjType.newSObject();
+            Map<String, Schema.SObjectField> fields = customObjType.getDescribe().fields.getMap();
+            for (Invoice_Field_Mapping__mdt m : mappingsByTarget.get(targetObjName)) {
+                if (incomingData.containsKey(m.Source_Field_API_Name__c)) {
+                    putIfFieldExists(clientRecord, fields, m.Target_Field_API_Name__c, incomingData.get(m.Source_Field_API_Name__c));
                 }
             }
+            try {
+                insert clientRecord;
+                System.debug('Client Specific Record Created: ' + clientRecord.Id);
+            } catch (Exception e) {
+                ErrorLogUtility.logDmlFailure(
+                    'Payment',
+                    'QuickBridgeRecordEngine.checkAndCreateClientMappedRecord',
+                    'insert',
+                    targetObjName,
+                    null,
+                    e.getTypeName() + ': ' + e.getMessage(),
+                    'Invoice__c',
+                    standardInvoiceId
+                );
+            }
         }
+    }
+
+    private static Schema.SObjectType objectTypeFor(String objectApiName) {
+        if (String.isBlank(objectApiName)) {
+            return null;
+        }
+        if (objectTypeByApiName.containsKey(objectApiName)) {
+            return objectTypeByApiName.get(objectApiName);
+        }
+        try {
+            List<Schema.DescribeSObjectResult> describes = Schema.describeSObjects(new List<String>{ objectApiName });
+            if (!describes.isEmpty()) {
+                Schema.SObjectType objectType = describes[0].getSObjectType();
+                objectTypeByApiName.put(objectApiName, objectType);
+                return objectType;
+            }
+        } catch (Exception e) {
+            objectTypeByApiName.put(objectApiName, null);
+        }
+        return null;
+    }
+
+    private static void putIfFieldExists(SObject record, Map<String, Schema.SObjectField> fields, String fieldName, Object value) {
+        if (record == null || fields == null || String.isBlank(fieldName) || value == null || !fields.containsKey(fieldName)) {
+            return;
+        }
+        Schema.DescribeFieldResult fieldDescribe = fields.get(fieldName).getDescribe();
+        record.put(fieldName, coerceValue(value, fieldDescribe.getType()));
+    }
+
+    private static Object coerceValue(Object value, Schema.DisplayType displayType) {
+        if (value == null) {
+            return null;
+        }
+        if (displayType == Schema.DisplayType.Currency ||
+            displayType == Schema.DisplayType.Double ||
+            displayType == Schema.DisplayType.Percent) {
+            return value instanceof Decimal ? value : Decimal.valueOf(String.valueOf(value));
+        }
+        if (displayType == Schema.DisplayType.Integer) {
+            return value instanceof Integer ? value : Integer.valueOf(String.valueOf(value));
+        }
+        if (displayType == Schema.DisplayType.Boolean) {
+            return value instanceof Boolean ? value : String.valueOf(value).toLowerCase() == 'true';
+        }
+        if (displayType == Schema.DisplayType.Date) {
+            return value instanceof Date ? value : Date.valueOf(String.valueOf(value));
+        }
+        if (displayType == Schema.DisplayType.DateTime) {
+            return value instanceof Datetime ? value : Datetime.valueOf(String.valueOf(value));
+        }
+        return value;
     }
 
     private static Id getIdValue(Map<String, Object> incomingData, String key) {

@@ -1,4 +1,4 @@
-public without sharing class QBOInvoiceSyncQueueable implements Queueable, Database.AllowsCallouts {
+public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database.AllowsCallouts {
     
     private Set<String> qboInvoiceIds;
     
@@ -26,6 +26,10 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
     }
 
     private void executeInternal() {
+        if (qboInvoiceIds == null || qboInvoiceIds.isEmpty()) {
+            return;
+        }
+
         // MAPPINGS FETCH 
         Map<String, String> qboToSfOrderMap = QBObjectMappings.getInvoiceToOrderMapping();
         Map<String, String> qboToSfInvoiceMap = QBObjectMappings.reverseMapping(QBObjectMappings.getInvoiceMapping());
@@ -44,70 +48,62 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         // 3. COLLECTIONS FOR BULKIFICATION
         Map<String, Account> accountsToUpsert = new Map<String, Account>();
         Map<String, Product2> productsToUpsert = new Map<String, Product2>();
-        List<Map<String, Object>> parsedInvoices = new List<Map<String, Object>>();
+        List<Map<String, Object>> parsedInvoices;
         
         // ---------------------------------------------------------
-        // PHASE 1: CALLOUTS & DATA COLLECTION (Account + Products)
+        // PHASE 1: BULK CALLOUT & DATA COLLECTION (Account + Products)
         // ---------------------------------------------------------
-        for (String qboId : qboInvoiceIds) {
-            try {
-                String endpoint = '/invoice/' + qboId;
-                HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', endpoint, '');
-                
-                if (res != null && res.getStatusCode() == 200) {
-                    Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
-                    Map<String, Object> invoiceData = (Map<String, Object>)responseMap.get('Invoice');
-                    parsedInvoices.add(invoiceData);
-                    
-                    // Extract Account
-                    Map<String, Object> customerRef = (Map<String, Object>)invoiceData.get('CustomerRef');
-                    if(customerRef != null) {
-                        String qboCustomerId = (String)customerRef.get('value');
-                        String customerName = (String)customerRef.get('name');
-                        if(!accountsToUpsert.containsKey(qboCustomerId)) {
-                            accountsToUpsert.put(qboCustomerId, new Account(Name = customerName, QuickBridgeTLG__QuickbookID__c = qboCustomerId));
-                        }
-                    }
-                    
-                    // Extract Products from Line Items
-                    List<Object> lines = (List<Object>)invoiceData.get('Line');
-                    if(lines != null) {
-                        for(Object lineObj : lines) {
-                            Map<String, Object> lineItem = (Map<String, Object>)lineObj;
-                            if((String)lineItem.get('DetailType') == 'SalesItemLineDetail') {
-                                Map<String, Object> salesDetail = (Map<String, Object>)lineItem.get('SalesItemLineDetail');
-                                Map<String, Object> itemRef = (Map<String, Object>)salesDetail.get('ItemRef');
-                                
-                                if(itemRef != null) {
-                                    String itemId = (String)itemRef.get('value');
-                                    String itemName = (String)itemRef.get('name');
-                                    
-                                    if(String.isNotBlank(itemId) && !productsToUpsert.containsKey(itemId)) {
-                                        productsToUpsert.put(itemId, new Product2(
-                                            Name = itemName,
-                                            QuickBridgeTLG__External_Id__c = itemId, // Product External ID field
-                                            IsActive = true
-                                        ));
-                                    }
-                                }
+        try {
+            parsedInvoices = QuickBooksBulkQueryService.queryByIds('Invoice', qboInvoiceIds);
+        } catch (Exception e) {
+            ErrorLogUtility.LogContext logContext = new ErrorLogUtility.LogContext();
+            logContext.gatewayName = 'QuickBooks';
+            logContext.classMethodName = 'QBOInvoiceSyncQueueable.execute.bulkFetchInvoices';
+            logContext.errorMessage = e.getTypeName() + ': ' + e.getMessage();
+            logContext.stackTrace = e.getStackTraceString();
+            logContext.sourceObjectApiName = 'Invoice__c';
+            logContext.externalReference = String.join(new List<String>(qboInvoiceIds), ',');
+            logContext.errorCategory = 'Callout Failure';
+            ErrorLogUtility.logError(logContext);
+            throw e;
+        }
+
+        for (Map<String, Object> invoiceData : parsedInvoices) {
+            if (invoiceData == null) {
+                continue;
+            }
+
+            Map<String, Object> customerRef = (Map<String, Object>)invoiceData.get('CustomerRef');
+            if(customerRef != null) {
+                String qboCustomerId = (String)customerRef.get('value');
+                String customerName = (String)customerRef.get('name');
+                if(String.isNotBlank(qboCustomerId) && !accountsToUpsert.containsKey(qboCustomerId)) {
+                    accountsToUpsert.put(qboCustomerId, new Account(Name = customerName, QuickBridgeTLG__QuickbookID__c = qboCustomerId));
+                }
+            }
+
+            List<Object> lines = (List<Object>)invoiceData.get('Line');
+            if(lines != null) {
+                for(Object lineObj : lines) {
+                    Map<String, Object> lineItem = (Map<String, Object>)lineObj;
+                    if((String)lineItem.get('DetailType') == 'SalesItemLineDetail') {
+                        Map<String, Object> salesDetail = (Map<String, Object>)lineItem.get('SalesItemLineDetail');
+                        Map<String, Object> itemRef = (Map<String, Object>)salesDetail.get('ItemRef');
+
+                        if(itemRef != null) {
+                            String itemId = (String)itemRef.get('value');
+                            String itemName = (String)itemRef.get('name');
+
+                            if(String.isNotBlank(itemId) && !productsToUpsert.containsKey(itemId)) {
+                                productsToUpsert.put(itemId, new Product2(
+                                    Name = itemName,
+                                    QuickBridgeTLG__External_Id__c = itemId,
+                                    IsActive = true
+                                ));
                             }
                         }
                     }
                 }
-            } catch (Exception e) {
-                System.debug('Error processing QBO Invoice ' + qboId + ': ' + e.getMessage());
-                // LogContext used directly (not logException) because qboId is a QBO string ID,
-                // not a Salesforce record Id, and we need externalReference to carry it.
-                ErrorLogUtility.LogContext logContext = new ErrorLogUtility.LogContext();
-                logContext.gatewayName = 'QuickBooks';
-                logContext.classMethodName = 'QBOInvoiceSyncQueueable.execute.fetchInvoice';
-                logContext.errorMessage = e.getTypeName() + ': ' + e.getMessage();
-                logContext.stackTrace = e.getStackTraceString();
-                logContext.sourceObjectApiName = 'Invoice__c';
-                logContext.sourceRecordIdText = qboId;
-                logContext.externalReference = qboId;
-                logContext.errorCategory = 'Code Exception';
-                ErrorLogUtility.logError(logContext);
             }
         }
         
@@ -122,9 +118,9 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         QBTriggerHandler.isAccountProcessing = true;
         QBTriggerHandler.isProductProcessing = true;
         try {
-            Database.UpsertResult[] accountResults = Database.upsert(accountRecords, Account.Fields.QuickBridgeTLG__QuickbookID__c, false);
+            Database.UpsertResult[] accountResults = Database.upsert(accountRecords, Account.Fields.QuickBridgeTLG__QuickbookID__c, false, AccessLevel.USER_MODE);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertAccounts', 'upsert', accountRecords, accountResults, null, null);
-            Database.UpsertResult[] productResults = Database.upsert(productRecords, Product2.Fields.QuickBridgeTLG__External_Id__c, false);
+            Database.UpsertResult[] productResults = Database.upsert(productRecords, Product2.Fields.QuickBridgeTLG__External_Id__c, false, AccessLevel.USER_MODE);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertProducts', 'upsert', productRecords, productResults, null, null);
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
@@ -162,7 +158,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                 }
             }
             if(!pbesToInsert.isEmpty()) {
-                Database.SaveResult[] pbeResults = Database.insert(pbesToInsert, false);
+                Database.SaveResult[] pbeResults = Database.insert(pbesToInsert, false, AccessLevel.USER_MODE);
                 ErrorLogUtility.logDmlResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.insertPricebookEntries', 'insert', pbesToInsert, pbeResults, null, null);
                 // Add newly created PBEs to Map
                 for(PricebookEntry pbe : [SELECT Id, Product2.QuickBridgeTLG__External_Id__c FROM PricebookEntry WHERE Id IN :pbesToInsert]) {
@@ -198,7 +194,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
             List<Order> orderRecords = ordersToUpsert.values();
             QBTriggerHandler.isOrderProcessing = true;
             try {
-                Database.UpsertResult[] orderResults = Database.upsert(orderRecords, Order.Fields.QuickBridgeTLG__QuickbookID__c, false);
+                Database.UpsertResult[] orderResults = Database.upsert(orderRecords, Order.Fields.QuickBridgeTLG__QuickbookID__c, false, AccessLevel.USER_MODE);
                 ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertOrders', 'upsert', orderRecords, orderResults, null, null);
             } finally {
                 QBTriggerHandler.isOrderProcessing = false;
@@ -214,7 +210,11 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         QBTriggerHandler.isOrderProcessing = true;
         try {
             if(!orderIds.isEmpty()) {
-                delete [SELECT Id FROM OrderItem WHERE OrderId IN :orderIds];
+                List<OrderItem> orderItemsToDelete = [SELECT Id FROM OrderItem WHERE OrderId IN :orderIds];
+                if (!orderItemsToDelete.isEmpty()) {
+                    Database.DeleteResult[] deleteResults = Database.delete(orderItemsToDelete, false, AccessLevel.USER_MODE);
+                    logDeleteResults('QBOInvoiceSyncQueueable.execute.deleteOrderItems', orderItemsToDelete, deleteResults);
+                }
             }
 
             List<OrderItem> orderItemsToInsert = new List<OrderItem>();
@@ -253,7 +253,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                 }
             }
             if(!orderItemsToInsert.isEmpty()) {
-                Database.SaveResult[] orderItemResults = Database.insert(orderItemsToInsert, false);
+                Database.SaveResult[] orderItemResults = Database.insert(orderItemsToInsert, false, AccessLevel.USER_MODE);
                 ErrorLogUtility.logDmlResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.insertOrderItems', 'insert', orderItemsToInsert, orderItemResults, null, null);
             }
         } finally {
@@ -284,7 +284,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         }
         
         if (!invoicesToUpsert.isEmpty()) {
-            Database.UpsertResult[] invoiceResults = Database.upsert(invoicesToUpsert, QuickBridgeTLG__Invoice__c.Fields.QuickBridgeTLG__External_Id__c, false);
+            Database.UpsertResult[] invoiceResults = Database.upsert(invoicesToUpsert, QuickBridgeTLG__Invoice__c.Fields.QuickBridgeTLG__External_Id__c, false, AccessLevel.USER_MODE);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertInvoices', 'upsert', invoicesToUpsert, invoiceResults, null, null);
         }
     }
@@ -311,6 +311,45 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                 }
             }
         }
+    }
+
+    private void logDeleteResults(String classMethodName, List<OrderItem> records, Database.DeleteResult[] results) {
+        if (records == null || results == null) {
+            return;
+        }
+
+        Integer limitSize = records.size() < results.size() ? records.size() : results.size();
+        for (Integer index = 0; index < limitSize; index++) {
+            if (results[index] == null || results[index].isSuccess()) {
+                continue;
+            }
+
+            String message = buildDeleteErrorMessage(results[index].getErrors());
+            ErrorLogUtility.logDmlFailure(
+                'QuickBooks',
+                classMethodName,
+                'delete',
+                'OrderItem',
+                records[index].Id,
+                message,
+                null,
+                null
+            );
+        }
+    }
+
+    private String buildDeleteErrorMessage(Database.Error[] errors) {
+        if (errors == null || errors.isEmpty()) {
+            return 'Unknown delete error.';
+        }
+
+        List<String> messages = new List<String>();
+        for (Database.Error error : errors) {
+            if (error != null) {
+                messages.add(error.getStatusCode() + ': ' + error.getMessage());
+            }
+        }
+        return messages.isEmpty() ? 'Unknown delete error.' : String.join(messages, ' | ');
     }
     
     // ==========================================

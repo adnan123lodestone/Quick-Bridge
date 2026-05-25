@@ -15,33 +15,9 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
         List<String> vendorPayloads = new List<String>();
 
         try {
-            String query = 'select * from Vendor Where Metadata.LastUpdatedTime > \'' + lastSyncDate + '\'';
-            String encodedQuery = EncodingUtil.urlEncode(query, 'UTF-8');
-            String resourcePath = '/query?query=' + encodedQuery;
-
-            HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', resourcePath, null);
-
-            if (response != null && response.getStatusCode() == 200 && String.isNotBlank(response.getBody())) {
-                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-
-                if (responseMap != null && responseMap.containsKey('QueryResponse')) {
-                    Map<String, Object> queryResponse = (Map<String, Object>)responseMap.get('QueryResponse');
-
-                    if (queryResponse != null && queryResponse.containsKey('Vendor')) {
-                        List<Object> vendors = (List<Object>)queryResponse.get('Vendor');
-                        if (vendors != null) {
-                            for (Object vendorObj : vendors) {
-                                if (vendorObj != null) {
-                                    Map<String, Object> vendor = (Map<String, Object>)vendorObj;
-                                    if (vendor.containsKey('Id')) {
-                                        vendorPayloads.add(JSON.serialize(vendor));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            vendorPayloads = QuickBooksBulkQueryService.serializeRecords(
+                QuickBooksBulkQueryService.queryUpdatedSince('Vendor', lastSyncDate)
+            );
         } catch (Exception e) {
             System.debug('Error querying QuickBooks vendors: ' + e.getMessage());
             ErrorLogUtility.logException(
@@ -133,12 +109,9 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
             // Legacy payloads were raw QuickBooks ids; hydrate only those compatibility inputs.
         }
 
-        HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', '/vendor/' + vendorPayload, null);
-        if (response == null || response.getStatusCode() != 200 || String.isBlank(response.getBody())) {
-            return null;
-        }
-        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
-        return responseMap == null ? null : (Map<String, Object>)responseMap.get('Vendor');
+        // Scheduled/batch execution must receive hydrated payloads from start().
+        // Single-record hydration remains in syncVendorFromQBO().
+        return null;
     }
 
     private String getExternalIdFromPayload(String vendorPayload) {
