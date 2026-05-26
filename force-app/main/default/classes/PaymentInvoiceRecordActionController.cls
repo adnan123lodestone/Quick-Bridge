@@ -839,21 +839,7 @@ public with sharing class PaymentInvoiceRecordActionController {
     }
 
     private static Boolean isStripeActive() {
-        if (Test.isRunningTest()) {
-            return true;
-        }
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('Stripe');
-        } catch (Exception e) {
-            config = null;
-        }
-        if (config == null) return false;
-        if (config.Stripe_Active__c == false) return false;
-        Date today = Date.today();
-        if (config.Stripe_Start_Date__c != null && config.Stripe_Start_Date__c > today) return false;
-        if (config.Stripe_End_Date__c != null && config.Stripe_End_Date__c < today) return false;
-        return true;
+        return ConnectorConfigService.isActive('stripe');
     }
 
     private static final String GATEWAY_ANET = 'authorizenet';

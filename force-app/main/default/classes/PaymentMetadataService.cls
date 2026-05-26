@@ -6,6 +6,7 @@ public with sharing class PaymentMetadataService {
         @AuraEnabled public Boolean active { get; set; }
         @AuraEnabled public Map<String, String> fields { get; set; }
         @AuraEnabled public List<String> editableFields { get; set; }
+        @AuraEnabled public Map<String, String> fieldLabels { get; set; }
     }
 
     public class MetadataUpdateResponse {
@@ -31,7 +32,6 @@ public with sharing class PaymentMetadataService {
         @AuraEnabled public Boolean notificationSent { get; set; }
     }
 
-    private static final String METADATA_TYPE_NAME = 'Quickbridge_Config__mdt';
     private static final Integer EXPIRY_WARNING_DAYS = 7;
     private static final String RENEWAL_NOTIFICATION_TYPE = 'QuickBridge_Renewal_Alert';
 
@@ -116,6 +116,17 @@ public with sharing class PaymentMetadataService {
                 config.label = descriptor.label;
                 config.fields = new Map<String, String>();
                 config.editableFields = descriptor.editableFields != null ? descriptor.editableFields : new List<String>();
+                config.fieldLabels = new Map<String, String>();
+                if (descriptor.configFields != null) {
+                    for (ConnectorRegistryService.ConfigFieldDescriptor cf : descriptor.configFields) {
+                        if (String.isNotBlank(cf.legacyFieldApiName) && String.isNotBlank(cf.label)) {
+                            config.fieldLabels.put(cf.legacyFieldApiName, cf.label);
+                        }
+                        if (String.isNotBlank(cf.fieldKey) && String.isNotBlank(cf.label)) {
+                            config.fieldLabels.put(cf.fieldKey, cf.label);
+                        }
+                    }
+                }
 
                 ConnectorConfigService.ConnectorConfig cfg = ConnectorConfigService.getConfig(descriptor.connectorKey);
                 config.active = cfg.active == true;
@@ -134,11 +145,26 @@ public with sharing class PaymentMetadataService {
                     }
                 }
 
-                // Populate all non-secret config values under both canonical and legacy field names
+                // Build normalized-key → legacy-API-name lookup from registry descriptor
+                Map<String, String> normalizedToLegacy = new Map<String, String>();
+                if (descriptor.configFields != null) {
+                    for (ConnectorRegistryService.ConfigFieldDescriptor cf : descriptor.configFields) {
+                        if (String.isNotBlank(cf.fieldKey) && String.isNotBlank(cf.legacyFieldApiName)) {
+                            normalizedToLegacy.put(cf.fieldKey, cf.legacyFieldApiName);
+                        }
+                    }
+                }
+
+                // Populate all non-secret config values under both normalized and legacy field names
                 if (cfg.values != null) {
                     for (String fieldKey : cfg.values.keySet()) {
                         if (!isSecretConfigField(fieldKey)) {
-                            config.fields.put(fieldKey, cfg.values.get(fieldKey));
+                            String val = cfg.values.get(fieldKey);
+                            config.fields.put(fieldKey, val);
+                            String legacyName = normalizedToLegacy.get(fieldKey);
+                            if (String.isNotBlank(legacyName)) {
+                                config.fields.put(legacyName, val);
+                            }
                         }
                     }
                 }
@@ -274,12 +300,6 @@ public with sharing class PaymentMetadataService {
             ];
             if (!rows.isEmpty() && String.isNotBlank(rows[0].Value__c)) {
                 preferences.availableProductsVisible = rows[0].Value__c == 'true';
-            } else {
-                // Fall back to legacy metadata while the object record doesn't exist yet
-                Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance('Default');
-                if (config != null && config.Available_Products_Visible__c != null) {
-                    preferences.availableProductsVisible = config.Available_Products_Visible__c;
-                }
             }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'PaymentMetadataService.getConfigPanelPreferences exception: ' + e.getMessage());

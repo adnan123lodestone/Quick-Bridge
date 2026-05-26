@@ -9,6 +9,7 @@ import saveFieldMappings from "@salesforce/apex/FieldMappingController.saveField
 import saveChildFieldMappings from "@salesforce/apex/FieldMappingController.saveChildFieldMappings";
 import getDraftOrderSetting from "@salesforce/apex/FieldMappingController.getDraftOrderSetting";
 import saveDraftOrderSetting from "@salesforce/apex/FieldMappingController.saveDraftOrderSetting";
+import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
 
 export default class FieldMappingComponent extends LightningElement {
   @track selectedIntegration = "qbonline";
@@ -20,6 +21,7 @@ export default class FieldMappingComponent extends LightningElement {
   @track sfFieldOptions = [];
   @track qbFieldOptions = [];
   @track isLoading = true;
+  @track showResetConfirm = false;
   @track directionAvailability = {
     inboundAllowed: true,
     outboundAllowed: true,
@@ -480,11 +482,33 @@ export default class FieldMappingComponent extends LightningElement {
     }
   }
 
-  handleReset() {
-    this.resetParentMappingRows();
-    if (this.showChildMapping) {
-      this.resetChildMappingRows();
-    }
+  handleResetClick() {
+    this.showResetConfirm = true;
+  }
+
+  handleResetCancel() {
+    this.showResetConfirm = false;
+  }
+
+  handleResetConfirm() {
+    this.showResetConfirm = false;
+    this.isLoading = true;
+    clearFieldMappings({
+      integration: this.selectedIntegration,
+      sfObject: this.selectedSFObject
+    })
+      .then(() => {
+        this.showToast("Success", "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.", "success");
+        this.resetParentMappingRows();
+        if (this.showChildMapping) {
+          this.resetChildMappingRows();
+        }
+        this.isLoading = false;
+      })
+      .catch((error) => {
+        this.showToast("Error", error.body?.message || error.message, "error");
+        this.isLoading = false;
+      });
   }
 
   resetParentMappingRows() {

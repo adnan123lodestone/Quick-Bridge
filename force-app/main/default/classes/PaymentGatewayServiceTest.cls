@@ -35,7 +35,7 @@ private class PaymentGatewayServiceTest {
 
     Test.startTest();
     try {
-      String response = PaymentGatewayService.verifyCredentialsAndGetGateways(
+      String response = PaymentAdminService.verifyCredentialsAndGetGateways(
         'admin@example.com',
         '1234'
       );
@@ -110,7 +110,7 @@ private class PaymentGatewayServiceTest {
 
     Test.startTest();
     try {
-      String response = PaymentGatewayService.recoverPin('admin@example.com');
+      String response = PaymentAdminService.recoverPin('admin@example.com');
 
       // Assertions
       System.assertNotEquals(null, response, 'Response should not be null.');
@@ -155,7 +155,7 @@ private class PaymentGatewayServiceTest {
     Test.startTest();
     Boolean threw = false;
     try {
-      PaymentGatewayService.verifyCredentialsAndGetGateways('', '');
+      PaymentAdminService.verifyCredentialsAndGetGateways('', '');
     } catch (AuraHandledException e) {
       threw = true;
     }
@@ -202,7 +202,7 @@ private class PaymentGatewayServiceTest {
     );
     Test.startTest();
     try {
-      String response = PaymentGatewayService.recoverPin(null);
+      String response = PaymentAdminService.recoverPin(null);
       System.assert(response.contains('PIN'));
     } catch (AuraHandledException e) {
       System.assert(e.getMessage().contains('Username'));
@@ -232,7 +232,7 @@ private class PaymentGatewayServiceTest {
     Test.startTest();
     Boolean threw = false;
     try {
-      PaymentGatewayService.callServerOrgValidation(null, null, false);
+      PaymentAdminService.callServerOrgValidation(null, null, false);
     } catch (Exception e) {
       threw = true;
     }

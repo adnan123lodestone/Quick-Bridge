@@ -71,7 +71,7 @@ public with sharing class IntegrationEntitlementService {
     EntitlementResult result = new EntitlementResult();
     result.cacheHit = false;
     try {
-      HttpResponse response = PaymentGatewayService.callServerOrgValidation(
+      HttpResponse response = PaymentAdminService.callServerOrgValidation(
         username,
         password,
         useSuppliedCredentials == true

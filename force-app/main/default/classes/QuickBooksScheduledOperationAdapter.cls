@@ -64,6 +64,8 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
                 if (!unsyncedPurchaseOrders.isEmpty()) {
                     Database.executeBatch(new QuickBooksPurchaseOrderBatch(unsyncedPurchaseOrders.keySet(), true), 10);
                 }
+            } else if (targetObject == 'ItemSalesTax' || targetObject == 'Item Sales Tax') {
+                Database.executeBatch(new QBOItemSalesTaxBatch(), 1);
             }
         } catch (Exception e) {
             ErrorLogUtility.logException(

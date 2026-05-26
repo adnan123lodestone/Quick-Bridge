@@ -187,6 +187,48 @@ public with sharing class FieldMappingController {
   }
 
   @AuraEnabled
+  public static String clearFieldMappings(String integration, String sfObject) {
+    try {
+      List<Field_Mapping__mdt> existingMappings = [
+        SELECT DeveloperName, Is_Active__c
+        FROM Field_Mapping__mdt
+        WHERE
+          Integration__c = :integration
+          AND SF_Object__c = :sfObject
+          AND Is_Active__c = TRUE
+      ];
+      if (existingMappings.isEmpty()) {
+        return 'No active mappings to clear.';
+      }
+      String nsPrefix = getNamespacePrefix();
+      Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
+      for (Field_Mapping__mdt rec : existingMappings) {
+        Metadata.CustomMetadata inactive = new Metadata.CustomMetadata();
+        inactive.fullName = nsPrefix + 'Field_Mapping__mdt.' + rec.DeveloperName;
+        inactive.label = rec.DeveloperName;
+        addCustomMetadataValue(inactive, 'Is_Active__c', false);
+        mdContainer.addMetadata(inactive);
+      }
+      if (Test.isRunningTest()) {
+        return 'Mappings Cleared. Job ID: 0Af000000000000';
+      }
+      Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
+      return 'Mappings Cleared. Job ID: ' + jobId;
+    } catch (AuraHandledException e) {
+      throw e;
+    } catch (Exception e) {
+      ErrorLogUtility.logException(
+        'QuickBooks',
+        'FieldMappingController.clearFieldMappings',
+        e,
+        null,
+        null
+      );
+      throw new AuraHandledException(e.getMessage());
+    }
+  }
+
+  @AuraEnabled
   public static String saveFieldMappings(
     String integration,
     String sfObject,

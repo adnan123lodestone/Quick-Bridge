@@ -1,7 +1,7 @@
 public with sharing class AuthorizeNetPaymentAdapter implements PaymentProviderAdapter {
     public PaymentCheckoutController.ProviderDescriptor describe(ConnectorRegistryService.ConnectorDescriptor connector, Set<String> activeGatewayNames) {
         AuthorizeNetPaymentService.ClientConfigResponse config = AuthorizeNetPaymentService.getClientConfig();
-        PaymentCheckoutController.ProviderDescriptor descriptor = baseDescriptor(connector, config.active == true && activeGatewayNames.contains('authorize.net'), config.configured, config.message, 'acceptJs', new List<String>{ 'cardName', 'cardNumber', 'securityCode', 'cardMonth', 'cardYear', 'billingAddress' });
+        PaymentCheckoutController.ProviderDescriptor descriptor = baseDescriptor(connector, config.active == true && activeGatewayNames.contains('authorizenet'), config.configured, config.message, 'acceptJs', new List<String>{ 'cardName', 'cardNumber', 'securityCode', 'cardMonth', 'cardYear', 'billingAddress' });
         descriptor.clientScriptUrl = config.acceptJsUrl;
         descriptor.config.put('apiLoginId', config.apiLoginId);
         descriptor.config.put('publicClientKey', config.publicClientKey);

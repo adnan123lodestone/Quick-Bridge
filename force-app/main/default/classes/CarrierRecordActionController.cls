@@ -30,18 +30,20 @@ public with sharing class CarrierRecordActionController {
     public static ActiveCarriersResult getActiveCarriers() {
         try {
             ActiveCarriersResult result = new ActiveCarriersResult();
-            Quickbridge_Config__mdt fedexConfig = Quickbridge_Config__mdt.getInstance('FedEx');
-            if (fedexConfig != null) {
-                result.fedexActive = fedexConfig.FedEx_Active__c == true;
-            }
-            Quickbridge_Config__mdt upsConfig = Quickbridge_Config__mdt.getInstance('UPS');
-            if (upsConfig != null) {
-                result.upsActive = upsConfig.UPS_Active__c == true;
-            }
+            ConnectorConfigService.ConnectorConfig fedex = ConnectorConfigService.getAuthoritativeConfig('fedex');
+            result.fedexActive = isEntitled(fedex);
+            ConnectorConfigService.ConnectorConfig ups = ConnectorConfigService.getAuthoritativeConfig('ups');
+            result.upsActive = isEntitled(ups);
             return result;
         } catch (Exception e) {
             throw new AuraHandledException(e.getMessage());
         }
+    }
+
+    private static Boolean isEntitled(ConnectorConfigService.ConnectorConfig cfg) {
+        if (cfg == null || cfg.active != true) return false;
+        if (cfg.expiryDate != null && cfg.expiryDate < Date.today()) return false;
+        return true;
     }
 
     private static final Map<String, String> ACTION_LABELS = new Map<String, String>{

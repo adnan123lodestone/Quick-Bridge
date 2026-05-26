@@ -1,22 +1,22 @@
 public with sharing class QuickBridgeAdminControlPlaneService {
   @AuraEnabled
   public static String verifyCredentialsAndGetGateways(String username, String password) {
-    return PaymentGatewayService.verifyCredentialsAndGetGateways(username, password);
+    return PaymentAdminService.verifyCredentialsAndGetGateways(username, password);
   }
 
   @AuraEnabled
   public static Boolean revokeAdminSession(String sessionToken) {
-    return PaymentGatewayService.revokeAdminSession(sessionToken);
+    return PaymentAdminService.revokeAdminSession(sessionToken);
   }
 
   @AuraEnabled
   public static String recoverPin(String username) {
-    return PaymentGatewayService.recoverPin(username);
+    return PaymentAdminService.recoverPin(username);
   }
 
   @AuraEnabled
   public static String refreshLicenses(String sessionToken) {
-    return PaymentGatewayService.refreshLicenses(sessionToken);
+    return PaymentAdminService.refreshLicenses(sessionToken);
   }
 
   @AuraEnabled

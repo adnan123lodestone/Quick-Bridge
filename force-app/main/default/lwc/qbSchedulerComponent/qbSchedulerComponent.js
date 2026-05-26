@@ -246,7 +246,8 @@ export default class QbSchedulerComponent extends LightningElement {
         { id: 'Orders', label: 'Orders', icon: 'utility:orders', isSelected: false, btnClass: 'obj-btn' },
         { id: 'Invoices', label: 'Invoices', icon: 'utility:file', isSelected: false, btnClass: 'obj-btn' },
         { id: 'CreditMemos', label: 'Credit Memos', icon: 'utility:money', isSelected: false, btnClass: 'obj-btn' },
-        { id: 'PurchaseOrders', label: 'Purchase Orders', icon: 'utility:cart', isSelected: false, btnClass: 'obj-btn' }
+        { id: 'PurchaseOrders', label: 'Purchase Orders', icon: 'utility:cart', isSelected: false, btnClass: 'obj-btn' },
+        { id: 'ItemSalesTax', label: 'Item Sales Tax', icon: 'utility:tax_policy', isSelected: false, btnClass: 'obj-btn' }
     ];
 
     toggleObjectSelection(event) {

@@ -38,10 +38,12 @@ public with sharing class QuickBridgeRecordEngine {
 
     private static PipelineResult runInvoicePipeline(Map<String, Object> incomingData) {
         PipelineResult result = new PipelineResult();
-        for (PipelineTarget target : defaultInvoiceTargets()) {
+        List<PipelineTarget> targets = defaultInvoiceTargets();
+        String canonicalObject = targets.isEmpty() ? 'Invoice__c' : targets[0].objectApiName;
+        for (PipelineTarget target : targets) {
             SObject record = buildRecord(target, incomingData);
             insert record;
-            if (target.objectApiName == 'Invoice__c') {
+            if (target.objectApiName == canonicalObject) {
                 result.canonicalInvoiceId = (Id) record.get('Id');
                 System.debug('QuickBridge Invoice Created: ' + result.canonicalInvoiceId);
             }
@@ -50,8 +52,16 @@ public with sharing class QuickBridgeRecordEngine {
     }
 
     private static List<PipelineTarget> defaultInvoiceTargets() {
+        String targetObject = 'Invoice__c';
+        try {
+            QBOInvoiceMappingResolver.ResolverResult res = QBOInvoiceMappingResolver.resolve();
+            if (String.isNotBlank(res.invoiceSourceObject)) {
+                targetObject = res.invoiceSourceObject;
+            }
+        } catch (Exception ignored) {}
+
         PipelineTarget invoiceTarget = new PipelineTarget();
-        invoiceTarget.objectApiName = 'Invoice__c';
+        invoiceTarget.objectApiName = targetObject;
         invoiceTarget.methodName = 'QuickBridgeRecordEngine.processIncomingInvoice';
         invoiceTarget.sourceToTargetFields.put('Amount__c', 'Amount__c');
         invoiceTarget.sourceToTargetFields.put('Order__c', 'Order__c');
@@ -126,7 +136,7 @@ public with sharing class QuickBridgeRecordEngine {
                     targetObjName,
                     null,
                     e.getTypeName() + ': ' + e.getMessage(),
-                    'Invoice__c',
+                    targetObjName,
                     standardInvoiceId
                 );
             }
