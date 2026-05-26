@@ -104,10 +104,14 @@ export default class PaymentComponent extends LightningElement {
     { label: "TX", value: "TX" }, { label: "Outside US/Canada", value: "Outside US/Canada" },
   ];
 
-  get isAuthorizeNetSelected() { return this.selectedProvider === "authorizenet"; }
-  get isStripeSelected() { return this.selectedProvider === "stripe"; }
-  get isPaypalSelected() { return this.selectedProvider === "paypal"; }
-  get isHostedProviderSelected() { return !!this.selectedProvider && !this.isAuthorizeNetSelected && !this.isStripeSelected && !this.isPaypalSelected; }
+  get selectedActionType() {
+    return this.getProviderConfig(this.selectedProvider)?.actionType || null;
+  }
+  get isCardMode() { return this.selectedActionType === "authorizenet" || this.selectedActionType === "stripe"; }
+  get isButtonMode() { return this.selectedActionType === "paypal"; }
+  get isHostedMode() { return !!this.selectedProvider && this.selectedActionType === "hosted"; }
+  get isAuthorizeNetSelected() { return this.selectedActionType === "authorizenet"; }
+  get isStripeSelected() { return this.selectedActionType === "stripe"; }
   get hasAvailableProviders() { return this.availableProviderCount > 0; }
   get showUnavailableState() { return !this.hasAvailableProviders; }
 
@@ -137,8 +141,8 @@ export default class PaymentComponent extends LightningElement {
     return `${this.getProviderLabel(this.selectedProvider)} Selected`;
   }
 
-  get showStripeLoader() { return this.isStripeSelected && this.isStripeInitializing; }
-  get showPaypalLoader() { return this.isPaypalSelected && this.isPaypalInitializing; }
+  get showStripeLoader() { return this.selectedActionType === "stripe" && this.isStripeInitializing; }
+  get showPaypalLoader() { return this.selectedActionType === "paypal" && this.isPaypalInitializing; }
 
   get paypalPreviewMessage() {
     return this.canRenderPayPalButtons
@@ -151,10 +155,8 @@ export default class PaymentComponent extends LightningElement {
 
   get proceedButtonLabel() {
     if (this.isSubmitting) return "Processing...";
-    if (this.selectedProvider === "stripe") return "Proceed with Stripe";
-    if (this.selectedProvider === "paypal") return "Pay with PayPal";
-    if (this.selectedProvider === "authorizenet") return "Proceed with Authorize.Net";
-    return `Continue with ${this.getProviderLabel(this.selectedProvider)}`;
+    const LABEL_BY_ACTION = { stripe: "Proceed with Stripe", paypal: "Pay with PayPal", authorizenet: "Proceed with Authorize.Net" };
+    return LABEL_BY_ACTION[this.selectedActionType] || `Continue with ${this.getProviderLabel(this.selectedProvider)}`;
   }
 
   get isProceedDisabled() {
@@ -273,15 +275,12 @@ export default class PaymentComponent extends LightningElement {
     this.applyProviderTestDefaults();
     this.clearPaymentBillingFields();
 
-    if (this.selectedProvider === "stripe") {
-      this.resetStripeDiagnostics();
-      this.logStripeStep("Stripe provider selected");
-      this.primeStripe();
-    } else if (this.selectedProvider === "authorizenet") {
-      this.primeAuthorizeNet();
-    } else if (this.selectedProvider === "paypal") {
-      this.primePayPal();
-    }
+    const primeFns = {
+      stripe: () => { this.resetStripeDiagnostics(); this.logStripeStep("Stripe provider selected"); this.primeStripe(); },
+      authorizenet: () => this.primeAuthorizeNet(),
+      paypal: () => this.primePayPal(),
+    };
+    primeFns[this.selectedActionType]?.();
 
     this.dispatchEvent(new CustomEvent("providerchange", { detail: { provider: this.selectedProvider } }));
   }
@@ -363,11 +362,12 @@ export default class PaymentComponent extends LightningElement {
       this.showErrorModal = false;
       const resolvedAmount = this.resolveAmount(priceValue);
 
-      if (this.selectedProvider === "stripe") {
+      const actionType = this.selectedActionType;
+      if (actionType === "stripe") {
         this.resetStripeDiagnostics();
         this.logStripeStep(`Stripe submit started for amount ${resolvedAmount}`);
         await this.handleStripeSubmit(resolvedAmount);
-      } else if (this.selectedProvider === "authorizenet") {
+      } else if (actionType === "authorizenet") {
         await this.handleAuthorizeNetSubmit(resolvedAmount);
       } else {
         await this.handleHostedSubmit(resolvedAmount);

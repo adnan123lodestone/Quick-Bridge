@@ -590,7 +590,7 @@
                         <div class="dashboard-body dashboard-full-width mapping-content">
                             <template if:true={selectedTile}>
 
-                                <template if:true={isQboSelected}>
+                                <template if:true={tileIs.qbo}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">
@@ -602,7 +602,7 @@
                                     </div>
                                 </template>
 
-                                <template if:true={isStripeSelected}>
+                                <template if:true={tileIs.stripe}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">Stripe
@@ -612,7 +612,7 @@
                                     </div>
                                 </template>
 
-                                <template if:true={isPayPalSelected}>
+                                <template if:true={tileIs.paypal}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">PayPal
@@ -621,7 +621,7 @@
                                     </div>
                                 </template>
 
-                                <template if:true={isAuthNetSelected}>
+                                <template if:true={tileIs.authorizenet}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">
@@ -631,7 +631,7 @@
                                     </div>
                                 </template>
 
-                                <template if:true={isShopify}>
+                                <template if:true={tileIs.shopify}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">Shopify
@@ -641,7 +641,7 @@
                                     </div>
                                 </template>
 
-                                <template if:true={isFedExSelected}>
+                                <template if:true={tileIs.fedex}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">FedEx
@@ -651,7 +651,7 @@
                                     </div>
                                 </template>
 
-                                <template if:true={isUPSSelected}>
+                                <template if:true={tileIs.ups}>
                                     <div class="slds-box"
                                         style="background: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0;">
                                         <h2 style="font-size: 1.2rem; font-weight: bold; margin-bottom: 1rem;">UPS
@@ -695,10 +695,10 @@
 
                         <div class="dashboard-body dashboard-full-width scheduler-content">
                             <template if:true={selectedTile}>
-                                <template if:true={isQboSelected}>
+                                <template if:true={tileIs.qbo}>
                                     <c-qb-scheduler-component></c-qb-scheduler-component>
                                 </template>
-                                <template if:true={isShopify}>
+                                <template if:true={tileIs.shopify}>
                                     <c-shopify-scheduler-component></c-shopify-scheduler-component>
                                 </template>
                                 <template if:true={isSchedulerUnavailable}>

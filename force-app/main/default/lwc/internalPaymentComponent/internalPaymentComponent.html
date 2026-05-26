@@ -54,6 +54,7 @@
                     </section>
                 </template>
 
+                <template if:true={isCardMode}>
                 <template if:true={isAuthorizeNetSelected}>
                     <section class="payment-panel">
                         <div class="payment-panel-header">
@@ -206,8 +207,9 @@
                         </div>
                     </section>
                 </template>
+                </template>
 
-                <template if:true={isPaypalSelected}>
+                <template if:true={isButtonMode}>
                     <section class="payment-panel provider-placeholder">
                         <div class="payment-panel-header payment-panel-header-compact">
                             <h3 class="payment-panel-title">PayPal Checkout</h3>
@@ -243,7 +245,7 @@
                     </section>
                 </template>
 
-                <template if:true={isHostedProviderSelected}>
+                <template if:true={isHostedMode}>
                     <section class="payment-panel provider-placeholder">
                         <div class="payment-panel-header payment-panel-header-compact">
                             <h3 class="payment-panel-title">{selectedProviderLabel}</h3>

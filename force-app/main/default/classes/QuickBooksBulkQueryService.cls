@@ -1,7 +1,7 @@
 public with sharing class QuickBooksBulkQueryService {
     private static final Integer ID_QUERY_CHUNK_SIZE = 100;
     private static final Integer QUERY_PAGE_SIZE = 1000;
-    private static final Set<String> SUPPORTED_ENTITY_NAMES = new Set<String>{ 'Customer', 'Vendor', 'Item', 'Invoice' };
+    private static final Set<String> SUPPORTED_ENTITY_NAMES = new Set<String>{ 'Customer', 'Vendor', 'Item', 'Invoice', 'CreditMemo', 'PurchaseOrder' };
 
     public class UnsupportedQuickBooksEntityException extends Exception {}
 

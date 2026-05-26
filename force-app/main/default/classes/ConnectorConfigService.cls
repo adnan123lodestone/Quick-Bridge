@@ -38,10 +38,6 @@ public with sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfig(String connectorKey) {
-    return getConfig(connectorKey, false);
-  }
-
-  public static ConnectorConfig getConfig(String connectorKey, Boolean allowLegacyFallback) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
     );
@@ -56,18 +52,27 @@ public with sharing class ConnectorConfigService {
     config.label = descriptor.label;
     config.values = new Map<String, String>();
     hydrateFromNormalizedConfig(config, descriptor);
-    if (config.fromNormalizedConfig != true && allowLegacyFallback == true) {
-      hydrateFromLegacyConfig(config, descriptor);
-    }
     return config;
   }
 
   public static ConnectorConfig getAuthoritativeConfig(String connectorKey) {
-    return getConfig(connectorKey, false);
+    return getConfig(connectorKey);
   }
 
   public static ConnectorConfig getConfigForMigration(String connectorKey) {
-    return getConfig(connectorKey, true);
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(connectorKey);
+    if (descriptor == null) {
+      throw new AuraHandledException('Unsupported QuickBridge connector: ' + connectorKey);
+    }
+    ConnectorConfig config = new ConnectorConfig();
+    config.connectorKey = descriptor.connectorKey;
+    config.label = descriptor.label;
+    config.values = new Map<String, String>();
+    hydrateFromNormalizedConfig(config, descriptor);
+    if (config.fromNormalizedConfig != true) {
+      hydrateFromLegacyConfig(config, descriptor);
+    }
+    return config;
   }
 
   private static void redactSecretFields(ConnectorConfig cfg) {

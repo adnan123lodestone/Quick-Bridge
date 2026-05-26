@@ -366,14 +366,14 @@ public without sharing class ErrorLogUtility {
         }
 
         if (ctx.httpStatusCode != null) {
-            return IntegrationRetryPolicy.isRetryable(ctx.httpStatusCode);
+            return IntegrationRetryPolicy.classify(ctx.httpStatusCode).retryable;
         }
-        
+
         String msg = ctx.errorMessage?.toLowerCase();
         if (msg != null) {
             Integer parsedStatusCode = IntegrationRetryPolicy.httpStatusCodeFromMessage(msg);
             if (parsedStatusCode != null) {
-                return IntegrationRetryPolicy.isRetryable(parsedStatusCode);
+                return IntegrationRetryPolicy.classify(parsedStatusCode).retryable;
             }
             if (IntegrationRetryPolicy.isRetryableMessage(msg) ||
                 msg.contains('connection reset') ||
@@ -388,8 +388,7 @@ public without sharing class ErrorLogUtility {
                 return false;
             }
         }
-        
-        // Default – false (safety)
+
         return false;
     }
     

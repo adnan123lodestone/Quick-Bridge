@@ -229,19 +229,21 @@
                 </div>
             </template>
         </div>
-        <div class="slds-box custom-box slds-m-bottom_large"
-            style="padding: 1.2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0;">
-            <div>
-                <h3 style="font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0;">Sync Direction</h3>
-                <p style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Sync Salesforce to QBO</p>
+        <template if:false={isInboundOnlyObject}>
+            <div class="slds-box custom-box slds-m-bottom_large"
+                style="padding: 1.2rem 1.5rem; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0;">
+                <div>
+                    <h3 style="font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0;">Sync Direction</h3>
+                    <p style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Sync Salesforce to QBO</p>
+                </div>
+                <div>
+                    <lightning-input type="toggle" label="Sync Salesforce to QBO" variant="label-hidden"
+                        message-toggle-active="Yes" message-toggle-inactive="No" checked={isSfToQboSync}
+                        onchange={handleSyncDirectionToggle}>
+                    </lightning-input>
+                </div>
             </div>
-            <div>
-                <lightning-input type="toggle" label="Sync Salesforce to QBO" variant="label-hidden"
-                    message-toggle-active="Yes" message-toggle-inactive="No" checked={isSfToQboSync}
-                    onchange={handleSyncDirectionToggle}>
-                </lightning-input>
-            </div>
-        </div>
+        </template>
         <div class="slds-grid slds-gutters slds-m-bottom_medium">
             <div class="slds-col slds-size_1-of-2">
                 <label class="slds-form-element__label">Frequency Value</label>

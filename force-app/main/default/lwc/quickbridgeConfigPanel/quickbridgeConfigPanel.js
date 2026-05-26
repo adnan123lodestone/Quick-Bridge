@@ -20,7 +20,7 @@ import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneServic
 
 const ADMIN_SESSION_STORAGE_KEY = "quickbridge.adminSession";
 
-const STATIC_LOGO_BY_KEY = {
+const LOGO_BY_CONNECTOR_KEY = {
   qbo: QB_Logo,
   quickbooks: QB_Logo,
   fedex: FedEx_Logo,
@@ -80,26 +80,19 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   isTileSelected(key) {
     return this.selectedTile === key;
   }
-  get isQboSelected() {
-    return this.isTileSelected("qbo");
+  get selectedConnectorKey() {
+    return this.selectedTile || null;
   }
-  get isStripeSelected() {
-    return this.isTileSelected("stripe");
+  get selectedConnectorDescriptor() {
+    return this.allTilesDefinition.find((t) => t.id === this.selectedTile) || null;
   }
-  get isPayPalSelected() {
-    return this.isTileSelected("paypal");
-  }
-  get isAuthNetSelected() {
-    return this.isTileSelected("authorizenet");
-  }
-  get isShopify() {
-    return this.isTileSelected("shopify");
-  }
-  get isFedExSelected() {
-    return this.isTileSelected("fedex");
-  }
-  get isUPSSelected() {
-    return this.isTileSelected("ups");
+  get tileIs() {
+    const key = this.selectedTile;
+    const result = {};
+    for (const tile of this.allTilesDefinition) {
+      result[tile.id] = tile.id === key;
+    }
+    return result;
   }
   get isSchedulerAvailable() {
     return this.selectedTileDefinition?.hasScheduler === true;
@@ -388,7 +381,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   }
 
   resolveTileLogoUrl(connectorKey, descriptorLogoUrl) {
-    return STATIC_LOGO_BY_KEY[connectorKey] || descriptorLogoUrl || QuickBridge_Logo;
+    return LOGO_BY_CONNECTOR_KEY[connectorKey] || descriptorLogoUrl || QuickBridge_Logo;
   }
 
   buildTileAliases(connector) {

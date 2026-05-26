@@ -52,8 +52,8 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
             }
             releaseLocks(lockRows, 'Released');
         } catch (Exception e) {
-            Boolean retryable = IntegrationRetryPolicy.isRetryable(e);
-            markRetry(item, e.getTypeName() + ': ' + e.getMessage(), retryable);
+            IntegrationRetryPolicy.RetryDecision decision = IntegrationRetryPolicy.classify(e);
+            markRetry(item, e.getTypeName() + ': ' + e.getMessage(), decision.retryable);
             releaseLocks(lockRows, 'Released');
         }
     }

@@ -250,6 +250,18 @@ export default class QbSchedulerComponent extends LightningElement {
         { id: 'ItemSalesTax', label: 'Item Sales Tax', icon: 'utility:tax_policy', isSelected: false, btnClass: 'obj-btn' }
     ];
 
+    // Objects that only support one direction via the QBO API
+    static INBOUND_ONLY_OBJECTS = new Set(['ItemSalesTax']);
+
+    get selectedObjectId() {
+        const sel = this.syncObjects.find(o => o.isSelected);
+        return sel ? sel.id : null;
+    }
+
+    get isInboundOnlyObject() {
+        return QbSchedulerComponent.INBOUND_ONLY_OBJECTS.has(this.selectedObjectId);
+    }
+
     toggleObjectSelection(event) {
         const selectedId = event.currentTarget.dataset.id;
         this.syncObjects = this.syncObjects.map(obj => {
@@ -259,6 +271,9 @@ export default class QbSchedulerComponent extends LightningElement {
                 btnClass: obj.id === selectedId ? 'obj-btn selected' : 'obj-btn'
             };
         });
+        if (QbSchedulerComponent.INBOUND_ONLY_OBJECTS.has(selectedId)) {
+            this.isSfToQboSync = false;
+        }
     }
     @track isEditMode = false;
     @track editFreqValue = '10';
