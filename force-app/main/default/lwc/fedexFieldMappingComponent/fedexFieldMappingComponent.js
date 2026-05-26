@@ -66,10 +66,12 @@ export default class FedexFieldMappingComponent extends LightningElement {
     @track rowCounter = 1;
     @track isLoading = true;
 
-    directionOptions = [
-        { label: 'SF to FedEx', value: 'SF to FedEx' },
-        { label: 'FedEx to SF', value: 'FedEx to SF' }
-    ];
+    get directionOptions() {
+        return [
+            { label: 'SF to FedEx', value: 'SF to FedEx', selected: this.selectedDirection === 'SF to FedEx' },
+            { label: 'FedEx to SF', value: 'FedEx to SF', selected: this.selectedDirection === 'FedEx to SF' }
+        ];
+    }
 
     get actionOptions() {
         return ACTIONS.map((action) => ({

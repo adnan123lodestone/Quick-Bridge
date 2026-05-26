@@ -2,13 +2,15 @@ import { LightningElement, api, track, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
 import getActionsForObject from '@salesforce/apex/CarrierRecordActionController.getActionsForObject';
+import getActiveCarriers from '@salesforce/apex/CarrierRecordActionController.getActiveCarriers';
 import updateCarrierType from '@salesforce/apex/CarrierRecordActionController.updateCarrierType';
 import runAction from '@salesforce/apex/CarrierRecordActionController.runAction';
+import applyValidatedAddress from '@salesforce/apex/CarrierRecordActionController.applyValidatedAddress';
 import selectRateQuote from '@salesforce/apex/CarrierRecordActionController.selectRateQuote';
 
-const CARRIER_OPTIONS = [
-    { label: 'FedEx', value: 'FedEx' },
-    { label: 'UPS',   value: 'UPS'   }
+const ALL_CARRIER_OPTIONS = [
+    { label: 'FedEx', value: 'FedEx', key: 'fedexActive' },
+    { label: 'UPS',   value: 'UPS',   key: 'upsActive'   }
 ];
 
 export default class CarrierRecordAction extends LightningElement {
@@ -27,10 +29,22 @@ export default class CarrierRecordAction extends LightningElement {
     @track confirmedAddress = null;
     @track activeActionName = null;
 
-    carrierOptions = CARRIER_OPTIONS;
+    carrierOptions = [];
 
     connectedCallback() {
-        this.loadPanel();
+        this.loadActiveCarriers();
+    }
+
+    loadActiveCarriers() {
+        getActiveCarriers()
+            .then((data) => {
+                this.carrierOptions = ALL_CARRIER_OPTIONS.filter((opt) => data[opt.key] === true);
+                this.loadPanel();
+            })
+            .catch(() => {
+                this.carrierOptions = [];
+                this.loadPanel();
+            });
     }
 
     loadPanel() {
@@ -46,6 +60,10 @@ export default class CarrierRecordAction extends LightningElement {
             .finally(() => {
                 this.isPanelLoading = false;
             });
+    }
+
+    get hasActiveCarriers() {
+        return this.carrierOptions && this.carrierOptions.length > 0;
     }
 
     get hasActions() {
@@ -129,10 +147,10 @@ export default class CarrierRecordAction extends LightningElement {
     handleConfirmAddress() {
         this.showConfirmModal = false;
         this.isLoading = true;
-        runAction({ recordId: this.recordId, objectApiName: this.objectApiName, actionName: 'validateAddressAndUpdate' })
+        applyValidatedAddress({ recordId: this.recordId, objectApiName: this.objectApiName, validatedAddress: this.confirmedAddress })
             .then((res) => {
                 if (res.success) {
-                    this.showToast('Success', 'Validated address applied to record.', 'success');
+                    this.showToast('Success', res.message || 'Validated address applied to record.', 'success');
                 } else {
                     this.showToast('Error', res.message || 'Could not apply address.', 'error');
                 }
@@ -186,7 +204,19 @@ export default class CarrierRecordAction extends LightningElement {
 
     get confirmedAddressLines() {
         if (!this.confirmedAddress) return [];
-        return Object.entries(this.confirmedAddress).map(([k, v]) => ({ key: k, value: v }));
+        const a = this.confirmedAddress;
+        const lines = [];
+        const street = Array.isArray(a.streetLines)
+            ? a.streetLines.filter(Boolean).join(', ')
+            : (a.streetLines || '');
+        if (street) lines.push({ label: 'Street', value: street });
+        if (a.city) lines.push({ label: 'City', value: a.city });
+        if (a.stateOrProvinceCode) lines.push({ label: 'State', value: a.stateOrProvinceCode });
+        if (a.postalCode) lines.push({ label: 'Postal Code', value: a.postalCode });
+        if (a.countryCode) lines.push({ label: 'Country', value: a.countryCode });
+        if (a.classification) lines.push({ label: 'Classification', value: a.classification });
+        if (a.residential != null) lines.push({ label: 'Residential', value: a.residential ? 'Yes' : 'No' });
+        return lines;
     }
 
     get hasRateQuotes() {

@@ -40,19 +40,16 @@ export default class PaymentComponent extends LightningElement {
     cardCountry: "",
   };
   
-  authorizeNetConfig;
   authorizeNetReadyPromise;
   authorizeNetLibraryUrl;
   stripeCardComplete = false;
   stripeCardElement;
   stripeCardError = "";
   stripeCardMounted = false;
-  stripeConfig;
   stripeInstance;
   stripeJsUrl;
   stripeReadyPromise;
   stripePreloadQueued = false;
-  paypalConfig;
   paypalJsUrl;
   paypalReadyPromise;
   paypalButtonsMounted = false;
@@ -128,27 +125,10 @@ export default class PaymentComponent extends LightningElement {
       }));
   }
 
-  get authorizeNetTileClass() { return this.getProviderTileClass("authorizenet"); }
-  get stripeTileClass() { return this.getProviderTileClass("stripe"); }
-  get paypalTileClass() { return this.getProviderTileClass("paypal"); }
-
-  get isAuthorizeNetActive() { return this.authorizeNetConfig?.active === true; }
-  get isStripeActive() { return this.stripeConfig?.active === true; }
-  get isPayPalActive() { return this.paypalConfig?.active === true; }
-  get isPayPalConfigured() { return this.paypalConfig?.configured === true; }
-  get canRenderPayPalButtons() { return this.isPayPalActive && this.isPayPalConfigured; }
-
-  get isAuthorizeNetDisabled() { return !this.isProviderSelectable("authorizenet"); }
-  get isStripeDisabled() { return !this.isProviderSelectable("stripe"); }
-  get isPaypalDisabled() { return !this.isProviderSelectable("paypal"); }
-
-  get authorizeNetDisabledMessage() { return this.getDisabledProviderMessage(this.authorizeNetConfig); }
-  get stripeDisabledMessage() { return this.getDisabledProviderMessage(this.stripeConfig); }
-  get paypalDisabledMessage() { return this.getDisabledProviderMessage(this.paypalConfig); }
-
-  get showAuthorizeNetHint() { return this.isAuthorizeNetDisabled && !!this.authorizeNetDisabledMessage; }
-  get showStripeHint() { return this.isStripeDisabled && !!this.stripeDisabledMessage; }
-  get showPaypalHint() { return this.isPaypalDisabled && !!this.paypalDisabledMessage; }
+  get canRenderPayPalButtons() {
+    const cfg = this.getProviderConfig("paypal");
+    return cfg?.active === true && cfg?.configured === true;
+  }
 
   get stripeTestCardNumber() { return this.paymentForm.cardNumber || ""; }
 
@@ -156,10 +136,6 @@ export default class PaymentComponent extends LightningElement {
     if (!this.hasAvailableProviders) return "No Active Gateway";
     return `${this.getProviderLabel(this.selectedProvider)} Selected`;
   }
-
-  get authorizeNetStatusText() { return this.getProviderStatusText(this.authorizeNetConfig); }
-  get stripeStatusText() { return this.getProviderStatusText(this.stripeConfig); }
-  get paypalStatusText() { return this.getProviderStatusText(this.paypalConfig); }
 
   get showStripeLoader() { return this.isStripeSelected && this.isStripeInitializing; }
   get showPaypalLoader() { return this.isPaypalSelected && this.isPaypalInitializing; }
@@ -170,7 +146,7 @@ export default class PaymentComponent extends LightningElement {
       : "PayPal will appear here once the current PayPal configuration is active.";
   }
 
-  get paypalStatusMessage() { return this.canRenderPayPalButtons ? "" : this.paypalConfig?.message || ""; }
+  get paypalStatusMessage() { return this.canRenderPayPalButtons ? "" : this.getProviderConfig("paypal")?.message || ""; }
   get showPaypalStatusMessage() { return !!this.paypalStatusMessage; }
 
   get proceedButtonLabel() {
@@ -205,8 +181,8 @@ export default class PaymentComponent extends LightningElement {
         this.selectedProvider = firstProvider?.connectorKey || null;
       }
 
-      if (this.selectedProvider === "authorizenet" && this.isAuthorizeNetActive) this.primeAuthorizeNet();
-      if (this.isStripeActive) this.preloadStripeInBackground();
+      if (this.selectedProvider === "authorizenet" && this.getProviderConfig("authorizenet")?.active === true) this.primeAuthorizeNet();
+      if (this.getProviderConfig("stripe")?.active === true) this.preloadStripeInBackground();
       if (this.selectedProvider === "paypal" && this.canRenderPayPalButtons) this.primePayPal();
 
     } catch (error) {
@@ -230,9 +206,6 @@ export default class PaymentComponent extends LightningElement {
       acc[provider.connectorKey] = this.toProviderConfig(provider, `${provider.label || provider.connectorKey} is unavailable.`);
       return acc;
     }, {});
-    this.authorizeNetConfig = this.getProviderConfig("authorizenet") || this.buildUnavailableProviderConfig("Authorize.Net is unavailable.");
-    this.stripeConfig = this.getProviderConfig("stripe") || this.buildUnavailableProviderConfig("Stripe is unavailable.");
-    this.paypalConfig = this.getProviderConfig("paypal") || this.buildUnavailableProviderConfig("PayPal is unavailable.");
   }
 
   toProviderConfig(provider, fallbackMessage) {
@@ -274,10 +247,11 @@ export default class PaymentComponent extends LightningElement {
   }
 
   getProviderLogoText(providerName) {
-    if (providerName === "authorizenet") return "AN";
-    if (providerName === "stripe") return "S";
-    if (providerName === "paypal") return "P";
-    return (this.getProviderLabel(providerName) || "?").slice(0, 2).toUpperCase();
+    const label = this.getProviderLabel(providerName) || providerName || "?";
+    const words = label.trim().split(/[\s.]+/).filter(Boolean);
+    return words.length >= 2
+      ? (words[0][0] + words[1][0]).toUpperCase()
+      : label.slice(0, 2).toUpperCase();
   }
 
   getDisabledProviderMessage(config) {
@@ -353,7 +327,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   preloadStripeInBackground() {
-    if (!this.isStripeActive || this.stripePreloadQueued || this.stripeReadyPromise || this.stripeInstance) return;
+    if (!this.getProviderConfig("stripe")?.active || this.stripePreloadQueued || this.stripeReadyPromise || this.stripeInstance) return;
     this.stripePreloadQueued = true;
     const schedulePreload = typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback.bind(window)
@@ -790,14 +764,15 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadAuthorizeNetResources() {
-    if (!this.authorizeNetConfig) await this.initializeProviderConfigs();
-    if (this.authorizeNetConfig?.active === false) throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is currently inactive.");
-    if (!this.authorizeNetConfig?.configured) throw new Error(this.authorizeNetConfig?.message || "Authorize.Net is not fully configured.");
+    let cfg = this.getProviderConfig("authorizenet");
+    if (!cfg) { await this.initializeProviderConfigs(); cfg = this.getProviderConfig("authorizenet"); }
+    if (cfg?.active === false) throw new Error(cfg?.message || "Authorize.Net is currently inactive.");
+    if (!cfg?.configured) throw new Error(cfg?.message || "Authorize.Net is not fully configured.");
 
-    const libraryUrl = this.authorizeNetConfig.acceptJsUrl;
+    const libraryUrl = cfg.acceptJsUrl;
     if (!libraryUrl) throw new Error("Authorize.Net script URL is missing.");
 
-    if (window.Accept && this.authorizeNetLibraryUrl === libraryUrl) return this.authorizeNetConfig;
+    if (window.Accept && this.authorizeNetLibraryUrl === libraryUrl) return cfg;
 
     if (!acceptJsPromise || this.authorizeNetLibraryUrl !== libraryUrl) {
       this.authorizeNetLibraryUrl = libraryUrl;
@@ -806,7 +781,7 @@ export default class PaymentComponent extends LightningElement {
 
     await acceptJsPromise;
     await this.waitForAcceptGlobal();
-    return this.authorizeNetConfig;
+    return cfg;
   }
 
   async ensureStripeReady() {
@@ -820,15 +795,16 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadStripeResources() {
-    if (!this.stripeConfig) await this.initializeProviderConfigs();
-    if (this.stripeConfig?.active === false) throw new Error(this.stripeConfig?.message || "Stripe is currently inactive.");
-    if (!this.stripeConfig?.configured) throw new Error(this.stripeConfig?.message || "Stripe is not fully configured.");
-    if (!this.stripeConfig?.publishableKey) throw new Error("Stripe publishable key is missing.");
+    let cfg = this.getProviderConfig("stripe");
+    if (!cfg) { await this.initializeProviderConfigs(); cfg = this.getProviderConfig("stripe"); }
+    if (cfg?.active === false) throw new Error(cfg?.message || "Stripe is currently inactive.");
+    if (!cfg?.configured) throw new Error(cfg?.message || "Stripe is not fully configured.");
+    if (!cfg?.publishableKey) throw new Error("Stripe publishable key is missing.");
 
-    const libraryUrl = this.stripeConfig.stripeJsUrl;
+    const libraryUrl = cfg.stripeJsUrl;
     if (!libraryUrl) throw new Error("Stripe script URL is missing.");
 
-    if (window.Stripe && this.stripeJsUrl === libraryUrl && this.stripeInstance) return this.stripeConfig;
+    if (window.Stripe && this.stripeJsUrl === libraryUrl && this.stripeInstance) return cfg;
 
     if (!stripeJsPromise || this.stripeJsUrl !== libraryUrl) {
       this.stripeJsUrl = libraryUrl;
@@ -837,9 +813,9 @@ export default class PaymentComponent extends LightningElement {
 
     await stripeJsPromise;
     await this.waitForStripeGlobal();
-    this.stripeInstance = window.Stripe(this.stripeConfig.publishableKey);
+    this.stripeInstance = window.Stripe(cfg.publishableKey);
     if (!this.stripeInstance) throw new Error("Stripe did not initialize correctly.");
-    return this.stripeConfig;
+    return cfg;
   }
 
   async ensurePayPalReady() {
@@ -853,13 +829,14 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadPayPalResources() {
-    if (!this.paypalConfig) await this.initializeProviderConfigs();
-    if (this.paypalConfig?.active === false) throw new Error(this.paypalConfig?.message || "PayPal is currently inactive.");
-    if (!this.paypalConfig?.configured) throw new Error(this.paypalConfig?.message || "PayPal is not fully configured.");
+    let cfg = this.getProviderConfig("paypal");
+    if (!cfg) { await this.initializeProviderConfigs(); cfg = this.getProviderConfig("paypal"); }
+    if (cfg?.active === false) throw new Error(cfg?.message || "PayPal is currently inactive.");
+    if (!cfg?.configured) throw new Error(cfg?.message || "PayPal is not fully configured.");
 
-    const libraryUrl = this.paypalConfig.payPalJsUrl;
+    const libraryUrl = cfg.payPalJsUrl;
     if (!libraryUrl) throw new Error("PayPal script URL is missing.");
-    if (window.paypal && this.paypalJsUrl === libraryUrl) return this.paypalConfig;
+    if (window.paypal && this.paypalJsUrl === libraryUrl) return cfg;
 
     if (!paypalJsPromise || this.paypalJsUrl !== libraryUrl) {
       this.paypalJsUrl = libraryUrl;
@@ -868,7 +845,7 @@ export default class PaymentComponent extends LightningElement {
 
     await paypalJsPromise;
     await this.waitForPayPalGlobal();
-    return this.paypalConfig;
+    return cfg;
   }
 
   waitForAcceptGlobal(maxWaitMs = 3000, intervalMs = 50) {

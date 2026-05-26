@@ -11,10 +11,22 @@ import revokeAdminSession from "@salesforce/apex/QuickBridgeAdminControlPlaneSer
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import LightningConfirm from "lightning/confirm";
 import QuickBridge_Logo from "@salesforce/resourceUrl/QuickBridge_Logo";
+import QB_Logo from "@salesforce/resourceUrl/QB_Logo";
+import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
+import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
+import Authorize_Net_logo from "@salesforce/resourceUrl/Authorize_Net_logo";
 import recoverPin from "@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin";
 import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses";
 
 const ADMIN_SESSION_STORAGE_KEY = "quickbridge.adminSession";
+
+const STATIC_LOGO_BY_KEY = {
+  qbo: QB_Logo,
+  quickbooks: QB_Logo,
+  fedex: FedEx_Logo,
+  ups: UPS_Logo,
+  authorizenet: Authorize_Net_logo,
+};
 
 export default class QuickbridgeConfigPanel extends LightningElement {
   @track currentScreen = "login";
@@ -65,35 +77,44 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   get isMappingScreen() {
     return this.currentScreen === "mapping";
   }
+  isTileSelected(key) {
+    return this.selectedTile === key;
+  }
   get isQboSelected() {
-    return this.selectedTile === "qbo";
+    return this.isTileSelected("qbo");
   }
   get isStripeSelected() {
-    return this.selectedTile === "stripe";
+    return this.isTileSelected("stripe");
   }
   get isPayPalSelected() {
-    return this.selectedTile === "paypal";
+    return this.isTileSelected("paypal");
   }
   get isAuthNetSelected() {
-    return this.selectedTile === "authorizenet";
+    return this.isTileSelected("authorizenet");
   }
   get isShopify() {
-    return this.selectedTile === "shopify";
+    return this.isTileSelected("shopify");
   }
   get isFedExSelected() {
-    return this.selectedTile === "fedex";
+    return this.isTileSelected("fedex");
   }
   get isUPSSelected() {
-    return this.selectedTile === "ups";
+    return this.isTileSelected("ups");
+  }
+  get isSchedulerAvailable() {
+    return this.selectedTileDefinition?.hasScheduler === true;
   }
   get isQboOrShopify() {
-    return this.selectedTile === "qbo" || this.selectedTile === "shopify";
+    return this.isSchedulerAvailable;
   }
   get isSchedulerScreen() {
     return this.currentScreen === "scheduler";
   }
+  get selectedTileDefinition() {
+    return this.getTileDefinition(this.selectedTile) || null;
+  }
   get isSchedulerUnavailable() {
-    return this.getTileDefinition(this.selectedTile)?.hasScheduler !== true;
+    return this.selectedTileDefinition?.hasScheduler !== true;
   }
 
   get navHomeClass() {
@@ -346,7 +367,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         .map((connector) => ({
           id: connector.connectorKey,
           label: connector.label,
-          logoUrl: this.resolveTileLogoUrl(connector.logoUrl),
+          logoUrl: this.resolveTileLogoUrl(connector.connectorKey, connector.logoUrl),
           productKey: connector.productKey,
           aliases: this.buildTileAliases(connector),
           activeField: connector.activeField,
@@ -366,8 +387,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
   }
 
-  resolveTileLogoUrl(descriptorLogoUrl) {
-    return descriptorLogoUrl || QuickBridge_Logo;
+  resolveTileLogoUrl(connectorKey, descriptorLogoUrl) {
+    return STATIC_LOGO_BY_KEY[connectorKey] || descriptorLogoUrl || QuickBridge_Logo;
   }
 
   buildTileAliases(connector) {
@@ -608,65 +629,12 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     try {
       const configs = await getConnectorConfigs();
 
-      const fieldLabels = {
-        AuthorizeNet_API_Login_ID__c: "API Login ID",
-        AuthorizeNet_Public_Client_Key__c: "Public Client Key",
-        AuthorizeNet_Webhook_Signing_Key__c: "Webhook Signing Key",
-        AuthorizeNet_Active__c: "Active",
-        AuthorizeNet_Use_Sandbox__c: "Use Sandbox",
-        AuthorizeNet_Start_Date__c: "Start Date",
-        AuthorizeNet_End_Date__c: "End Date",
-        Stripe_Publishable_Key__c: "Publishable Key",
-        Stripe_Webhook_Signing_Secret__c: "Webhook Signing Secret",
-        Stripe_Active__c: "Active",
-        Stripe_Use_Sandbox__c: "Use Sandbox",
-        Stripe_Start_Date__c: "Start Date",
-        Stripe_End_Date__c: "End Date",
-        PayPal_ClientId__c: "Client ID",
-        PayPal_Active__c: "Active",
-        PayPal_UseSandbox__c: "Use Sandbox",
-        PayPal_StartDate__c: "Start Date",
-        PayPal_EndDate__c: "End Date",
-        Shopify_Store_URL__c: "Store URL",
-        Shopify_Access_Token__c: "Access Token",
-        Shopify_API_Key__c: "API Key",
-        Shopify_API_Secret__c: "API Secret",
-        Shopify_Is_Active__c: "Active",
-        Shopify_End_Date__c: "End Date",
-        QuickBooks_Realm_ID__c: "Realm ID",
-        QuickBooks_Is_Active__c: "Active",
-        QuickBooks_Start_Date__c: "Start Date",
-        QuickBooks_End_Date__c: "End Date",
-        FedEx_Client_Id__c: "Client ID",
-        FedEx_Client_Secret__c: "Client Secret",
-        FedEx_Account_Number__c: "Account Number",
-        FedEx_Environment__c: "Environment",
-        FedEx_Default_Service_Type__c: "Default Service Type",
-        FedEx_Default_Packaging_Type__c: "Default Packaging Type",
-        FedEx_Default_Pickup_Type__c: "Default Pickup Type",
-        FedEx_Active__c: "Active",
-        FedEx_End_Date__c: "End Date",
-        UPS_Client_Id__c: "Client ID",
-        UPS_Client_Secret__c: "Client Secret",
-        UPS_Account_Number__c: "Account Number",
-        UPS_Environment__c: "Environment",
-        UPS_Default_Service_Code__c: "Default Service Code",
-        UPS_Active__c: "Active",
-        UPS_End_Date__c: "End Date"
-      };
-
       this.paymentMetadataConfigs = (configs || []).map((config) => {
         const formValues = { ...config.fields };
+        const registryLabels = config.fieldLabels || {};
 
         // Build editable fields data
         const editableFieldsData = (config.editableFields || [])
-          .filter((fieldName) => {
-            const isSandboxField =
-              fieldName.includes("Sandbox") || fieldName.includes("UseSandbox");
-            if (!isSandboxField) return true;
-            const excludedProviders = ["stripe", "authorizenet", "paypal"];
-            return !excludedProviders.includes(config.provider);
-          })
           .map((fieldName) => {
             const isCheckbox =
               fieldName.includes("Active") || fieldName.includes("Sandbox");
@@ -676,8 +644,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
               formValues[fieldName] === true;
 
             const properLabel =
-              config.fieldLabels?.[fieldName] ||
-              fieldLabels[fieldName] ||
+              registryLabels[fieldName] ||
               fieldName.replace("__c", "").replace(/_/g, " ");
 
             return {
@@ -1099,10 +1066,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     if (this.isLoggedIn) {
       this.currentScreen = "mapping";
     }
-  }
-
-  get integrationOptions() {
-    return [{ label: "QuickBooks Online", value: "qbonline" }];
   }
 
   restoreSessionFromStorage() {

@@ -66,10 +66,12 @@ export default class UpsFieldMappingComponent extends LightningElement {
     @track rowCounter = 1;
     @track isLoading = true;
 
-    directionOptions = [
-        { label: 'SF to UPS', value: 'SF to UPS' },
-        { label: 'UPS to SF', value: 'UPS to SF' }
-    ];
+    get directionOptions() {
+        return [
+            { label: 'SF to UPS', value: 'SF to UPS', selected: this.selectedDirection === 'SF to UPS' },
+            { label: 'UPS to SF', value: 'UPS to SF', selected: this.selectedDirection === 'UPS to SF' }
+        ];
+    }
 
     get actionOptions() {
         return ACTIONS.map((action) => ({
