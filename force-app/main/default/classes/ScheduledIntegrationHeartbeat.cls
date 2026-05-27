@@ -1,9 +1,24 @@
 global with sharing class ScheduledIntegrationHeartbeat implements Schedulable {
     public static final String JOB_NAME = 'QuickBridge Integration Heartbeat';
+    private static final Integer INTERVAL_MINUTES = 1; 
+
     @TestVisible private static Boolean skipSchedulingForTests = true;
 
     global void execute(SchedulableContext context) {
-        GenericScheduleDispatcher.dispatchDue();
+        try {
+            GenericScheduleDispatcher.dispatchDue();
+        } catch (Exception e) {
+            ErrorLogUtility.logException(
+                'QuickBridge',
+                'ScheduledIntegrationHeartbeat.execute',
+                e,
+                null,
+                null
+            );
+        } finally {
+            System.abortJob(context.getTriggerId());
+            scheduleNextRun();
+        }
     }
 
     public static void ensureScheduled() {
@@ -18,11 +33,17 @@ global with sharing class ScheduledIntegrationHeartbeat implements Schedulable {
             LIMIT 1
         ];
         if (existing.isEmpty()) {
-            System.schedule(JOB_NAME, '0 0 * * * ?', new ScheduledIntegrationHeartbeat());
+            scheduleNextRun();
         }
     }
 
     public static void dispatchDueSchedules() {
         GenericScheduleDispatcher.dispatchDue();
+    }
+
+    private static void scheduleNextRun() {
+        DateTime nextRun = DateTime.now().addMinutes(INTERVAL_MINUTES);
+        String cronExp = nextRun.format('s m H d M ? yyyy');
+        System.schedule(JOB_NAME, cronExp, new ScheduledIntegrationHeartbeat());
     }
 }
