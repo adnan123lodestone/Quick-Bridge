@@ -18,14 +18,12 @@ import Authorize_Net_logo from "@salesforce/resourceUrl/Authorize_Net_logo";
 import recoverPin from "@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin";
 import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses";
 
-const ADMIN_SESSION_STORAGE_KEY = "quickbridge.adminSession";
-
 const LOGO_BY_CONNECTOR_KEY = {
   qbo: QB_Logo,
   quickbooks: QB_Logo,
   fedex: FedEx_Logo,
   ups: UPS_Logo,
-  authorizenet: Authorize_Net_logo,
+  authorizenet: Authorize_Net_logo
 };
 
 export default class QuickbridgeConfigPanel extends LightningElement {
@@ -84,7 +82,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     return this.selectedTile || null;
   }
   get selectedConnectorDescriptor() {
-    return this.allTilesDefinition.find((t) => t.id === this.selectedTile) || null;
+    return (
+      this.allTilesDefinition.find((t) => t.id === this.selectedTile) || null
+    );
   }
   get tileIs() {
     const key = this.selectedTile;
@@ -360,7 +360,10 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         .map((connector) => ({
           id: connector.connectorKey,
           label: connector.label,
-          logoUrl: this.resolveTileLogoUrl(connector.connectorKey, connector.logoUrl),
+          logoUrl: this.resolveTileLogoUrl(
+            connector.connectorKey,
+            connector.logoUrl
+          ),
           productKey: connector.productKey,
           aliases: this.buildTileAliases(connector),
           activeField: connector.activeField,
@@ -381,7 +384,11 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   }
 
   resolveTileLogoUrl(connectorKey, descriptorLogoUrl) {
-    return LOGO_BY_CONNECTOR_KEY[connectorKey] || descriptorLogoUrl || QuickBridge_Logo;
+    return (
+      LOGO_BY_CONNECTOR_KEY[connectorKey] ||
+      descriptorLogoUrl ||
+      QuickBridge_Logo
+    );
   }
 
   buildTileAliases(connector) {
@@ -627,8 +634,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         const registryLabels = config.fieldLabels || {};
 
         // Build editable fields data
-        const editableFieldsData = (config.editableFields || [])
-          .map((fieldName) => {
+        const editableFieldsData = (config.editableFields || []).map(
+          (fieldName) => {
             const isCheckbox =
               fieldName.includes("Active") || fieldName.includes("Sandbox");
             const isReadOnlyDate = fieldName.includes("Date");
@@ -654,7 +661,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
                   : "badge-inactive"
                 : ""
             };
-          });
+          }
+        );
 
         // --- Override Active Checkbox ---
         const activeField = editableFieldsData.find(
@@ -1062,64 +1070,21 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   }
 
   restoreSessionFromStorage() {
-    const storedSession = this.readSessionFromStorage();
-    if (storedSession?.sessionToken && storedSession?.sessionExpiresAt) {
-      const expiryDate = new Date(storedSession.sessionExpiresAt);
-      if (
-        !Number.isNaN(expiryDate.getTime()) &&
-        expiryDate.getTime() > Date.now()
-      ) {
-        this.adminSessionToken = storedSession.sessionToken;
-        this.adminSessionExpiresAt = storedSession.sessionExpiresAt;
-        if (storedSession.userId) {
-          this.userId = storedSession.userId;
-        }
-        this.currentScreen = "reporting";
-        this.loadMetadataConfigs();
-        this.loadConfigPanelPreferences();
-        return;
-      }
-    }
-    // No valid session – stay on login screen
     this.clearSessionStorage();
     this.currentScreen = "login";
   }
 
   persistSessionToStorage() {
-    if (!this.adminSessionToken || !this.adminSessionExpiresAt) {
-      return;
-    }
-    try {
-      sessionStorage.setItem(
-        ADMIN_SESSION_STORAGE_KEY,
-        JSON.stringify({
-          sessionToken: this.adminSessionToken,
-          sessionExpiresAt: this.adminSessionExpiresAt,
-          userId: this.userId
-        })
-      );
-    } catch {
-      // Storage can be unavailable in restricted browser contexts; keep in-memory session.
-    }
+    // Admin session tokens are intentionally memory-only.
   }
 
   readSessionFromStorage() {
-    try {
-      const storedSession = sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-      return storedSession ? JSON.parse(storedSession) : null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   clearSessionStorage() {
     this.adminSessionToken = "";
     this.adminSessionExpiresAt = null;
-    try {
-      sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
-    } catch {
-      // Ignore storage cleanup failures; in-memory state is already cleared.
-    }
   }
 
   handleCheckLicenses() {

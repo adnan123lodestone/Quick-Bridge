@@ -9,13 +9,41 @@ let stripeJsPromise;
 let paypalJsPromise;
 
 const FALLBACK_PAYMENT_PROVIDERS = [
-  { connectorKey: "authorizenet", label: "Authorize.Net", hasPayment: true, hasCheckout: true },
-  { connectorKey: "stripe", label: "Stripe", hasPayment: true, hasCheckout: true },
-  { connectorKey: "paypal", label: "PayPal", hasPayment: true, hasCheckout: true },
+  {
+    connectorKey: "authorizenet",
+    label: "Authorize.Net",
+    hasPayment: true,
+    hasCheckout: true,
+    actionType: "acceptJs"
+  },
+  {
+    connectorKey: "stripe",
+    label: "Stripe",
+    hasPayment: true,
+    hasCheckout: true,
+    actionType: "stripeElements"
+  },
+  {
+    connectorKey: "paypal",
+    label: "PayPal",
+    hasPayment: true,
+    hasCheckout: true,
+    actionType: "paypalButtons"
+  }
 ];
 
+const RENDERER_MODE = {
+  authorizenet: "acceptJs",
+  stripe: "stripeElements",
+  paypal: "paypalButtons",
+  acceptJs: "acceptJs",
+  stripeElements: "stripeElements",
+  paypalButtons: "paypalButtons",
+  hosted: "hosted"
+};
+
 export default class PaymentComponent extends LightningElement {
-  selectedProvider = null; 
+  selectedProvider = null;
   @api amount = 1;
   @api orderId = "";
   @api usePlatformSession = false;
@@ -26,7 +54,7 @@ export default class PaymentComponent extends LightningElement {
   successDetails = {};
   stripeDebugMessages = [];
   stripeLastStep = "Idle";
-  
+
   paymentForm = {
     cardName: "",
     cardNumber: "",
@@ -37,9 +65,9 @@ export default class PaymentComponent extends LightningElement {
     cardCity: "",
     cardState: "",
     cardZipCode: "",
-    cardCountry: "",
+    cardCountry: ""
   };
-  
+
   authorizeNetReadyPromise;
   authorizeNetLibraryUrl;
   stripeCardComplete = false;
@@ -84,10 +112,20 @@ export default class PaymentComponent extends LightningElement {
   }
 
   renderedCallback() {
-    if (this.selectedProvider === "stripe" && this.stripeInstance && !this.stripeCardMounted && !this.isStripeInitializing) {
+    if (
+      this.selectedRendererMode === "stripeElements" &&
+      this.stripeInstance &&
+      !this.stripeCardMounted &&
+      !this.isStripeInitializing
+    ) {
       this.mountStripeCardElement();
     }
-    if (this.selectedProvider === "paypal" && this.canRenderPayPalButtons && !this.paypalButtonsMounted && !this.isPaypalInitializing) {
+    if (
+      this.selectedRendererMode === "paypalButtons" &&
+      this.canRenderPayPalButtons &&
+      !this.paypalButtonsMounted &&
+      !this.isPaypalInitializing
+    ) {
       this.mountPayPalButtons();
     }
   }
@@ -99,23 +137,52 @@ export default class PaymentComponent extends LightningElement {
   }
 
   stateValues = [
-    { label: "AK", value: "AK" }, { label: "AL", value: "AL" }, { label: "AR", value: "AR" },
-    { label: "CA", value: "CA" }, { label: "FL", value: "FL" }, { label: "NY", value: "NY" },
-    { label: "TX", value: "TX" }, { label: "Outside US/Canada", value: "Outside US/Canada" },
+    { label: "AK", value: "AK" },
+    { label: "AL", value: "AL" },
+    { label: "AR", value: "AR" },
+    { label: "CA", value: "CA" },
+    { label: "FL", value: "FL" },
+    { label: "NY", value: "NY" },
+    { label: "TX", value: "TX" },
+    { label: "Outside US/Canada", value: "Outside US/Canada" }
   ];
 
   get selectedActionType() {
     return this.getProviderConfig(this.selectedProvider)?.actionType || null;
   }
-  get isCardMode() { return this.selectedActionType === "authorizenet" || this.selectedActionType === "stripe"; }
-  get isButtonMode() { return this.selectedActionType === "paypal"; }
-  get isHostedMode() { return !!this.selectedProvider && this.selectedActionType === "hosted"; }
-  get isAuthorizeNetSelected() { return this.selectedActionType === "authorizenet"; }
-  get isStripeSelected() { return this.selectedActionType === "stripe"; }
-  get hasAvailableProviders() { return this.availableProviderCount > 0; }
-  get showUnavailableState() { return !this.hasAvailableProviders; }
+  get selectedRendererMode() {
+    return (
+      this.getProviderConfig(this.selectedProvider)?.rendererMode || "hosted"
+    );
+  }
+  get isCardMode() {
+    return (
+      this.selectedRendererMode === "acceptJs" ||
+      this.selectedRendererMode === "stripeElements"
+    );
+  }
+  get isButtonMode() {
+    return this.selectedRendererMode === "paypalButtons";
+  }
+  get isHostedMode() {
+    return !!this.selectedProvider && !this.isCardMode && !this.isButtonMode;
+  }
+  get isAuthorizeNetSelected() {
+    return this.selectedRendererMode === "acceptJs";
+  }
+  get isStripeSelected() {
+    return this.selectedRendererMode === "stripeElements";
+  }
+  get hasAvailableProviders() {
+    return this.availableProviderCount > 0;
+  }
+  get showUnavailableState() {
+    return !this.hasAvailableProviders;
+  }
 
-  get availableProviderCount() { return this.paymentProviderTiles.length; }
+  get availableProviderCount() {
+    return this.paymentProviderTiles.length;
+  }
   get paymentProviderTiles() {
     return this.paymentProviderDescriptors
       .filter((provider) => this.isProviderSelectable(provider.connectorKey))
@@ -125,24 +192,37 @@ export default class PaymentComponent extends LightningElement {
         logoText: this.getProviderLogoText(provider.connectorKey),
         logoClass: `tile-logo tile-logo-${provider.connectorKey === "authorizenet" ? "authorize" : provider.connectorKey}`,
         tileClass: this.getProviderTileClass(provider.connectorKey),
-        statusText: this.getProviderStatusText(this.getProviderConfig(provider.connectorKey)),
+        statusText: this.getProviderStatusText(
+          this.getProviderConfig(provider.connectorKey)
+        )
       }));
   }
 
   get canRenderPayPalButtons() {
-    const cfg = this.getProviderConfig("paypal");
+    const cfg = this.getProviderConfig(this.selectedProvider);
     return cfg?.active === true && cfg?.configured === true;
   }
 
-  get stripeTestCardNumber() { return this.paymentForm.cardNumber || ""; }
+  get stripeTestCardNumber() {
+    return this.paymentForm.cardNumber || "";
+  }
 
   get selectedProviderLabel() {
     if (!this.hasAvailableProviders) return "No Active Gateway";
     return `${this.getProviderLabel(this.selectedProvider)} Selected`;
   }
 
-  get showStripeLoader() { return this.selectedActionType === "stripe" && this.isStripeInitializing; }
-  get showPaypalLoader() { return this.selectedActionType === "paypal" && this.isPaypalInitializing; }
+  get showStripeLoader() {
+    return (
+      this.selectedRendererMode === "stripeElements" &&
+      this.isStripeInitializing
+    );
+  }
+  get showPaypalLoader() {
+    return (
+      this.selectedRendererMode === "paypalButtons" && this.isPaypalInitializing
+    );
+  }
 
   get paypalPreviewMessage() {
     return this.canRenderPayPalButtons
@@ -150,25 +230,40 @@ export default class PaymentComponent extends LightningElement {
       : "PayPal will appear here once the current PayPal configuration is active.";
   }
 
-  get paypalStatusMessage() { return this.canRenderPayPalButtons ? "" : this.getProviderConfig("paypal")?.message || ""; }
-  get showPaypalStatusMessage() { return !!this.paypalStatusMessage; }
+  get paypalStatusMessage() {
+    return this.canRenderPayPalButtons
+      ? ""
+      : this.getProviderConfig(this.selectedProvider)?.message || "";
+  }
+  get showPaypalStatusMessage() {
+    return !!this.paypalStatusMessage;
+  }
 
   get proceedButtonLabel() {
     if (this.isSubmitting) return "Processing...";
-    const LABEL_BY_ACTION = { stripe: "Proceed with Stripe", paypal: "Pay with PayPal", authorizenet: "Proceed with Authorize.Net" };
-    return LABEL_BY_ACTION[this.selectedActionType] || `Continue with ${this.getProviderLabel(this.selectedProvider)}`;
+    return (
+      this.getProviderConfig(this.selectedProvider)?.buttonLabel ||
+      `Continue with ${this.getProviderLabel(this.selectedProvider)}`
+    );
   }
 
   get isProceedDisabled() {
     if (!this.hasAvailableProviders) return true;
-    if (this.selectedProvider === "paypal") return true;
-    return this.isSubmitting || this.showStripeLoader || !this.hasValidAmount() || !this.isProviderSelectable(this.selectedProvider);
+    if (this.selectedRendererMode === "paypalButtons") return true;
+    return (
+      this.isSubmitting ||
+      this.showStripeLoader ||
+      !this.hasValidAmount() ||
+      !this.isProviderSelectable(this.selectedProvider)
+    );
   }
 
   getProviderTileClass(providerName) {
     const classes = ["provider-tile"];
-    if (this.selectedProvider === providerName) classes.push("provider-tile-selected");
-    if (!this.isProviderSelectable(providerName)) classes.push("provider-tile-disabled");
+    if (this.selectedProvider === providerName)
+      classes.push("provider-tile-selected");
+    if (!this.isProviderSelectable(providerName))
+      classes.push("provider-tile-disabled");
     return classes.join(" ");
   }
 
@@ -179,17 +274,19 @@ export default class PaymentComponent extends LightningElement {
 
       // Auto-select provider
       if (!this.isProviderSelectable(this.selectedProvider)) {
-        const firstProvider = this.paymentProviderDescriptors.find((provider) => this.isProviderSelectable(provider.connectorKey));
+        const firstProvider = this.paymentProviderDescriptors.find((provider) =>
+          this.isProviderSelectable(provider.connectorKey)
+        );
         this.selectedProvider = firstProvider?.connectorKey || null;
       }
 
-      if (this.selectedProvider === "authorizenet" && this.getProviderConfig("authorizenet")?.active === true) this.primeAuthorizeNet();
-      if (this.getProviderConfig("stripe")?.active === true) this.preloadStripeInBackground();
-      if (this.selectedProvider === "paypal" && this.canRenderPayPalButtons) this.primePayPal();
-
+      this.primeSelectedProvider();
+      this.preloadRendererInBackground("stripeElements");
     } catch (error) {
       this.selectedProvider = null;
-      this.dispatchError(this.getErrorMessage(error, "Failed to connect to Server Org."));
+      this.dispatchError(
+        this.getErrorMessage(error, "Failed to connect to Server Org.")
+      );
     }
   }
 
@@ -197,17 +294,30 @@ export default class PaymentComponent extends LightningElement {
     const providerList = Array.isArray(providers) ? providers : [];
     const normalized = providerList
       .filter((provider) => provider?.connectorKey)
-      .map((provider) => ({ ...provider, connectorKey: provider.connectorKey.toLowerCase() }))
+      .map((provider) => ({
+        ...provider,
+        connectorKey: provider.connectorKey.toLowerCase()
+      }))
       .sort((a, b) => (a.displayOrder || 999) - (b.displayOrder || 999));
 
     this.paymentProviderDescriptors = normalized.length
-      ? normalized.map((provider) => ({ ...provider, hasPayment: true, hasCheckout: true }))
+      ? normalized.map((provider) => ({
+          ...provider,
+          hasPayment: true,
+          hasCheckout: true
+        }))
       : FALLBACK_PAYMENT_PROVIDERS;
 
-    this.providerConfigs = this.paymentProviderDescriptors.reduce((acc, provider) => {
-      acc[provider.connectorKey] = this.toProviderConfig(provider, `${provider.label || provider.connectorKey} is unavailable.`);
-      return acc;
-    }, {});
+    this.providerConfigs = this.paymentProviderDescriptors.reduce(
+      (acc, provider) => {
+        acc[provider.connectorKey] = this.toProviderConfig(
+          provider,
+          `${provider.label || provider.connectorKey} is unavailable.`
+        );
+        return acc;
+      },
+      {}
+    );
   }
 
   toProviderConfig(provider, fallbackMessage) {
@@ -218,12 +328,15 @@ export default class PaymentComponent extends LightningElement {
       configured: provider.configured === true,
       message: provider.message,
       actionType: provider.actionType || "hosted",
+      rendererMode:
+        RENDERER_MODE[provider.rendererMode || provider.actionType] || "hosted",
+      buttonLabel: provider.buttonLabel || provider.config?.buttonLabel,
       connectorKey: provider.connectorKey,
       label: provider.label,
       acceptJsUrl: provider.config?.acceptJsUrl || provider.clientScriptUrl,
       stripeJsUrl: provider.config?.stripeJsUrl || provider.clientScriptUrl,
       payPalJsUrl: provider.config?.payPalJsUrl || provider.clientScriptUrl,
-      clientScriptUrl: provider.clientScriptUrl,
+      clientScriptUrl: provider.clientScriptUrl
     };
   }
 
@@ -231,7 +344,7 @@ export default class PaymentComponent extends LightningElement {
     return {
       active: false,
       configured: false,
-      message: this.getErrorMessage(error, message),
+      message: this.getErrorMessage(error, message)
     };
   }
 
@@ -243,21 +356,47 @@ export default class PaymentComponent extends LightningElement {
     return this.providerConfigs?.[providerName] || null;
   }
 
+  providerKeyForRenderer(rendererMode) {
+    if (
+      this.getProviderConfig(this.selectedProvider)?.rendererMode ===
+      rendererMode
+    ) {
+      return this.selectedProvider;
+    }
+    return this.paymentProviderDescriptors.find(
+      (provider) =>
+        this.getProviderConfig(provider.connectorKey)?.rendererMode ===
+        rendererMode
+    )?.connectorKey;
+  }
+
   getProviderLabel(providerName) {
-    const descriptor = this.paymentProviderDescriptors.find((provider) => provider.connectorKey === providerName);
-    return descriptor?.label || (providerName === "authorizenet" ? "Authorize.Net" : providerName || "Provider");
+    const descriptor = this.paymentProviderDescriptors.find(
+      (provider) => provider.connectorKey === providerName
+    );
+    return (
+      descriptor?.label ||
+      (providerName === "authorizenet"
+        ? "Authorize.Net"
+        : providerName || "Provider")
+    );
   }
 
   getProviderLogoText(providerName) {
     const label = this.getProviderLabel(providerName) || providerName || "?";
-    const words = label.trim().split(/[\s.]+/).filter(Boolean);
+    const words = label
+      .trim()
+      .split(/[\s.]+/)
+      .filter(Boolean);
     return words.length >= 2
       ? (words[0][0] + words[1][0]).toUpperCase()
       : label.slice(0, 2).toUpperCase();
   }
 
   getDisabledProviderMessage(config) {
-    return config?.active === true ? "" : "Subscribe to use this payment method.";
+    return config?.active === true
+      ? ""
+      : "Subscribe to use this payment method.";
   }
 
   getProviderStatusText(config) {
@@ -266,23 +405,28 @@ export default class PaymentComponent extends LightningElement {
 
   handleProviderSelection(event) {
     const selected = this.getProviderFromEvent(event);
-    if (!selected || selected === this.selectedProvider || !this.isProviderSelectable(selected)) return;
+    if (
+      !selected ||
+      selected === this.selectedProvider ||
+      !this.isProviderSelectable(selected)
+    )
+      return;
 
-    if (this.selectedProvider === "stripe" && selected !== "stripe") this.unmountStripeCardElement();
-    if (this.selectedProvider === "paypal" && selected !== "paypal") this.unmountPayPalButtons();
+    const previousMode = this.selectedRendererMode;
+    if (previousMode === "stripeElements") this.unmountStripeCardElement();
+    if (previousMode === "paypalButtons") this.unmountPayPalButtons();
 
     this.selectedProvider = selected;
     this.applyProviderTestDefaults();
     this.clearPaymentBillingFields();
 
-    const primeFns = {
-      stripe: () => { this.resetStripeDiagnostics(); this.logStripeStep("Stripe provider selected"); this.primeStripe(); },
-      authorizenet: () => this.primeAuthorizeNet(),
-      paypal: () => this.primePayPal(),
-    };
-    primeFns[this.selectedActionType]?.();
+    this.primeSelectedProvider();
 
-    this.dispatchEvent(new CustomEvent("providerchange", { detail: { provider: this.selectedProvider } }));
+    this.dispatchEvent(
+      new CustomEvent("providerchange", {
+        detail: { provider: this.selectedProvider }
+      })
+    );
   }
 
   applyProviderTestDefaults() {
@@ -306,7 +450,10 @@ export default class PaymentComponent extends LightningElement {
       await this.waitForStripeMount();
     } catch (error) {
       this.isStripeInitializing = false;
-      this.logStripeStep(`Stripe initialization failed: ${this.getErrorMessage(error)}`, error);
+      this.logStripeStep(
+        `Stripe initialization failed: ${this.getErrorMessage(error)}`,
+        error
+      );
     }
   }
 
@@ -321,19 +468,54 @@ export default class PaymentComponent extends LightningElement {
       await this.mountPayPalButtons();
     } catch (error) {
       this.isPaypalInitializing = false;
-      this.dispatchError(this.getErrorMessage(error, "PayPal failed to initialize."));
+      this.dispatchError(
+        this.getErrorMessage(error, "PayPal failed to initialize.")
+      );
     }
   }
 
-  preloadStripeInBackground() {
-    if (!this.getProviderConfig("stripe")?.active || this.stripePreloadQueued || this.stripeReadyPromise || this.stripeInstance) return;
+  primeSelectedProvider() {
+    if (this.selectedRendererMode === "acceptJs") {
+      this.primeAuthorizeNet();
+    } else if (this.selectedRendererMode === "stripeElements") {
+      this.resetStripeDiagnostics();
+      this.logStripeStep("Stripe provider selected");
+      this.primeStripe();
+    } else if (this.selectedRendererMode === "paypalButtons") {
+      this.primePayPal();
+    }
+  }
+
+  preloadRendererInBackground(rendererMode) {
+    const provider = this.paymentProviderDescriptors.find(
+      (descriptor) =>
+        this.getProviderConfig(descriptor.connectorKey)?.rendererMode ===
+          rendererMode &&
+        this.getProviderConfig(descriptor.connectorKey)?.active === true
+    );
+    if (rendererMode === "stripeElements" && provider) {
+      this.preloadStripeInBackground(provider.connectorKey);
+    }
+  }
+
+  preloadStripeInBackground(providerKey = this.selectedProvider) {
+    if (
+      !this.getProviderConfig(providerKey)?.active ||
+      this.stripePreloadQueued ||
+      this.stripeReadyPromise ||
+      this.stripeInstance
+    )
+      return;
     this.stripePreloadQueued = true;
-    const schedulePreload = typeof window.requestIdleCallback === "function"
+    const schedulePreload =
+      typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback.bind(window)
         : (callback) => window.setTimeout(callback, 0);
 
     schedulePreload(() => {
-      this.ensureStripeReady().catch(() => { this.stripeReadyPromise = null; });
+      this.ensureStripeReady().catch(() => {
+        this.stripeReadyPromise = null;
+      });
     });
   }
 
@@ -344,14 +526,16 @@ export default class PaymentComponent extends LightningElement {
         this.isStripeInitializing = false;
         return;
       }
-      await new Promise((resolve) => { window.setTimeout(resolve, delayMs); });
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, delayMs);
+      });
     }
     this.isStripeInitializing = false;
     throw new Error("Stripe card entry could not be rendered.");
   }
 
   @api async handlesubmit(priceValue) {
-    if (this.selectedProvider === "paypal") {
+    if (this.selectedRendererMode === "paypalButtons") {
       this.dispatchError("Use the PayPal button to complete checkout.");
       return;
     }
@@ -362,12 +546,14 @@ export default class PaymentComponent extends LightningElement {
       this.showErrorModal = false;
       const resolvedAmount = this.resolveAmount(priceValue);
 
-      const actionType = this.selectedActionType;
-      if (actionType === "stripe") {
+      const rendererMode = this.selectedRendererMode;
+      if (rendererMode === "stripeElements") {
         this.resetStripeDiagnostics();
-        this.logStripeStep(`Stripe submit started for amount ${resolvedAmount}`);
+        this.logStripeStep(
+          `Stripe submit started for amount ${resolvedAmount}`
+        );
         await this.handleStripeSubmit(resolvedAmount);
-      } else if (actionType === "authorizenet") {
+      } else if (rendererMode === "acceptJs") {
         await this.handleAuthorizeNetSubmit(resolvedAmount);
       } else {
         await this.handleHostedSubmit(resolvedAmount);
@@ -381,7 +567,9 @@ export default class PaymentComponent extends LightningElement {
 
   async handleProceedClick() {
     if (!this.hasAvailableProviders) {
-      this.dispatchError("No payment option is available right now. Subscribe to use these services.");
+      this.dispatchError(
+        "No payment option is available right now. Subscribe to use these services."
+      );
       return;
     }
     await this.handlesubmit(this.amount);
@@ -425,8 +613,8 @@ export default class PaymentComponent extends LightningElement {
         state: paymentDetails.cardState,
         zip: paymentDetails.cardZipCode,
         country: paymentDetails.cardCountry,
-        transactionType: "authCaptureTransaction",
-      },
+        transactionType: "authCaptureTransaction"
+      }
     });
 
     if (!response?.success || !response?.transId) {
@@ -440,7 +628,9 @@ export default class PaymentComponent extends LightningElement {
     this.logStripeStep("Validating Stripe form fields");
     const paymentDetails = this.collectStripePaymentDetails(resolvedAmount);
     if (this.errorReturnObj) {
-      this.logStripeStep(`Stripe validation failed: ${this.errorReturnObj.message}`);
+      this.logStripeStep(
+        `Stripe validation failed: ${this.errorReturnObj.message}`
+      );
       this.dispatchError(this.errorReturnObj.message);
       return;
     }
@@ -468,17 +658,23 @@ export default class PaymentComponent extends LightningElement {
           city: paymentDetails.cardCity,
           state: paymentDetails.cardState,
           postal_code: paymentDetails.cardZipCode,
-          country: paymentDetails.cardCountry,
-        },
-      },
+          country: paymentDetails.cardCountry
+        }
+      }
     });
 
     if (stripeResponse?.error) {
-      this.logStripeStep(`Stripe createPaymentMethod failed: ${stripeResponse.error.message || "Unknown error"}`);
-      throw new Error(stripeResponse.error.message || "Stripe payment setup failed.");
+      this.logStripeStep(
+        `Stripe createPaymentMethod failed: ${stripeResponse.error.message || "Unknown error"}`
+      );
+      throw new Error(
+        stripeResponse.error.message || "Stripe payment setup failed."
+      );
     }
 
-    this.logStripeStep(`Stripe PaymentMethod created: ${stripeResponse?.paymentMethod?.id || "missing id"}`);
+    this.logStripeStep(
+      `Stripe PaymentMethod created: ${stripeResponse?.paymentMethod?.id || "missing id"}`
+    );
     this.logStripeStep("Calling Apex StripePaymentService.processPayment");
 
     const response = await executePayment({
@@ -493,11 +689,13 @@ export default class PaymentComponent extends LightningElement {
         state: paymentDetails.cardState,
         zip: paymentDetails.cardZipCode,
         country: paymentDetails.cardCountry,
-        currencyCode: "usd",
-      },
+        currencyCode: "usd"
+      }
     });
 
-    this.logStripeStep(`Apex responded: success=${response?.success === true}, transId=${response?.transId || "n/a"}, message=${response?.message || "n/a"}`);
+    this.logStripeStep(
+      `Apex responded: success=${response?.success === true}, transId=${response?.transId || "n/a"}, message=${response?.message || "n/a"}`
+    );
 
     if (!response?.success || !response?.transId) {
       this.dispatchError(response?.message || "Transaction Unsuccessful");
@@ -514,11 +712,13 @@ export default class PaymentComponent extends LightningElement {
       request: {
         providerKey: this.selectedProvider,
         amount: Number(resolvedAmount),
-        orderId: this.orderId || null,
-      },
+        orderId: this.orderId || null
+      }
     });
     if (!response?.success) {
-      this.dispatchError(response?.message || "Hosted checkout could not be started.");
+      this.dispatchError(
+        response?.message || "Hosted checkout could not be started."
+      );
       return;
     }
     if (response.approveLink) {
@@ -564,7 +764,7 @@ export default class PaymentComponent extends LightningElement {
       cardCity: cardCity?.value?.trim() || "",
       cardState: cardState?.value || "",
       cardZipCode: cardZipCode?.value?.trim() || "",
-      cardCountry: cardCountry?.value?.trim() || "",
+      cardCountry: cardCountry?.value?.trim() || ""
     };
   }
 
@@ -594,7 +794,7 @@ export default class PaymentComponent extends LightningElement {
       cardCity: cardCity?.value?.trim() || "",
       cardState: cardState?.value || "",
       cardZipCode: cardZipCode?.value?.trim() || "",
-      cardCountry: cardCountry?.value?.trim() || "",
+      cardCountry: cardCountry?.value?.trim() || ""
     };
   }
 
@@ -604,7 +804,9 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("cardName", value);
   }
 
-  handleCardNameBlur(event) { this.validateCardNameField(event.target); }
+  handleCardNameBlur(event) {
+    this.validateCardNameField(event.target);
+  }
 
   handleCardNumberInput(event) {
     const digits = (event.target.value || "").replace(/\D/g, "").slice(0, 16);
@@ -613,7 +815,9 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("cardNumber", value);
   }
 
-  handleCardNumberBlur(event) { this.validateCardNumberField(event.target); }
+  handleCardNumberBlur(event) {
+    this.validateCardNumberField(event.target);
+  }
 
   handleCvvInput(event) {
     const value = (event.target.value || "").replace(/\D/g, "").slice(0, 4);
@@ -621,19 +825,27 @@ export default class PaymentComponent extends LightningElement {
     this.updatePaymentForm("securityCode", value);
   }
 
-  handleCvvBlur(event) { this.validateCvvField(event.target); }
+  handleCvvBlur(event) {
+    this.validateCvvField(event.target);
+  }
 
   handleZipInput(event) {
-    const value = (event.target.value || "").replace(/[^a-zA-Z0-9\-\s]/g, "").slice(0, 20);
+    const value = (event.target.value || "")
+      .replace(/[^a-zA-Z0-9\-\s]/g, "")
+      .slice(0, 20);
     event.target.value = value;
     this.updatePaymentForm("cardZipCode", value);
   }
 
-  handleZipBlur(event) { this.validateZipField(event.target); }
+  handleZipBlur(event) {
+    this.validateZipField(event.target);
+  }
 
   handleExpiryChange(event) {
-    if (event?.target?.classList?.contains("monthOptions")) this.updatePaymentForm("cardMonth", event.target.value || "");
-    if (event?.target?.classList?.contains("yearOptions")) this.updatePaymentForm("cardYear", event.target.value || "");
+    if (event?.target?.classList?.contains("monthOptions"))
+      this.updatePaymentForm("cardMonth", event.target.value || "");
+    if (event?.target?.classList?.contains("yearOptions"))
+      this.updatePaymentForm("cardYear", event.target.value || "");
 
     const monthField = this.template.querySelector(".monthOptions");
     const yearField = this.template.querySelector(".yearOptions");
@@ -656,7 +868,8 @@ export default class PaymentComponent extends LightningElement {
     let message = "";
     if (!value) message = "Card Name is missing";
     else if (value.length < 2) message = "Enter the full cardholder name";
-    else if (!/^[a-zA-Z .,'-]{2,64}$/.test(value)) message = "Enter a valid cardholder name";
+    else if (!/^[a-zA-Z .,'-]{2,64}$/.test(value))
+      message = "Enter a valid cardholder name";
 
     field.setCustomValidity(message);
     field.reportValidity();
@@ -668,8 +881,10 @@ export default class PaymentComponent extends LightningElement {
     const digits = (field.value || "").replace(/\D/g, "");
     let message = "";
     if (!digits) message = "Card Number is missing";
-    else if (digits.length < 13 || digits.length > 16) message = "Enter a valid card number";
-    else if (!this.isValidCardNumber(digits)) message = "Enter a valid card number";
+    else if (digits.length < 13 || digits.length > 16)
+      message = "Enter a valid card number";
+    else if (!this.isValidCardNumber(digits))
+      message = "Enter a valid card number";
 
     field.setCustomValidity(message);
     field.reportValidity();
@@ -702,17 +917,35 @@ export default class PaymentComponent extends LightningElement {
       const currentMonth = today.getMonth() + 1;
       const currentYear = today.getFullYear();
 
-      if (Number.isNaN(monthNumber) || monthNumber < 1 || monthNumber > 12) message = "Enter a valid expiry month";
-      else if (Number.isNaN(yearNumber) || yearNumber < currentYear || yearNumber > currentYear + 20) message = "Enter a valid expiry year";
-      else if (yearNumber === currentYear && monthNumber < currentMonth) message = "Card expiry date must be in the future";
+      if (Number.isNaN(monthNumber) || monthNumber < 1 || monthNumber > 12)
+        message = "Enter a valid expiry month";
+      else if (
+        Number.isNaN(yearNumber) ||
+        yearNumber < currentYear ||
+        yearNumber > currentYear + 20
+      )
+        message = "Enter a valid expiry year";
+      else if (yearNumber === currentYear && monthNumber < currentMonth)
+        message = "Card expiry date must be in the future";
     }
 
     if (monthField) {
-      monthField.setCustomValidity(message === "Card Month is missing" || message === "Enter a valid expiry month" ? message : "");
+      monthField.setCustomValidity(
+        message === "Card Month is missing" ||
+          message === "Enter a valid expiry month"
+          ? message
+          : ""
+      );
       monthField.reportValidity();
     }
     if (yearField) {
-      yearField.setCustomValidity(message === "Card Year is missing" || message === "Enter a valid expiry year" || message === "Card expiry date must be in the future" ? message : "");
+      yearField.setCustomValidity(
+        message === "Card Year is missing" ||
+          message === "Enter a valid expiry year" ||
+          message === "Card expiry date must be in the future"
+          ? message
+          : ""
+      );
       yearField.reportValidity();
     }
     return message;
@@ -722,17 +955,20 @@ export default class PaymentComponent extends LightningElement {
     if (!field) return "";
     const value = (field.value || "").trim();
     let message = "";
-    if (value && !/^[a-zA-Z0-9\-\s]{3,20}$/.test(value)) message = "Enter a valid ZIP or postal code";
+    if (value && !/^[a-zA-Z0-9\-\s]{3,20}$/.test(value))
+      message = "Enter a valid ZIP or postal code";
     field.setCustomValidity(message);
     field.reportValidity();
     return message;
   }
 
   validateStripeCardElement() {
-    if (!this.stripeCardMounted || !this.stripeCardElement) return "Stripe card details are not ready.";
+    if (!this.stripeCardMounted || !this.stripeCardElement)
+      return "Stripe card details are not ready.";
     if (this.stripeCardError) return this.stripeCardError;
     if (!this.stripeCardComplete) {
-      if (typeof this.stripeCardElement.focus === "function") this.stripeCardElement.focus();
+      if (typeof this.stripeCardElement.focus === "function")
+        this.stripeCardElement.focus();
       return "Enter the card number, expiry, and CVC in the Stripe card field.";
     }
     return "";
@@ -755,19 +991,26 @@ export default class PaymentComponent extends LightningElement {
 
   async ensureAuthorizeNetReady() {
     if (!this.authorizeNetReadyPromise) {
-      this.authorizeNetReadyPromise = this.loadAuthorizeNetResources().catch((error) => {
-        this.authorizeNetReadyPromise = null;
-        throw error;
-      });
+      this.authorizeNetReadyPromise = this.loadAuthorizeNetResources().catch(
+        (error) => {
+          this.authorizeNetReadyPromise = null;
+          throw error;
+        }
+      );
     }
     return this.authorizeNetReadyPromise;
   }
 
   async loadAuthorizeNetResources() {
-    let cfg = this.getProviderConfig("authorizenet");
-    if (!cfg) { await this.initializeProviderConfigs(); cfg = this.getProviderConfig("authorizenet"); }
-    if (cfg?.active === false) throw new Error(cfg?.message || "Authorize.Net is currently inactive.");
-    if (!cfg?.configured) throw new Error(cfg?.message || "Authorize.Net is not fully configured.");
+    let cfg = this.getProviderConfig(this.providerKeyForRenderer("acceptJs"));
+    if (!cfg) {
+      await this.initializeProviderConfigs();
+      cfg = this.getProviderConfig(this.providerKeyForRenderer("acceptJs"));
+    }
+    if (cfg?.active === false)
+      throw new Error(cfg?.message || "Authorize.Net is currently inactive.");
+    if (!cfg?.configured)
+      throw new Error(cfg?.message || "Authorize.Net is not fully configured.");
 
     const libraryUrl = cfg.acceptJsUrl;
     if (!libraryUrl) throw new Error("Authorize.Net script URL is missing.");
@@ -795,16 +1038,27 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadStripeResources() {
-    let cfg = this.getProviderConfig("stripe");
-    if (!cfg) { await this.initializeProviderConfigs(); cfg = this.getProviderConfig("stripe"); }
-    if (cfg?.active === false) throw new Error(cfg?.message || "Stripe is currently inactive.");
-    if (!cfg?.configured) throw new Error(cfg?.message || "Stripe is not fully configured.");
-    if (!cfg?.publishableKey) throw new Error("Stripe publishable key is missing.");
+    let cfg = this.getProviderConfig(
+      this.providerKeyForRenderer("stripeElements")
+    );
+    if (!cfg) {
+      await this.initializeProviderConfigs();
+      cfg = this.getProviderConfig(
+        this.providerKeyForRenderer("stripeElements")
+      );
+    }
+    if (cfg?.active === false)
+      throw new Error(cfg?.message || "Stripe is currently inactive.");
+    if (!cfg?.configured)
+      throw new Error(cfg?.message || "Stripe is not fully configured.");
+    if (!cfg?.publishableKey)
+      throw new Error("Stripe publishable key is missing.");
 
     const libraryUrl = cfg.stripeJsUrl;
     if (!libraryUrl) throw new Error("Stripe script URL is missing.");
 
-    if (window.Stripe && this.stripeJsUrl === libraryUrl && this.stripeInstance) return cfg;
+    if (window.Stripe && this.stripeJsUrl === libraryUrl && this.stripeInstance)
+      return cfg;
 
     if (!stripeJsPromise || this.stripeJsUrl !== libraryUrl) {
       this.stripeJsUrl = libraryUrl;
@@ -814,7 +1068,8 @@ export default class PaymentComponent extends LightningElement {
     await stripeJsPromise;
     await this.waitForStripeGlobal();
     this.stripeInstance = window.Stripe(cfg.publishableKey);
-    if (!this.stripeInstance) throw new Error("Stripe did not initialize correctly.");
+    if (!this.stripeInstance)
+      throw new Error("Stripe did not initialize correctly.");
     return cfg;
   }
 
@@ -829,10 +1084,19 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadPayPalResources() {
-    let cfg = this.getProviderConfig("paypal");
-    if (!cfg) { await this.initializeProviderConfigs(); cfg = this.getProviderConfig("paypal"); }
-    if (cfg?.active === false) throw new Error(cfg?.message || "PayPal is currently inactive.");
-    if (!cfg?.configured) throw new Error(cfg?.message || "PayPal is not fully configured.");
+    let cfg = this.getProviderConfig(
+      this.providerKeyForRenderer("paypalButtons")
+    );
+    if (!cfg) {
+      await this.initializeProviderConfigs();
+      cfg = this.getProviderConfig(
+        this.providerKeyForRenderer("paypalButtons")
+      );
+    }
+    if (cfg?.active === false)
+      throw new Error(cfg?.message || "PayPal is currently inactive.");
+    if (!cfg?.configured)
+      throw new Error(cfg?.message || "PayPal is not fully configured.");
 
     const libraryUrl = cfg.payPalJsUrl;
     if (!libraryUrl) throw new Error("PayPal script URL is missing.");
@@ -850,47 +1114,84 @@ export default class PaymentComponent extends LightningElement {
 
   waitForAcceptGlobal(maxWaitMs = 3000, intervalMs = 50) {
     return new Promise((resolve, reject) => {
-      if (window.Accept && typeof window.Accept.dispatchData === "function") { resolve(); return; }
+      if (window.Accept && typeof window.Accept.dispatchData === "function") {
+        resolve();
+        return;
+      }
       let elapsed = 0;
       const timer = setInterval(() => {
         elapsed += intervalMs;
-        if (window.Accept && typeof window.Accept.dispatchData === "function") { clearInterval(timer); resolve(); }
-        else if (elapsed >= maxWaitMs) { clearInterval(timer); reject(new Error("Authorize.Net library did not initialize correctly.")); }
+        if (window.Accept && typeof window.Accept.dispatchData === "function") {
+          clearInterval(timer);
+          resolve();
+        } else if (elapsed >= maxWaitMs) {
+          clearInterval(timer);
+          reject(
+            new Error("Authorize.Net library did not initialize correctly.")
+          );
+        }
       }, intervalMs);
     });
   }
 
   waitForStripeGlobal(maxWaitMs = 3000, intervalMs = 50) {
     return new Promise((resolve, reject) => {
-      if (window.Stripe && typeof window.Stripe === "function") { resolve(); return; }
+      if (window.Stripe && typeof window.Stripe === "function") {
+        resolve();
+        return;
+      }
       let elapsed = 0;
       const timer = setInterval(() => {
         elapsed += intervalMs;
-        if (window.Stripe && typeof window.Stripe === "function") { clearInterval(timer); resolve(); }
-        else if (elapsed >= maxWaitMs) { clearInterval(timer); reject(new Error("Stripe library did not initialize correctly.")); }
+        if (window.Stripe && typeof window.Stripe === "function") {
+          clearInterval(timer);
+          resolve();
+        } else if (elapsed >= maxWaitMs) {
+          clearInterval(timer);
+          reject(new Error("Stripe library did not initialize correctly."));
+        }
       }, intervalMs);
     });
   }
 
   waitForPayPalGlobal(maxWaitMs = 3000, intervalMs = 50) {
     return new Promise((resolve, reject) => {
-      if (window.paypal && typeof window.paypal.Buttons === "function") { resolve(); return; }
+      if (window.paypal && typeof window.paypal.Buttons === "function") {
+        resolve();
+        return;
+      }
       let elapsed = 0;
       const timer = setInterval(() => {
         elapsed += intervalMs;
-        if (window.paypal && typeof window.paypal.Buttons === "function") { clearInterval(timer); resolve(); }
-        else if (elapsed >= maxWaitMs) { clearInterval(timer); reject(new Error("PayPal library did not initialize correctly.")); }
+        if (window.paypal && typeof window.paypal.Buttons === "function") {
+          clearInterval(timer);
+          resolve();
+        } else if (elapsed >= maxWaitMs) {
+          clearInterval(timer);
+          reject(new Error("PayPal library did not initialize correctly."));
+        }
       }, intervalMs);
     });
   }
 
   loadExternalScript(url) {
     return new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(`script[data-authorize-net-src="${url}"]`);
+      const existingScript = document.querySelector(
+        `script[data-authorize-net-src="${url}"]`
+      );
       if (existingScript) {
-        if (window.Accept && typeof window.Accept.dispatchData === "function") { resolve(); return; }
-        existingScript.addEventListener("load", () => resolve(), { once: true });
-        existingScript.addEventListener("error", () => reject(new Error("Failed to load Authorize.Net library.")), { once: true });
+        if (window.Accept && typeof window.Accept.dispatchData === "function") {
+          resolve();
+          return;
+        }
+        existingScript.addEventListener("load", () => resolve(), {
+          once: true
+        });
+        existingScript.addEventListener(
+          "error",
+          () => reject(new Error("Failed to load Authorize.Net library.")),
+          { once: true }
+        );
         return;
       }
       const script = document.createElement("script");
@@ -899,18 +1200,30 @@ export default class PaymentComponent extends LightningElement {
       script.charset = "utf-8";
       script.dataset.authorizeNetSrc = url;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load Authorize.Net library."));
+      script.onerror = () =>
+        reject(new Error("Failed to load Authorize.Net library."));
       document.head.appendChild(script);
     });
   }
 
   loadStripeScript(url) {
     return new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(`script[data-stripe-src="${url}"]`);
+      const existingScript = document.querySelector(
+        `script[data-stripe-src="${url}"]`
+      );
       if (existingScript) {
-        if (window.Stripe && typeof window.Stripe === "function") { resolve(); return; }
-        existingScript.addEventListener("load", () => resolve(), { once: true });
-        existingScript.addEventListener("error", () => reject(new Error("Failed to load Stripe library.")), { once: true });
+        if (window.Stripe && typeof window.Stripe === "function") {
+          resolve();
+          return;
+        }
+        existingScript.addEventListener("load", () => resolve(), {
+          once: true
+        });
+        existingScript.addEventListener(
+          "error",
+          () => reject(new Error("Failed to load Stripe library.")),
+          { once: true }
+        );
         return;
       }
       const script = document.createElement("script");
@@ -919,18 +1232,30 @@ export default class PaymentComponent extends LightningElement {
       script.charset = "utf-8";
       script.dataset.stripeSrc = url;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load Stripe library."));
+      script.onerror = () =>
+        reject(new Error("Failed to load Stripe library."));
       document.head.appendChild(script);
     });
   }
 
   loadPayPalScript(url) {
     return new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(`script[data-paypal-src="${url}"]`);
+      const existingScript = document.querySelector(
+        `script[data-paypal-src="${url}"]`
+      );
       if (existingScript) {
-        if (window.paypal && typeof window.paypal.Buttons === "function") { resolve(); return; }
-        existingScript.addEventListener("load", () => resolve(), { once: true });
-        existingScript.addEventListener("error", () => reject(new Error("Failed to load PayPal library.")), { once: true });
+        if (window.paypal && typeof window.paypal.Buttons === "function") {
+          resolve();
+          return;
+        }
+        existingScript.addEventListener("load", () => resolve(), {
+          once: true
+        });
+        existingScript.addEventListener(
+          "error",
+          () => reject(new Error("Failed to load PayPal library.")),
+          { once: true }
+        );
         return;
       }
       const script = document.createElement("script");
@@ -939,7 +1264,8 @@ export default class PaymentComponent extends LightningElement {
       script.charset = "utf-8";
       script.dataset.paypalSrc = url;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load PayPal library."));
+      script.onerror = () =>
+        reject(new Error("Failed to load PayPal library."));
       document.head.appendChild(script);
     });
   }
@@ -968,11 +1294,12 @@ export default class PaymentComponent extends LightningElement {
             state: this.paymentForm.cardState,
             zip: this.paymentForm.cardZipCode,
             country: this.paymentForm.cardCountry,
-            currencyCode: "USD",
-          },
+            currencyCode: "USD"
+          }
         });
 
-        if (!response?.success || !response?.paypalOrderId) throw new Error(response?.message || "PayPal order creation failed.");
+        if (!response?.success || !response?.paypalOrderId)
+          throw new Error(response?.message || "PayPal order creation failed.");
         return response.paypalOrderId;
       },
       onApprove: async (data) => {
@@ -981,23 +1308,31 @@ export default class PaymentComponent extends LightningElement {
             request: {
               providerKey: "paypal",
               paypalOrderId: data?.orderID,
-              orderId: this.orderId || null,
-            },
+              orderId: this.orderId || null
+            }
           });
           if (!response?.success || !response?.transId) {
             this.dispatchError(response?.message || "PayPal capture failed.");
             return;
           }
-          this.dispatchSuccess({ ...response, message: response.message || "Transaction Successful", resultCode: response.resultCode || "Ok" });
+          this.dispatchSuccess({
+            ...response,
+            message: response.message || "Transaction Successful",
+            resultCode: response.resultCode || "Ok"
+          });
         } finally {
           this.isSubmitting = false;
         }
       },
-      onCancel: () => { this.isSubmitting = false; },
+      onCancel: () => {
+        this.isSubmitting = false;
+      },
       onError: (error) => {
         this.isSubmitting = false;
-        this.dispatchError(this.getErrorMessage(error, "PayPal checkout failed."));
-      },
+        this.dispatchError(
+          this.getErrorMessage(error, "PayPal checkout failed.")
+        );
+      }
     });
 
     await this.paypalButtonsInstance.render(host);
@@ -1008,7 +1343,11 @@ export default class PaymentComponent extends LightningElement {
   unmountPayPalButtons() {
     const host = this.template.querySelector(".paypal-button-container");
     if (host) host.innerHTML = "";
-    if (this.paypalButtonsInstance && typeof this.paypalButtonsInstance.close === "function") this.paypalButtonsInstance.close();
+    if (
+      this.paypalButtonsInstance &&
+      typeof this.paypalButtonsInstance.close === "function"
+    )
+      this.paypalButtonsInstance.close();
     this.paypalButtonsInstance = null;
     this.paypalButtonsMounted = false;
     this.isPaypalInitializing = false;
@@ -1022,9 +1361,14 @@ export default class PaymentComponent extends LightningElement {
     this.stripeCardElement = elements.create("card", {
       hidePostalCode: true,
       style: {
-        base: { color: "#1f2a44", fontFamily: 'Arial, sans-serif', fontSize: "16px", "::placeholder": { color: "#6b7280" } },
-        invalid: { color: "#c23934" },
-      },
+        base: {
+          color: "#1f2a44",
+          fontFamily: "Arial, sans-serif",
+          fontSize: "16px",
+          "::placeholder": { color: "#6b7280" }
+        },
+        invalid: { color: "#c23934" }
+      }
     });
     this.stripeCardElement.mount(host);
     this.stripeCardMounted = true;
@@ -1035,8 +1379,10 @@ export default class PaymentComponent extends LightningElement {
     this.stripeCardElement.on("change", (event) => {
       this.stripeCardComplete = !!event.complete;
       this.stripeCardError = event.error?.message || "";
-      if (event.error?.message) this.logStripeStep(`Stripe card error: ${event.error.message}`);
-      else if (event.complete) this.logStripeStep("Stripe card details are complete");
+      if (event.error?.message)
+        this.logStripeStep(`Stripe card error: ${event.error.message}`);
+      else if (event.complete)
+        this.logStripeStep("Stripe card details are complete");
     });
   }
 
@@ -1054,20 +1400,33 @@ export default class PaymentComponent extends LightningElement {
   tokenizePaymentData(config, paymentDetails) {
     return new Promise((resolve, reject) => {
       const secureData = {
-        authData: { clientKey: config.publicClientKey, apiLoginID: config.apiLoginId },
-        cardData: {
-          cardNumber: paymentDetails.cardNumber, month: paymentDetails.cardMonth, year: paymentDetails.cardYear,
-          cardCode: paymentDetails.securityCode, zip: paymentDetails.cardZipCode, fullName: paymentDetails.cardName,
+        authData: {
+          clientKey: config.publicClientKey,
+          apiLoginID: config.apiLoginId
         },
+        cardData: {
+          cardNumber: paymentDetails.cardNumber,
+          month: paymentDetails.cardMonth,
+          year: paymentDetails.cardYear,
+          cardCode: paymentDetails.securityCode,
+          zip: paymentDetails.cardZipCode,
+          fullName: paymentDetails.cardName
+        }
       };
 
       window.Accept.dispatchData(secureData, (response) => {
         if (response?.messages?.resultCode === "Error") {
-          const errorMessages = (response.messages.message || []).map((item) => item.text).filter((item) => !!item).join(" ");
+          const errorMessages = (response.messages.message || [])
+            .map((item) => item.text)
+            .filter((item) => !!item)
+            .join(" ");
           reject(new Error(errorMessages || "Payment tokenization failed."));
           return;
         }
-        if (!response?.opaqueData?.dataDescriptor || !response?.opaqueData?.dataValue) {
+        if (
+          !response?.opaqueData?.dataDescriptor ||
+          !response?.opaqueData?.dataValue
+        ) {
           reject(new Error("Payment tokenization failed."));
           return;
         }
@@ -1077,7 +1436,11 @@ export default class PaymentComponent extends LightningElement {
   }
 
   clearSensitiveFields() {
-    this.paymentForm = { ...this.paymentForm, cardNumber: "", securityCode: "" };
+    this.paymentForm = {
+      ...this.paymentForm,
+      cardNumber: "",
+      securityCode: ""
+    };
   }
 
   clearStripeSensitiveFields() {
@@ -1091,60 +1454,91 @@ export default class PaymentComponent extends LightningElement {
     this.dispatchEvent(new CustomEvent("successmodalclose"));
   }
 
-  closeErrorModal() { this.showErrorModal = false; }
+  closeErrorModal() {
+    this.showErrorModal = false;
+  }
 
   resetStripeDiagnostics() {
     this.stripeDebugMessages = [];
     this.stripeLastStep = "Idle";
   }
 
-  logStripeStep(message, payload) {
+  logStripeStep(message) {
     this.stripeLastStep = message;
     this.stripeDebugMessages = [...this.stripeDebugMessages, message];
   }
 
   dispatchSuccess(response) {
-    if (this.selectedProvider === "stripe") this.logStripeStep("Dispatching Stripe success event", response);
+    if (this.selectedProvider === "stripe")
+      this.logStripeStep("Dispatching Stripe success event", response);
 
     this.successDetails = {
-      message: response.message || "Transaction Successful", transId: response.transId || "",
-      authCode: response.authCode || "", resultCode: response.resultCode || "Ok",
+      message: response.message || "Transaction Successful",
+      transId: response.transId || "",
+      authCode: response.authCode || "",
+      resultCode: response.resultCode || "Ok"
     };
     this.showSuccessModal = true;
 
-    this.dispatchEvent(new CustomEvent("success", {
-      detail: {
-        resultCode: response.resultCode || "Ok", message: response.message || "Transaction Successful",
-        transId: response.transId, provider: this.selectedProvider, authCode: response.authCode,
-      },
-    }));
+    this.dispatchEvent(
+      new CustomEvent("success", {
+        detail: {
+          resultCode: response.resultCode || "Ok",
+          message: response.message || "Transaction Successful",
+          transId: response.transId,
+          provider: this.selectedProvider,
+          authCode: response.authCode
+        }
+      })
+    );
   }
 
   dispatchError(message) {
-    if (this.selectedProvider === "stripe") this.logStripeStep(`Dispatching Stripe error: ${message}`);
+    if (this.selectedProvider === "stripe")
+      this.logStripeStep(`Dispatching Stripe error: ${message}`);
     this.errorDetails = {
-      message, provider: this.selectedProvider,
-      step: this.selectedProvider === "stripe" ? this.stripeLastStep : "Payment failed",
+      message,
+      provider: this.selectedProvider,
+      step:
+        this.selectedProvider === "stripe"
+          ? this.stripeLastStep
+          : "Payment failed"
     };
     this.showErrorModal = true;
 
-    this.dispatchEvent(new CustomEvent("error", { detail: { message, resultCode: "Error" } }));
+    this.dispatchEvent(
+      new CustomEvent("error", { detail: { message, resultCode: "Error" } })
+    );
   }
 
-  getErrorMessage(errorOrMessage, fallbackMessage = "Something went wrong. Please try again.") {
-    if (typeof errorOrMessage === "string") return errorOrMessage || fallbackMessage;
+  getErrorMessage(
+    errorOrMessage,
+    fallbackMessage = "Something went wrong. Please try again."
+  ) {
+    if (typeof errorOrMessage === "string")
+      return errorOrMessage || fallbackMessage;
     const body = errorOrMessage?.body;
     if (typeof body?.message === "string" && body.message) return body.message;
     if (Array.isArray(body) && body.length > 0) {
-      const bodyMessages = body.map((item) => item?.message).filter((message) => typeof message === "string" && message);
+      const bodyMessages = body
+        .map((item) => item?.message)
+        .filter((message) => typeof message === "string" && message);
       if (bodyMessages.length > 0) return bodyMessages.join(" ");
     }
     if (Array.isArray(body?.pageErrors) && body.pageErrors.length > 0) {
-      const pageErrorMessages = body.pageErrors.map((item) => item?.message).filter((message) => typeof message === "string" && message);
+      const pageErrorMessages = body.pageErrors
+        .map((item) => item?.message)
+        .filter((message) => typeof message === "string" && message);
       if (pageErrorMessages.length > 0) return pageErrorMessages.join(" ");
     }
-    if (typeof body?.exceptionType === "string" && typeof body?.message === "string" && body.message) return `${body.exceptionType}: ${body.message}`;
-    if (typeof errorOrMessage?.message === "string" && errorOrMessage.message) return errorOrMessage.message;
+    if (
+      typeof body?.exceptionType === "string" &&
+      typeof body?.message === "string" &&
+      body.message
+    )
+      return `${body.exceptionType}: ${body.message}`;
+    if (typeof errorOrMessage?.message === "string" && errorOrMessage.message)
+      return errorOrMessage.message;
     return fallbackMessage;
   }
 
@@ -1156,14 +1550,27 @@ export default class PaymentComponent extends LightningElement {
 
   clearPaymentBillingFields() {
     this.paymentForm = {
-      ...this.paymentForm, cardName: '', cardNumber: '', securityCode: '', cardMonth: '', cardYear: '',
-      cardAddressOne: '', cardCity: '', cardState: '', cardZipCode: '', cardCountry: ''
+      ...this.paymentForm,
+      cardName: "",
+      cardNumber: "",
+      securityCode: "",
+      cardMonth: "",
+      cardYear: "",
+      cardAddressOne: "",
+      cardCity: "",
+      cardState: "",
+      cardZipCode: "",
+      cardCountry: ""
     };
   }
 
-  handleCancelClick() { this.showCancelWarningModal = true; }
+  handleCancelClick() {
+    this.showCancelWarningModal = true;
+  }
 
-  closeWarningModal() { this.showCancelWarningModal = false; }
+  closeWarningModal() {
+    this.showCancelWarningModal = false;
+  }
 
   confirmCancel() {
     this.showCancelWarningModal = false;

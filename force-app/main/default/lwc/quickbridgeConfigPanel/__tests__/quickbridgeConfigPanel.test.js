@@ -37,8 +37,6 @@ jest.mock(
   { virtual: true }
 );
 
-const SESSION_STORAGE_KEY = "quickbridge.adminSession";
-
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
@@ -79,7 +77,7 @@ describe("c-quickbridge-config-panel admin session", () => {
     sessionStorage.clear();
   });
 
-  it("keeps a valid admin session across page reloads", async () => {
+  it("keeps admin session tokens in memory only", async () => {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     verifyCredentialsAndGetGateways.mockResolvedValue(
       JSON.stringify({
@@ -106,21 +104,19 @@ describe("c-quickbridge-config-panel admin session", () => {
       .dispatchEvent(new CustomEvent("submit"));
     await flushPromises();
 
-    expect(sessionStorage.getItem(SESSION_STORAGE_KEY)).toContain(
-      "active-session-token"
-    );
+    expect(sessionStorage.length).toBe(0);
     expect(
       element.shadowRoot.querySelector(".nav-button.logout")
     ).not.toBeNull();
 
+    getConnectorConfigs.mockClear();
+    getConfigPanelPreferences.mockClear();
     document.body.removeChild(element);
     element = appendPanel();
     await flushPromises();
 
-    expect(
-      element.shadowRoot.querySelector(".nav-button.logout")
-    ).not.toBeNull();
-    expect(getConnectorConfigs).toHaveBeenCalled();
-    expect(getConfigPanelPreferences).toHaveBeenCalled();
+    expect(element.shadowRoot.querySelector(".nav-button.logout")).toBeNull();
+    expect(getConnectorConfigs).not.toHaveBeenCalled();
+    expect(getConfigPanelPreferences).not.toHaveBeenCalled();
   });
 });
