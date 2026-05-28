@@ -12,13 +12,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
     private Boolean getConfigValue() {
         try {
-            Quickbridge_Config__mdt config = [
-                SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c 
-                FROM QuickBridgeTLG__Quickbridge_Config__mdt 
-                WHERE DeveloperName = 'QuickBooks' 
-                LIMIT 1
-            ];
-            return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
+            return ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
         } catch (Exception e) {
             System.debug('Could not load Draft Order setting: ' + e.getMessage());
             return false;

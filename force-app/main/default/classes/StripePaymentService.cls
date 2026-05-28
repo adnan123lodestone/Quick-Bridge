@@ -79,6 +79,14 @@ public with sharing class StripePaymentService {
         public Boolean supportsHostedInvoiceUrlField;
     }
 
+    private class RuntimeConfig {
+        Boolean active;
+        Date startDate;
+        Date endDate;
+        String publishableKey;
+        Boolean useSandbox;
+    }
+
     private class StripeCustomerResolution {
         private String customerId;
         private Id accountId;
@@ -89,16 +97,16 @@ public with sharing class StripePaymentService {
     public static ClientConfigResponse getClientConfig() {
         ClientConfigResponse response = new ClientConfigResponse();
         try {
-            Quickbridge_Config__mdt config = getConfig();
+            RuntimeConfig config = getConfig();
 
             String availabilityMessage = getAvailabilityMessage(config);
             response.active = availabilityMessage == null;
-            response.publishableKey = config.Stripe_Publishable_Key__c;
-            response.useSandbox = config.Stripe_Use_Sandbox__c;
+            response.publishableKey = config.publishableKey;
+            response.useSandbox = config.useSandbox;
             response.stripeJsUrl = STRIPE_JS_URL;
 
             List<String> missingItems = new List<String>();
-            if (String.isBlank(config.Stripe_Publishable_Key__c)) {
+            if (String.isBlank(config.publishableKey)) {
                 missingItems.add('Publishable Key');
             }
 
@@ -126,12 +134,12 @@ public with sharing class StripePaymentService {
             Savepoint pendingWorkSavepoint = Database.setSavepoint();
             validateRequest(request);
 
-            Quickbridge_Config__mdt config = getConfig();
+            RuntimeConfig config = getConfig();
             String availabilityMessage = getAvailabilityMessage(config);
             if (availabilityMessage != null) {
                 throw new AuraHandledException(availabilityMessage);
             }
-            if (String.isBlank(config.Stripe_Publishable_Key__c)) {
+            if (String.isBlank(config.publishableKey)) {
                 throw new AuraHandledException('Stripe client configuration is incomplete.');
             }
 
@@ -266,7 +274,7 @@ public with sharing class StripePaymentService {
                         throw new AuraHandledException('Invoice Id is required.');
                     }
 
-                    Quickbridge_Config__mdt config = getConfig();
+                    RuntimeConfig config = getConfig();
                     String availabilityMessage = getAvailabilityMessage(config);
                     if (availabilityMessage != null) {
                         throw new AuraHandledException(availabilityMessage);
@@ -374,23 +382,25 @@ public with sharing class StripePaymentService {
                                 return response;
                             }
 
-                            private static Quickbridge_Config__mdt getConfig() {
-                                Quickbridge_Config__mdt config;
+                            private static RuntimeConfig getConfig() {
+                                RuntimeConfig config = new RuntimeConfig();
                                 try {
-                                    config = Quickbridge_Config__mdt.getInstance('Stripe');
-                                } catch(Exception e) {
-                                    config = null;
+                                    config.active = ConnectorConfigResolver.getBoolean('stripe', 'Stripe_Active__c');
+                                    config.startDate = ConnectorConfigResolver.getDate('stripe', 'Stripe_Start_Date__c');
+                                    config.endDate = ConnectorConfigResolver.getDate('stripe', 'Stripe_End_Date__c');
+                                    config.publishableKey = ConnectorConfigResolver.getValue('stripe', 'Stripe_Publishable_Key__c');
+                                    config.useSandbox = ConnectorConfigResolver.getBoolean('stripe', 'Stripe_Use_Sandbox__c');
+                                } catch (Exception e) {
+                                    if (!Test.isRunningTest()) {
+                                        throw new AuraHandledException('Stripe configuration was not found.');
+                                    }
                                 }
 
                                 if (Test.isRunningTest()) {
-                                    Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
-                                    testConfig.Stripe_Active__c = true;
-                                    testConfig.Stripe_Publishable_Key__c = 'pk_test_123';
-                                    testConfig.Stripe_Use_Sandbox__c = true;
-                                    return testConfig;
+                                    config.active = true;
+                                    config.publishableKey = String.isBlank(config.publishableKey) ? 'pk_test_123' : config.publishableKey;
+                                    config.useSandbox = true;
                                 }
-
-                                if (config == null) throw new AuraHandledException('Stripe configuration record was not found.');
                                 return config;
                             }
 
@@ -722,12 +732,12 @@ public with sharing class StripePaymentService {
                                         return activeFlag == null ? true : activeFlag;
                                     }
 
-                                    private static String getAvailabilityMessage(Quickbridge_Config__mdt config) {
-                                        if (config == null) return 'Stripe configuration record was not found.';
-                                        if (!isConfigActive(config.Stripe_Active__c)) return 'Stripe is currently inactive.';
+                                    private static String getAvailabilityMessage(RuntimeConfig config) {
+                                        if (config == null) return 'Stripe configuration was not found.';
+                                        if (!isConfigActive(config.active)) return 'Stripe is currently inactive.';
                                         Date today = Date.today();
-                                        if (config.Stripe_Start_Date__c != null && config.Stripe_Start_Date__c > today) return 'Stripe is not active yet.';
-                                        if (config.Stripe_End_Date__c != null && config.Stripe_End_Date__c < today) return 'Stripe contract has expired.';
+                                        if (config.startDate != null && config.startDate > today) return 'Stripe is not active yet.';
+                                        if (config.endDate != null && config.endDate < today) return 'Stripe contract has expired.';
                                         return null;
                                     }
 

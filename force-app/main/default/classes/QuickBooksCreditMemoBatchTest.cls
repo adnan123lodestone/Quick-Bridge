@@ -3,10 +3,20 @@ private class QuickBooksCreditMemoBatchTest {
     
     private class QBCreditMemoMock implements HttpCalloutMock {
         public HttpResponse respond(HttpRequest req) {
+            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
+            System.assertEquals(
+                false,
+                endpoint.contains('/creditmemo/'),
+                'Batch updates must not hydrate credit memos with per-record GET endpoints.'
+            );
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
-            res.setBody('{"CreditMemo":{"Id":"CM-123","SyncToken":"0"}}');
+            if (endpoint.contains('/query')) {
+                res.setBody('{"QueryResponse":{"CreditMemo":[{"Id":"EXISTING-QB-ID","SyncToken":"0"}]}}');
+            } else {
+                res.setBody('{"CreditMemo":{"Id":"CM-123","SyncToken":"0"}}');
+            }
             return res;
         }
     }

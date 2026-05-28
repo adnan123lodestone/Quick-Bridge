@@ -1,4 +1,6 @@
 import { createElement } from "lwc";
+import fs from "fs";
+import path from "path";
 import QuickbridgeConfigPanel from "c/quickbridgeConfigPanel";
 import verifyCredentialsAndGetGateways from "@salesforce/apex/QuickBridgeAdminControlPlaneService.verifyCredentialsAndGetGateways";
 import getConnectorConfigs from "@salesforce/apex/PaymentMetadataService.getConnectorConfigs";
@@ -118,5 +120,87 @@ describe("c-quickbridge-config-panel admin session", () => {
     expect(element.shadowRoot.querySelector(".nav-button.logout")).toBeNull();
     expect(getConnectorConfigs).not.toHaveBeenCalled();
     expect(getConfigPanelPreferences).not.toHaveBeenCalled();
+  });
+
+  it("keeps connector logos and scheduler visibility descriptor-driven", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "../quickbridgeConfigPanel.js"),
+      "utf8"
+    );
+    const template = fs.readFileSync(
+      path.join(__dirname, "../quickbridgeConfigPanel.html"),
+      "utf8"
+    );
+
+    expect(source).not.toContain("LOGO_BY_CONNECTOR_KEY");
+    expect(source).not.toContain("isQboOrShopify");
+    expect(template).not.toContain("isQboOrShopify");
+  });
+
+  it("renders descriptor logo and scheduler capability for a new connector", async () => {
+    getConnectorDescriptors.mockResolvedValue([
+      {
+        connectorKey: "newconnector",
+        productKey: "newconnector",
+        label: "New Connector",
+        logoUrl: "/resource/newconnector",
+        catalogActive: true,
+        hasConfig: true,
+        hasReporting: true,
+        hasMapping: false,
+        hasScheduler: true
+      }
+    ]);
+    getConnectorConfigs.mockResolvedValue([
+      {
+        provider: "newconnector",
+        active: true,
+        fields: {},
+        formValues: {},
+        editableFields: [],
+        fieldLabels: {}
+      }
+    ]);
+
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    verifyCredentialsAndGetGateways.mockResolvedValue(
+      JSON.stringify({
+        status: "Success",
+        sessionToken: "active-session-token",
+        sessionExpiresAt: expiresAt
+      })
+    );
+
+    const element = appendPanel();
+    await flushPromises();
+
+    setInputValue(
+      element.shadowRoot.querySelector(".custom-input"),
+      "admin@example.com"
+    );
+    element.shadowRoot
+      .querySelectorAll(".pin-input")
+      .forEach((input, index) => {
+        input.value = String(index + 1);
+      });
+    element.shadowRoot
+      .querySelector("form")
+      .dispatchEvent(new CustomEvent("submit"));
+    await flushPromises();
+
+    const integrationsButton = [
+      ...element.shadowRoot.querySelectorAll(".nav-button")
+    ].find((button) => button.textContent.includes("Integrations"));
+    integrationsButton.click();
+    await flushPromises();
+
+    const tileImage = element.shadowRoot.querySelector(".tile-logo-img");
+    expect(tileImage.src).toContain("/resource/newconnector");
+    element.shadowRoot.querySelector(".tile-card").click();
+    await flushPromises();
+    const schedulerButton = [
+      ...element.shadowRoot.querySelectorAll(".nav-button")
+    ].find((button) => button.textContent.includes("Scheduler"));
+    expect(schedulerButton).not.toBeUndefined();
   });
 });

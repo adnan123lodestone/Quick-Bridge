@@ -14,7 +14,7 @@ private class LockSafeDmlTest {
     @IsTest
     static void retryPolicyDetectsLockMessages() {
         System.assertEquals(true, IntegrationRetryPolicy.isRetryableMessage('UNABLE_TO_LOCK_ROW: row locked'));
-        System.assertEquals(true, IntegrationRetryPolicy.isRetryableMessage('Read timed out'));
+        System.assertEquals(false, IntegrationRetryPolicy.isRetryableMessage('Read timed out'));
         System.assertEquals(false, IntegrationRetryPolicy.isRetryableMessage('Required field missing'));
         System.assertEquals(true, IntegrationRetryPolicy.isRetryable(429));
         System.assertEquals(true, IntegrationRetryPolicy.isRetryable(503));

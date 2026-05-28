@@ -74,6 +74,49 @@ private class QuickBridgeRecordEngineTest {
   }
 
   @isTest
+  static void testMissingCanonicalInvoiceTargetFailsClosed() {
+    QuickBridgeRecordEngine.testInvoicePipelineTargetObjects = new List<String>{
+      'Invoice__c'
+    };
+    QuickBridgeRecordEngine.testCanonicalInvoicePipelineTargetObject = 'Missing_Target__c';
+
+    Test.startTest();
+    QuickBridgeRecordEngine.processIncomingInvoice(
+      new Map<String, Object>{
+        'Amount__c' => 30,
+        'Reference_number__c' => 'NO-CANONICAL'
+      }
+    );
+    Test.stopTest();
+
+    System.assertEquals(
+      0,
+      [
+        SELECT COUNT()
+        FROM Invoice__c
+        WHERE Reference_number__c = 'NO-CANONICAL'
+      ]
+    );
+    List<Error_Log__c> logs = [
+      SELECT Error_Message__c
+      FROM Error_Log__c
+      WHERE Class_Method_Name__c = 'QuickBridgeRecordEngine.processIncomingInvoice'
+    ];
+    Boolean foundCanonicalFailure = false;
+    for (Error_Log__c log : logs) {
+      foundCanonicalFailure =
+        foundCanonicalFailure ||
+        log.Error_Message__c.contains(
+          'Exactly one active canonical invoice pipeline target'
+        );
+    }
+    System.assert(
+      foundCanonicalFailure,
+      'Expected the invoice pipeline to log the missing canonical target.'
+    );
+  }
+
+  @isTest
   static void testProcessIncomingInvoiceWithEmptyPayload() {
     Test.startTest();
     QuickBridgeRecordEngine.processIncomingInvoice(new Map<String, Object>());
@@ -128,6 +171,9 @@ private class QuickBridgeRecordEngineTest {
 
   @isTest
   static void testProcessIncomingInvoiceCreatesClientMappedRecord() {
+    QuickBridgeRecordEngine.testInvoicePipelineTargetObjects = new List<String>{
+      'Invoice__c'
+    };
     QuickBridgeRecordEngine.testActiveMappings = new List<Invoice_Field_Mapping__mdt>{
       new Invoice_Field_Mapping__mdt(
         Target_Object_API_Name__c = 'Account',
@@ -153,6 +199,9 @@ private class QuickBridgeRecordEngineTest {
 
   @isTest
   static void testProcessIncomingInvoiceRoutesMappingsByTargetObject() {
+    QuickBridgeRecordEngine.testInvoicePipelineTargetObjects = new List<String>{
+      'Invoice__c'
+    };
     QuickBridgeRecordEngine.testActiveMappings = new List<Invoice_Field_Mapping__mdt>{
       new Invoice_Field_Mapping__mdt(
         Target_Object_API_Name__c = 'Account',

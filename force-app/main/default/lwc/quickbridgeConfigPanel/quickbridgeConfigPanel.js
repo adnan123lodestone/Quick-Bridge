@@ -11,20 +11,8 @@ import revokeAdminSession from "@salesforce/apex/QuickBridgeAdminControlPlaneSer
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import LightningConfirm from "lightning/confirm";
 import QuickBridge_Logo from "@salesforce/resourceUrl/QuickBridge_Logo";
-import QB_Logo from "@salesforce/resourceUrl/QB_Logo";
-import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
-import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
-import Authorize_Net_logo from "@salesforce/resourceUrl/Authorize_Net_logo";
 import recoverPin from "@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin";
 import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses";
-
-const LOGO_BY_CONNECTOR_KEY = {
-  qbo: QB_Logo,
-  quickbooks: QB_Logo,
-  fedex: FedEx_Logo,
-  ups: UPS_Logo,
-  authorizenet: Authorize_Net_logo
-};
 
 export default class QuickbridgeConfigPanel extends LightningElement {
   @track currentScreen = "login";
@@ -96,9 +84,6 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   }
   get isSchedulerAvailable() {
     return this.selectedTileDefinition?.hasScheduler === true;
-  }
-  get isQboOrShopify() {
-    return this.isSchedulerAvailable;
   }
   get isSchedulerScreen() {
     return this.currentScreen === "scheduler";
@@ -360,10 +345,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         .map((connector) => ({
           id: connector.connectorKey,
           label: connector.label,
-          logoUrl: this.resolveTileLogoUrl(
-            connector.connectorKey,
-            connector.logoUrl
-          ),
+          logoUrl: this.resolveTileLogoUrl(connector.logoUrl),
           productKey: connector.productKey,
           aliases: this.buildTileAliases(connector),
           activeField: connector.activeField,
@@ -383,12 +365,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
   }
 
-  resolveTileLogoUrl(connectorKey, descriptorLogoUrl) {
-    return (
-      LOGO_BY_CONNECTOR_KEY[connectorKey] ||
-      descriptorLogoUrl ||
-      QuickBridge_Logo
-    );
+  resolveTileLogoUrl(descriptorLogoUrl) {
+    return descriptorLogoUrl || QuickBridge_Logo;
   }
 
   buildTileAliases(connector) {

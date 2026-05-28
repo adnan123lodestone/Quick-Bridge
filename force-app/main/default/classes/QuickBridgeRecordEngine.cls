@@ -4,6 +4,8 @@ public with sharing class QuickBridgeRecordEngine {
   @TestVisible
   private static List<String> testInvoicePipelineTargetObjects;
   @TestVisible
+  private static String testCanonicalInvoicePipelineTargetObject;
+  @TestVisible
   private static Boolean forcePipelineFailureForTest = false;
   private static Map<String, Schema.SObjectType> objectTypeByApiName = new Map<String, Schema.SObjectType>();
   private class PipelineException extends Exception {
@@ -19,6 +21,8 @@ public with sharing class QuickBridgeRecordEngine {
     Map<String, String> sourceToTargetFields = new Map<String, String>();
     Map<String, Object> defaultValues = new Map<String, Object>();
     String methodName;
+    Boolean canonical = false;
+    Integer sequence = 0;
   }
 
   public static void processIncomingInvoice(Map<String, Object> incomingData) {
@@ -73,13 +77,11 @@ public with sharing class QuickBridgeRecordEngine {
   ) {
     PipelineResult result = new PipelineResult();
     List<PipelineTarget> targets = defaultInvoiceTargets();
-    String canonicalObject = targets.isEmpty()
-      ? 'Invoice__c'
-      : targets[0].objectApiName;
+    PipelineTarget canonicalTarget = resolveCanonicalTarget(targets);
     for (PipelineTarget target : targets) {
       SObject record = buildRecord(target, incomingData);
       insert record;
-      if (target.objectApiName == canonicalObject) {
+      if (target == canonicalTarget) {
         result.canonicalInvoiceId = (Id) record.get('Id');
         result.canonicalInvoiceObjectApiName = target.objectApiName;
         System.debug(
@@ -112,6 +114,13 @@ public with sharing class QuickBridgeRecordEngine {
       PipelineTarget invoiceTarget = new PipelineTarget();
       invoiceTarget.objectApiName = targetObject;
       invoiceTarget.methodName = 'QuickBridgeRecordEngine.processIncomingInvoice';
+      invoiceTarget.sequence = targets.size() + 1;
+      invoiceTarget.canonical =
+        Test.isRunningTest() &&
+        testInvoicePipelineTargetObjects != null &&
+        String.isNotBlank(testCanonicalInvoicePipelineTargetObject)
+          ? targetObject == testCanonicalInvoicePipelineTargetObject
+          : targets.isEmpty();
       invoiceTarget.sourceToTargetFields.put('Amount__c', 'Amount__c');
       invoiceTarget.sourceToTargetFields.put('Order__c', 'Order__c');
       invoiceTarget.sourceToTargetFields.put(
@@ -127,6 +136,30 @@ public with sharing class QuickBridgeRecordEngine {
       targets.add(invoiceTarget);
     }
     return targets;
+  }
+
+  private static PipelineTarget resolveCanonicalTarget(List<PipelineTarget> targets) {
+    if (targets == null || targets.isEmpty()) {
+      throw new PipelineException(
+        'No active invoice pipeline target is configured. Configure at least one active invoice target and mark exactly one as canonical.'
+      );
+    }
+    PipelineTarget canonicalTarget;
+    Integer canonicalCount = 0;
+    for (PipelineTarget target : targets) {
+      if (target.canonical == true) {
+        canonicalTarget = target;
+        canonicalCount++;
+      }
+    }
+    if (canonicalCount != 1) {
+      throw new PipelineException(
+        'Exactly one active canonical invoice pipeline target is required; found ' +
+          canonicalCount +
+          '.'
+      );
+    }
+    return canonicalTarget;
   }
 
   private static SObject buildRecord(

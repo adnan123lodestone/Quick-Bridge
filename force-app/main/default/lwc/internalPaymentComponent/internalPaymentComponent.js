@@ -8,39 +8,12 @@ let acceptJsPromise;
 let stripeJsPromise;
 let paypalJsPromise;
 
-const FALLBACK_PAYMENT_PROVIDERS = [
-  {
-    connectorKey: "authorizenet",
-    label: "Authorize.Net",
-    hasPayment: true,
-    hasCheckout: true,
-    actionType: "acceptJs"
-  },
-  {
-    connectorKey: "stripe",
-    label: "Stripe",
-    hasPayment: true,
-    hasCheckout: true,
-    actionType: "stripeElements"
-  },
-  {
-    connectorKey: "paypal",
-    label: "PayPal",
-    hasPayment: true,
-    hasCheckout: true,
-    actionType: "paypalButtons"
-  }
-];
-
-const RENDERER_MODE = {
-  authorizenet: "acceptJs",
-  stripe: "stripeElements",
-  paypal: "paypalButtons",
-  acceptJs: "acceptJs",
-  stripeElements: "stripeElements",
-  paypalButtons: "paypalButtons",
-  hosted: "hosted"
-};
+const SUPPORTED_RENDERER_MODES = new Set([
+  "acceptJs",
+  "stripeElements",
+  "paypalButtons",
+  "hosted"
+]);
 
 export default class PaymentComponent extends LightningElement {
   selectedProvider = null;
@@ -84,7 +57,7 @@ export default class PaymentComponent extends LightningElement {
   paypalButtonsInstance;
   isPaypalInitializing = false;
   isSubmitting = false;
-  paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
+  paymentProviderDescriptors = [];
   providerConfigs = {};
 
   CardPayment_lables = Object.fromEntries(
@@ -167,10 +140,10 @@ export default class PaymentComponent extends LightningElement {
   get isHostedMode() {
     return !!this.selectedProvider && !this.isCardMode && !this.isButtonMode;
   }
-  get isAuthorizeNetSelected() {
+  get isAcceptJsRenderer() {
     return this.selectedRendererMode === "acceptJs";
   }
-  get isStripeSelected() {
+  get isStripeElementsRenderer() {
     return this.selectedRendererMode === "stripeElements";
   }
   get hasAvailableProviders() {
@@ -190,7 +163,7 @@ export default class PaymentComponent extends LightningElement {
         key: provider.connectorKey,
         label: provider.label,
         logoText: this.getProviderLogoText(provider.connectorKey),
-        logoClass: `tile-logo tile-logo-${provider.connectorKey === "authorizenet" ? "authorize" : provider.connectorKey}`,
+        logoClass: `tile-logo tile-logo-${provider.connectorKey}`,
         tileClass: this.getProviderTileClass(provider.connectorKey),
         statusText: this.getProviderStatusText(
           this.getProviderConfig(provider.connectorKey)
@@ -306,7 +279,7 @@ export default class PaymentComponent extends LightningElement {
           hasPayment: true,
           hasCheckout: true
         }))
-      : FALLBACK_PAYMENT_PROVIDERS;
+      : [];
 
     this.providerConfigs = this.paymentProviderDescriptors.reduce(
       (acc, provider) => {
@@ -328,8 +301,9 @@ export default class PaymentComponent extends LightningElement {
       configured: provider.configured === true,
       message: provider.message,
       actionType: provider.actionType || "hosted",
-      rendererMode:
-        RENDERER_MODE[provider.rendererMode || provider.actionType] || "hosted",
+      rendererMode: this.normalizeRendererMode(
+        provider.rendererMode || provider.actionType
+      ),
       buttonLabel: provider.buttonLabel || provider.config?.buttonLabel,
       connectorKey: provider.connectorKey,
       label: provider.label,
@@ -338,6 +312,10 @@ export default class PaymentComponent extends LightningElement {
       payPalJsUrl: provider.config?.payPalJsUrl || provider.clientScriptUrl,
       clientScriptUrl: provider.clientScriptUrl
     };
+  }
+
+  normalizeRendererMode(rendererMode) {
+    return SUPPORTED_RENDERER_MODES.has(rendererMode) ? rendererMode : "hosted";
   }
 
   buildUnavailableProviderConfig(message, error) {
@@ -374,12 +352,7 @@ export default class PaymentComponent extends LightningElement {
     const descriptor = this.paymentProviderDescriptors.find(
       (provider) => provider.connectorKey === providerName
     );
-    return (
-      descriptor?.label ||
-      (providerName === "authorizenet"
-        ? "Authorize.Net"
-        : providerName || "Provider")
-    );
+    return descriptor?.label || providerName || "Provider";
   }
 
   getProviderLogoText(providerName) {
@@ -602,7 +575,7 @@ export default class PaymentComponent extends LightningElement {
 
     const response = await executePayment({
       request: {
-        providerKey: "authorizenet",
+        providerKey: this.selectedProvider,
         amount: Number(resolvedAmount),
         orderId: this.orderId || null,
         dataDescriptor: opaqueData.dataDescriptor,
@@ -679,7 +652,7 @@ export default class PaymentComponent extends LightningElement {
 
     const response = await executePayment({
       request: {
-        providerKey: "stripe",
+        providerKey: this.selectedProvider,
         amount: Number(resolvedAmount),
         orderId: this.orderId || null,
         paymentMethodId: stripeResponse?.paymentMethod?.id,
@@ -1285,7 +1258,7 @@ export default class PaymentComponent extends LightningElement {
 
         const response = await initializePayment({
           request: {
-            providerKey: "paypal",
+            providerKey: this.selectedProvider,
             amount: Number(resolvedAmount),
             orderId: this.orderId || null,
             fullName: this.paymentForm.cardName,
@@ -1306,7 +1279,7 @@ export default class PaymentComponent extends LightningElement {
         try {
           const response = await executePayment({
             request: {
-              providerKey: "paypal",
+              providerKey: this.selectedProvider,
               paypalOrderId: data?.orderID,
               orderId: this.orderId || null
             }
@@ -1469,7 +1442,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   dispatchSuccess(response) {
-    if (this.selectedProvider === "stripe")
+    if (this.selectedRendererMode === "stripeElements")
       this.logStripeStep("Dispatching Stripe success event", response);
 
     this.successDetails = {
@@ -1494,13 +1467,13 @@ export default class PaymentComponent extends LightningElement {
   }
 
   dispatchError(message) {
-    if (this.selectedProvider === "stripe")
+    if (this.selectedRendererMode === "stripeElements")
       this.logStripeStep(`Dispatching Stripe error: ${message}`);
     this.errorDetails = {
       message,
       provider: this.selectedProvider,
       step:
-        this.selectedProvider === "stripe"
+        this.selectedRendererMode === "stripeElements"
           ? this.stripeLastStep
           : "Payment failed"
     };

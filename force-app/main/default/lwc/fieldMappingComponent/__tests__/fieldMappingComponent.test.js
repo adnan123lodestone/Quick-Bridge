@@ -131,6 +131,8 @@ describe("c-field-mapping-component reset", () => {
 
     element.shadowRoot.querySelector(".btn-secondary").click();
     await flushPromises();
+    element.shadowRoot.querySelector(".btn-danger").click();
+    await flushPromises();
 
     const resetRows = element.shadowRoot.querySelectorAll("tbody tr");
     const resetSfFieldSelect = resetRows[0].querySelector(

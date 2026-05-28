@@ -60,8 +60,8 @@ public with sharing class PaymentAdminService {
 
     @AuraEnabled
     public static String refreshLicenses(String sessionToken) {
-        Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance('Default');
-        if (config == null || String.isBlank(config.Username__c)) {
+        QuickbridgeLegacyConfigCompatibility.ServerOrgConfig config = QuickbridgeLegacyConfigCompatibility.loadServerOrgConfig(false);
+        if (config == null || String.isBlank(config.username)) {
             return 'Error: Missing Server Org credentials.';
         }
 
@@ -70,9 +70,9 @@ public with sharing class PaymentAdminService {
         req.setMethod('POST');
         req.setHeader('Content-Type', 'application/json');
         req.setBody(JSON.serialize(new Map<String, String>{
-            'companyName' => config.Company_Name__c,
-            'username'    => config.Username__c,
-            'password'    => config.Password__c
+            'companyName' => config.companyName,
+            'username'    => config.username,
+            'password'    => config.password
         }));
         HttpResponse res = new Http().send(req);
 
@@ -116,12 +116,13 @@ public with sharing class PaymentAdminService {
     }
 
     public static HttpResponse callServerOrgValidation(String username, String password, Boolean useSuppliedCredentials) {
-        Quickbridge_Config__mdt config = loadServerOrgConfig(useSuppliedCredentials == true);
+        QuickbridgeLegacyConfigCompatibility.ServerOrgConfig config =
+            QuickbridgeLegacyConfigCompatibility.loadServerOrgConfig(useSuppliedCredentials == true);
 
         Map<String, String> requestBody = new Map<String, String>();
-        requestBody.put('companyName', config != null && config.Company_Name__c != null ? config.Company_Name__c.trim() : '');
-        requestBody.put('username', useSuppliedCredentials == true ? username.trim() : config.Username__c.trim());
-        requestBody.put('password', useSuppliedCredentials == true ? password.trim() : config.Password__c.trim());
+        requestBody.put('companyName', config != null && config.companyName != null ? config.companyName.trim() : '');
+        requestBody.put('username', useSuppliedCredentials == true ? username.trim() : config.username.trim());
+        requestBody.put('password', useSuppliedCredentials == true ? password.trim() : config.password.trim());
 
         HttpRequest req = new HttpRequest();
         req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/validateClient/');
@@ -144,20 +145,6 @@ public with sharing class PaymentAdminService {
             null,
             null
         );
-    }
-
-    private static Quickbridge_Config__mdt loadServerOrgConfig(Boolean allowCompanyOnly) {
-        List<Quickbridge_Config__mdt> configs;
-        if (allowCompanyOnly == true) {
-            configs = [SELECT Company_Name__c, Username__c, Password__c FROM Quickbridge_Config__mdt WHERE Company_Name__c != NULL LIMIT 1];
-        } else {
-            configs = [SELECT Company_Name__c, Username__c, Password__c FROM Quickbridge_Config__mdt WHERE Username__c != NULL AND Password__c != NULL AND Company_Name__c != NULL LIMIT 1];
-        }
-        if (configs.isEmpty()) {
-            if (allowCompanyOnly == true) return null;
-            throw new AuraHandledException('No valid credentials found in QuickBridge Metadata.');
-        }
-        return configs[0];
     }
 
     private static String addSessionDetails(String responseBody, String username) {

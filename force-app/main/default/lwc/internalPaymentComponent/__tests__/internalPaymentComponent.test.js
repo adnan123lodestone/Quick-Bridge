@@ -1,4 +1,6 @@
 import { createElement } from "lwc";
+import fs from "fs";
+import path from "path";
 import PaymentComponent from "c/internalPaymentComponent";
 import getCheckoutProviders from "@salesforce/apex/PaymentCheckoutController.getCheckoutProviders";
 
@@ -69,5 +71,46 @@ describe("c-internal-payment-component descriptor rendering", () => {
       ...element.shadowRoot.querySelectorAll("lightning-button")
     ].map((button) => button.label);
     expect(buttonLabels).toContain("Pay securely");
+  });
+
+  it("keeps the parent descriptor-driven without provider fallback branches", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "../internalPaymentComponent.js"),
+      "utf8"
+    );
+
+    expect(source).not.toContain("FALLBACK_PAYMENT_PROVIDERS");
+    expect(source).not.toContain("isAuthorizeNetSelected");
+    expect(source).not.toContain("isStripeSelected");
+    expect(source).not.toMatch(/authorizenet:\s*["']acceptJs["']/);
+    expect(source).not.toMatch(/stripe:\s*["']stripeElements["']/);
+    expect(source).not.toMatch(/paypal:\s*["']paypalButtons["']/);
+  });
+
+  it("renders an unknown hosted provider from descriptors without parent JS changes", async () => {
+    getCheckoutProviders.mockResolvedValue([
+      {
+        connectorKey: "newhosted",
+        label: "New Hosted Gateway",
+        active: true,
+        configured: true,
+        actionType: "hosted",
+        buttonLabel: "Continue Hosted",
+        displayOrder: 1,
+        config: {}
+      }
+    ]);
+
+    const element = createElement("c-internal-payment-component", {
+      is: PaymentComponent
+    });
+    document.body.appendChild(element);
+    await flushPromises();
+
+    expect(element.shadowRoot.textContent).toContain("New Hosted Gateway");
+    const buttonLabels = [
+      ...element.shadowRoot.querySelectorAll("lightning-button")
+    ].map((button) => button.label);
+    expect(buttonLabels).toContain("Continue Hosted");
   });
 });

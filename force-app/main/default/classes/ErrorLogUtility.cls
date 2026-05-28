@@ -375,9 +375,7 @@ public without sharing class ErrorLogUtility {
             if (parsedStatusCode != null) {
                 return IntegrationRetryPolicy.classify(parsedStatusCode).retryable;
             }
-            if (IntegrationRetryPolicy.isRetryableMessage(msg) ||
-                msg.contains('connection reset') ||
-                msg.contains('rate limit')) {
+            if (IntegrationRetryPolicy.isRetryableMessage(msg)) {
                 return true;
             }
             if (msg.contains('invalid') ||

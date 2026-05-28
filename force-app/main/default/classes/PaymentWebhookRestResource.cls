@@ -770,34 +770,18 @@ global without sharing class PaymentWebhookRestResource {
     }
 
     private static String getStripeWebhookSigningSecret() {
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('Stripe');
-        } catch (Exception e) {}
-
-        // if (Test.isRunningTest()) {
-        //     return config == null || String.isBlank(config.Stripe_Webhook_Signing_Secret__c)
-        //         ? TEST_STRIPE_WEBHOOK_SIGNING_SECRET
-        //         : config.Stripe_Webhook_Signing_Secret__c;
-        // }
-        
         if (Test.isRunningTest()) {
             return TEST_STRIPE_WEBHOOK_SIGNING_SECRET; 
         }
-        return config == null ? null : config.Stripe_Webhook_Signing_Secret__c;
+        return ConnectorConfigResolver.getValue('stripe', 'Stripe_Webhook_Signing_Secret__c');
     }
 
     private static String getAuthorizeNetWebhookSigningKey() {
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
-        } catch (Exception e) {}
-
         if (Test.isRunningTest()) {
             return TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY;
         }
 
-        return config == null ? null : config.AuthorizeNet_Webhook_Signing_Key__c;
+        return ConnectorConfigResolver.getValue('authorizenet', 'AuthorizeNet_Webhook_Signing_Key__c');
     }
 
     private static String getPayPalWebhookId() {
