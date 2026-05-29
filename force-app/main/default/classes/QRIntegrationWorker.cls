@@ -1,19 +1,27 @@
-public with sharing class QRIntegrationWorker {
-    public static void process(Integration_Work_Item__c item) {
-        Id invoiceId = parseId(item.Source_Salesforce_Id__c, item.Source_Record_Id__c);
-        if (invoiceId == null) {
-            throw new QRIntegrationWorkerException('QR work requires an invoice id.');
-        }
-        InvoiceQRService.generateAndSaveQRCode(invoiceId);
-    }
+public with sharing class QRIntegrationWorker implements IntegrationWorkHandler {
+  public void handle(Integration_Work_Item__c item) {
+    process(item);
+  }
 
-    private static Id parseId(String primaryValue, String fallbackValue) {
-        try {
-            return (Id) (String.isBlank(primaryValue) ? fallbackValue : primaryValue);
-        } catch (Exception e) {
-            return null;
-        }
+  public static void process(Integration_Work_Item__c item) {
+    Id invoiceId = parseId(
+      item.Source_Salesforce_Id__c,
+      item.Source_Record_Id__c
+    );
+    if (invoiceId == null) {
+      throw new QRIntegrationWorkerException('QR work requires an invoice id.');
     }
+    InvoiceQRService.generateAndSaveQRCode(invoiceId);
+  }
 
-    public class QRIntegrationWorkerException extends Exception {}
+  private static Id parseId(String primaryValue, String fallbackValue) {
+    try {
+      return (Id) (String.isBlank(primaryValue) ? fallbackValue : primaryValue);
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  public class QRIntegrationWorkerException extends Exception {
+  }
 }

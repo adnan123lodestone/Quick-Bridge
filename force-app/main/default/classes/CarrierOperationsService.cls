@@ -657,8 +657,8 @@ public with sharing class CarrierOperationsService {
         if (String.isBlank(carrierType)) {
             throw new AuraHandledException('Carrier type is required.');
         }
-        String normalized = carrierType.toLowerCase().trim();
-        if (normalized == 'fedex' || normalized == 'ups') {
+        String normalized = CarrierAdapterFactory.normalizeCarrierKey(carrierType);
+        if (CarrierAdapterFactory.supportedCarrierKeys().contains(normalized)) {
             return normalized;
         }
         throw new AuraHandledException('Unsupported carrier type: ' + carrierType);

@@ -20,6 +20,7 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testUpdatePaymentMetadataSuccess() {
+        String token = sessionToken();
         Map<String, Object> fields = new Map<String, Object>{
             'Stripe_Publishable_Key__c' => 'test_key_123',
             'Stripe_Active__c' => true
@@ -27,7 +28,7 @@ private class PaymentMetadataServiceTest {
 
         Test.startTest();
         PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.updatePaymentMetadata(
-            'stripe', JSON.serialize(fields)
+            'stripe', JSON.serialize(fields), token
         );
         Test.stopTest();
 
@@ -36,11 +37,12 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testUpdatePaymentMetadataInvalidProvider() {
+        String token = sessionToken();
         Map<String, Object> fields = new Map<String, Object>();
 
         Test.startTest();
         PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.updatePaymentMetadata(
-            'invalid_gateway', JSON.serialize(fields)
+            'invalid_gateway', JSON.serialize(fields), token
         );
         Test.stopTest();
 
@@ -50,8 +52,9 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testUpdatePaymentMetadataNullRequest() {
+        String token = sessionToken();
         Test.startTest();
-        PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.updatePaymentMetadata(null, null);
+        PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.updatePaymentMetadata(null, null, token);
         Test.stopTest();
 
         System.assertEquals(false, res.success);
@@ -60,6 +63,7 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testUpdatePaymentMetadataForSupportedProviders() {
+        String token = sessionToken();
         Map<String, Map<String, Object>> providerFields = new Map<String, Map<String, Object>>{
             'authorizenet' => new Map<String, Object>{
                 'Company_Name__c' => 'TLG',
@@ -124,7 +128,8 @@ private class PaymentMetadataServiceTest {
         for (String provider : providerFields.keySet()) {
             PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.updatePaymentMetadata(
                 provider,
-                JSON.serialize(providerFields.get(provider))
+                JSON.serialize(providerFields.get(provider)),
+                token
             );
             System.assertEquals(true, res.success, provider + ' should be accepted.');
             System.assert(res.message.contains('Configuration save initiated'));
@@ -134,9 +139,10 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testConfigPanelPreferencesCanBeReadAndUpdated() {
+        String token = sessionToken();
         Test.startTest();
         PaymentMetadataService.ConfigPanelPreferences preferences = PaymentMetadataService.getConfigPanelPreferences();
-        PaymentMetadataService.MetadataUpdateResponse updateResponse = PaymentMetadataService.updateAvailableProductsVisible(false);
+        PaymentMetadataService.MetadataUpdateResponse updateResponse = PaymentMetadataService.updateAvailableProductsVisible(false, token);
         Test.stopTest();
 
         System.assertNotEquals(null, preferences, 'Preferences response should always be returned.');
@@ -169,10 +175,12 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testSendProductRenewalRequestSuccess() {
+        String token = sessionToken();
         Test.startTest();
         PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.sendProductRenewalRequest(
             new List<String>{ 'qbo', 'stripe' },
-            new List<String>{ 'shopify' }
+            new List<String>{ 'shopify' },
+            token
         );
         Test.stopTest();
 
@@ -182,10 +190,12 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testSendProductRenewalRequestRequiresSelection() {
+        String token = sessionToken();
         Test.startTest();
         PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.sendProductRenewalRequest(
             new List<String>(),
-            new List<String>()
+            new List<String>(),
+            token
         );
         Test.stopTest();
 
@@ -195,10 +205,12 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testSendProductRenewalRequestRejectsUnsupportedProduct() {
+        String token = sessionToken();
         Test.startTest();
         PaymentMetadataService.MetadataUpdateResponse res = PaymentMetadataService.sendProductRenewalRequest(
             new List<String>{ 'unknown_product' },
-            null
+            null,
+            token
         );
         Test.stopTest();
 
@@ -248,5 +260,31 @@ private class PaymentMetadataServiceTest {
         Test.stopTest();
 
         System.assertNotEquals(null, admins, 'Admin query should return a list.');
+    }
+
+    @IsTest
+    static void testMutationMethodsRequireAdminSession() {
+        Test.startTest();
+        PaymentMetadataService.MetadataUpdateResponse updateResponse =
+            PaymentMetadataService.updatePaymentMetadata('stripe', '{}', null);
+        PaymentMetadataService.MetadataUpdateResponse preferenceResponse =
+            PaymentMetadataService.updateAvailableProductsVisible(true, null);
+        PaymentMetadataService.MetadataUpdateResponse renewalResponse =
+            PaymentMetadataService.sendProductRenewalRequest(new List<String>{ 'stripe' }, null, null);
+        Test.stopTest();
+
+        System.assertEquals(false, updateResponse.success);
+        System.assert(updateResponse.message.toLowerCase().contains('session'));
+        System.assertEquals(false, preferenceResponse.success);
+        System.assert(preferenceResponse.message.toLowerCase().contains('session'));
+        System.assertEquals(false, renewalResponse.success);
+        System.assert(renewalResponse.message.toLowerCase().contains('session'));
+    }
+
+    private static String sessionToken() {
+        return QuickBridgeAdminSessionService.createSession(
+            'admin@example.com',
+            System.now().addHours(1)
+        ).sessionToken;
     }
 }

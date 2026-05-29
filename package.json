@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "description": "Salesforce App",
+  "engines": {
+    "node": ">=22.22.0 <25"
+  },
   "scripts": {
     "lint": "eslint **/{aura,lwc}/**/*.js",
     "test": "npm run test:unit",
@@ -10,8 +13,10 @@
     "test:unit:watch": "sfdx-lwc-jest --watch",
     "test:unit:debug": "sfdx-lwc-jest --debug",
     "test:unit:coverage": "sfdx-lwc-jest --coverage",
-    "prettier": "prettier --write \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
-    "prettier:verify": "prettier --check \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
+    "prettier": "prettier --write \"force-app/main/default/{aura,lwc}/**/*.{css,html,js,json,md,xml,yaml,yml}\" \"config/**/*.{json,md,xml,yaml,yml}\" \"manifest/**/*.{json,md,xml,yaml,yml}\" \"docs/**/*.{json,md,xml,yaml,yml}\" \"*.{json,js,md,yaml,yml}\"",
+    "prettier:verify": "prettier --check \"force-app/main/default/{aura,lwc}/**/*.{css,html,js,json,md,xml,yaml,yml}\" \"config/**/*.{json,md,xml,yaml,yml}\" \"manifest/**/*.{json,md,xml,yaml,yml}\" \"docs/**/*.{json,md,xml,yaml,yml}\" \"*.{json,js,md,yaml,yml}\"",
+    "prettier:apex": "prettier --write \"force-app/main/default/**/*.{cls,trigger}\"",
+    "prettier:apex:verify": "prettier --check \"force-app/main/default/**/*.{cls,trigger}\"",
     "prepare": "husky || true",
     "precommit": "lint-staged"
   },
@@ -31,14 +36,14 @@
     "prettier-plugin-apex": "^2.2.6"
   },
   "lint-staged": {
-    "**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}": [
+    "**/*.{cmp,component,css,html,js,json,md,page,xml,yaml,yml}": [
       "prettier --write"
     ],
     "**/{aura,lwc}/**/*.js": [
       "eslint"
     ],
     "**/lwc/**": [
-        "sfdx-lwc-jest -- --bail --findRelatedTests --passWithNoTests"
+      "sfdx-lwc-jest -- --bail --findRelatedTests --passWithNoTests"
     ]
   }
 }

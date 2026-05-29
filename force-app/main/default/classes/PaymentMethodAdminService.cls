@@ -26,16 +26,12 @@ public with sharing class PaymentMethodAdminService {
     @TestVisible
     private static MetadataUpdater testUpdater;
 
-    private static final Map<String, String> PROVIDER_TO_METADATA_RECORD = new Map<String, String>{
-        'authorizenet' => 'AuthorizeNet_Config__mdt.Default',
-        'stripe' => 'Stripe_Config__mdt.Default',
-        'paypal' => 'PayPal_Config__mdt.Default'
-    };
-
+    private static final Map<String, String> PROVIDER_TO_METADATA_RECORD = paymentProviderMetadataRecords();
     private static final Map<String, String> PROVIDER_TO_LABEL = paymentProviderLabels();
 
     public static DeactivateResponse deactivatePaymentMethods(DeactivateRequest request) {
         try {
+            QuickBridgeAdminGuard.requireManage();
             if (request == null || request.paymentMethodStates == null || request.paymentMethodStates.isEmpty()) {
                 throw new PaymentMethodAdminException('At least one payment method state must be provided.');
             }
@@ -65,6 +61,7 @@ public with sharing class PaymentMethodAdminService {
             response.acceptedMethods = acceptedMethods;
             response.unsupportedMethods = unsupportedMethods;
             response.deploymentId = deploymentId;
+            QuickBridgeAdminGuard.audit('PAYMENT_METHOD_SYNC', null, 'Queued', response.message, null);
             return response;
         } catch (Exception e) {
             ErrorLogUtility.logException(
@@ -171,5 +168,34 @@ public with sharing class PaymentMethodAdminService {
             labels.put('paypal', 'PayPal');
         }
         return labels;
+    }
+
+    private static Map<String, String> paymentProviderMetadataRecords() {
+        Map<String, String> records = new Map<String, String>();
+        for (IntegrationConnectorRegistry.ConnectorDescriptor connector : IntegrationConnectorRegistry.paymentConnectors()) {
+            if (String.isBlank(connector.connectorKey)) {
+                continue;
+            }
+            String recordFullName = paymentAdminMetadataFullName(connector);
+            if (String.isNotBlank(recordFullName)) {
+                records.put(connector.connectorKey, recordFullName);
+            }
+        }
+        if (records.isEmpty()) {
+            records.put('authorizenet', 'AuthorizeNet_Config__mdt.Default');
+            records.put('stripe', 'Stripe_Config__mdt.Default');
+            records.put('paypal', 'PayPal_Config__mdt.Default');
+        }
+        return records;
+    }
+
+    private static String paymentAdminMetadataFullName(IntegrationConnectorRegistry.ConnectorDescriptor connector) {
+        if (connector == null || String.isBlank(connector.configRecordName)) {
+            return null;
+        }
+        if (connector.configRecordName.contains('__mdt.')) {
+            return connector.configRecordName;
+        }
+        return connector.configRecordName + '_Config__mdt.Default';
     }
 }

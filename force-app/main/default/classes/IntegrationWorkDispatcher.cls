@@ -14,7 +14,7 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
 
         List<Integration_Work_Item__c> candidates = [
             SELECT Id, Unique_Key__c, Status__c, Lock_Key__c, Integration__c, Operation__c,
-                Attempt_Count__c, Max_Attempts__c, Next_Attempt_At__c
+                Attempt_Count__c, Max_Attempts__c, Next_Attempt_At__c, Additional_Lock_Keys__c
             FROM Integration_Work_Item__c
             WHERE Status__c IN ('Pending', 'Retry')
             AND (Next_Attempt_At__c = null OR Next_Attempt_At__c <= :nowValue)
@@ -25,14 +25,34 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
             return;
         }
 
-        Map<String, Integration_Work_Item__c> itemByLockKey = new Map<String, Integration_Work_Item__c>();
+        Map<Id, Integration_Work_Item__c> selectedById = new Map<Id, Integration_Work_Item__c>();
+        Map<Id, List<String>> lockKeysByItemId = new Map<Id, List<String>>();
+        Set<String> selectedLockKeys = new Set<String>();
+        List<Integration_Work_Item__c> malformedItems = new List<Integration_Work_Item__c>();
+
         for (Integration_Work_Item__c item : candidates) {
-            if (String.isBlank(item.Lock_Key__c) || itemByLockKey.containsKey(item.Lock_Key__c)) {
+            List<String> itemLockKeys;
+            try {
+                itemLockKeys = lockKeysFor(item);
+            } catch (Exception e) {
+                malformedItems.add(new Integration_Work_Item__c(
+                    Id = item.Id,
+                    Status__c = IntegrationWorkService.STATUS_FAILED,
+                    Last_Error__c = 'Invalid Additional_Lock_Keys__c JSON: ' + e.getMessage()
+                ));
                 continue;
             }
-            itemByLockKey.put(item.Lock_Key__c, item);
+            if (itemLockKeys.isEmpty() || overlaps(selectedLockKeys, itemLockKeys)) {
+                continue;
+            }
+            selectedById.put(item.Id, item);
+            lockKeysByItemId.put(item.Id, itemLockKeys);
+            selectedLockKeys.addAll(itemLockKeys);
         }
-        if (itemByLockKey.isEmpty()) {
+        if (!malformedItems.isEmpty()) {
+            update malformedItems;
+        }
+        if (selectedById.isEmpty()) {
             return;
         }
 
@@ -40,14 +60,14 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
         for (Integration_Work_Lock__c lockRow : [
             SELECT Id, Name, Lock_Key__c, Status__c, Work_Item__c, Lease_Expires_At__c, Processor_Token__c
             FROM Integration_Work_Lock__c
-            WHERE Lock_Key__c IN :itemByLockKey.keySet()
+            WHERE Lock_Key__c IN :selectedLockKeys
             FOR UPDATE
         ]) {
             locksByKey.put(lockRow.Lock_Key__c, lockRow);
         }
 
         List<Integration_Work_Lock__c> locksToInsert = new List<Integration_Work_Lock__c>();
-        for (String lockKey : itemByLockKey.keySet()) {
+        for (String lockKey : selectedLockKeys) {
             if (!locksByKey.containsKey(lockKey)) {
                 locksToInsert.add(new Integration_Work_Lock__c(
                     Name = lockKey.left(80),
@@ -71,10 +91,9 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
         Map<Id, String> tokenByItemId = new Map<Id, String>();
         Datetime leaseExpiresAt = nowValue.addMinutes(IntegrationWorkService.leaseMinutes());
 
-        for (String lockKey : itemByLockKey.keySet()) {
-            Integration_Work_Item__c item = itemByLockKey.get(lockKey);
-            Integration_Work_Lock__c lockRow = locksByKey.get(lockKey);
-            if (lockRow == null || hasActiveLease(lockRow, nowValue)) {
+        for (Integration_Work_Item__c item : selectedById.values()) {
+            List<String> itemLockKeys = lockKeysByItemId.get(item.Id);
+            if (!allLocksAvailable(itemLockKeys, locksByKey, nowValue)) {
                 continue;
             }
 
@@ -91,13 +110,16 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
                 Last_Error__c = null
             ));
 
-            locksToUpdate.add(new Integration_Work_Lock__c(
-                Id = lockRow.Id,
-                Work_Item__c = item.Id,
-                Status__c = 'Locked',
-                Processor_Token__c = token,
-                Lease_Expires_At__c = leaseExpiresAt
-            ));
+            for (String lockKey : itemLockKeys) {
+                Integration_Work_Lock__c lockRow = locksByKey.get(lockKey);
+                locksToUpdate.add(new Integration_Work_Lock__c(
+                    Id = lockRow.Id,
+                    Work_Item__c = item.Id,
+                    Status__c = 'Locked',
+                    Processor_Token__c = token,
+                    Lease_Expires_At__c = leaseExpiresAt
+                ));
+            }
 
             if (itemsToUpdate.size() >= availableQueueableJobs) {
                 break;
@@ -113,17 +135,19 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
 
         List<Integration_Work_Item__c> jobUpdates = new List<Integration_Work_Item__c>();
         List<Integration_Work_Lock__c> lockJobUpdates = new List<Integration_Work_Lock__c>();
-        Map<Id, Integration_Work_Lock__c> lockByItemId = new Map<Id, Integration_Work_Lock__c>();
+        Map<Id, List<Integration_Work_Lock__c>> locksByItemId = new Map<Id, List<Integration_Work_Lock__c>>();
         for (Integration_Work_Lock__c lockRow : locksToUpdate) {
-            lockByItemId.put(lockRow.Work_Item__c, lockRow);
+            if (!locksByItemId.containsKey(lockRow.Work_Item__c)) {
+                locksByItemId.put(lockRow.Work_Item__c, new List<Integration_Work_Lock__c>());
+            }
+            locksByItemId.get(lockRow.Work_Item__c).add(lockRow);
         }
 
         for (Integration_Work_Item__c item : itemsToUpdate) {
             String token = tokenByItemId.get(item.Id);
             Id jobId = System.enqueueJob(new IntegrationWorkProcessor(item.Id, token));
             jobUpdates.add(new Integration_Work_Item__c(Id = item.Id, Processor_Job_Id__c = String.valueOf(jobId)));
-            Integration_Work_Lock__c lockRow = lockByItemId.get(item.Id);
-            if (lockRow != null) {
+            for (Integration_Work_Lock__c lockRow : locksByItemId.get(item.Id)) {
                 lockJobUpdates.add(new Integration_Work_Lock__c(Id = lockRow.Id, Processor_Job_Id__c = String.valueOf(jobId)));
             }
         }
@@ -140,6 +164,44 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
         return lockRow.Status__c == 'Locked'
             && lockRow.Lease_Expires_At__c != null
             && lockRow.Lease_Expires_At__c > nowValue;
+    }
+
+    private static Boolean overlaps(Set<String> selectedLockKeys, List<String> itemLockKeys) {
+        for (String lockKey : itemLockKeys) {
+            if (selectedLockKeys.contains(lockKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Boolean allLocksAvailable(List<String> itemLockKeys, Map<String, Integration_Work_Lock__c> locksByKey, Datetime nowValue) {
+        for (String lockKey : itemLockKeys) {
+            Integration_Work_Lock__c lockRow = locksByKey.get(lockKey);
+            if (lockRow == null || hasActiveLease(lockRow, nowValue)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<String> lockKeysFor(Integration_Work_Item__c item) {
+        Set<String> keys = new Set<String>();
+        if (String.isNotBlank(item.Lock_Key__c)) {
+            keys.add(item.Lock_Key__c.trim());
+        }
+        if (String.isNotBlank(item.Additional_Lock_Keys__c)) {
+            Object parsed = JSON.deserializeUntyped(item.Additional_Lock_Keys__c);
+            if (!(parsed instanceof List<Object>)) {
+                throw new AuraHandledException('Expected a JSON array of lock keys.');
+            }
+            for (Object value : (List<Object>) parsed) {
+                if (value != null && String.isNotBlank(String.valueOf(value))) {
+                    keys.add(String.valueOf(value).trim());
+                }
+            }
+        }
+        return new List<String>(keys);
     }
 
     private static String newProcessorToken(Id itemId) {

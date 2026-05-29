@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Declarative connector configuration schema. Raw secrets must be stored in Named Credentials, External Credentials, or secure references, not these records.</description>
+    <label>Connector Config Field</label>
+    <pluralLabel>Connector Config Fields</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

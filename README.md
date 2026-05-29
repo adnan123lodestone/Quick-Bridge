@@ -1,6 +1,14 @@
 # Salesforce DX Project: Next Steps
 
-Now that you’ve created a Salesforce DX project, what’s next? Here are some documentation resources to get you started.
+## Commit Tooling Setup
+
+This repo supports Node `22.22.x` through Node `24.x` for Husky and `lint-staged`.
+
+- VS Code and terminal commits should use the same Node version to avoid inconsistent hook behavior.
+- The pre-commit hook formats staged metadata and frontend files, then runs LWC lint/tests.
+- Apex formatting is available through `npm run prettier:apex`, but it is not part of the commit hook because the Apex formatter can fail with `spawn EPERM` on some Windows/Node setups.
+
+Now that you've created a Salesforce DX project, what's next? Here are some documentation resources to get you started.
 
 ## How Do You Plan to Deploy Your Changes?
 

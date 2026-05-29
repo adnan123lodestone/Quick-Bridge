@@ -232,6 +232,97 @@ private class ErrorLogUtilityTest {
     }
 
     @isTest
+    static void testLogErrorCreatesGenericLinkForParentRecord() {
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+
+        ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+        context.gatewayName = 'Shopify';
+        context.classMethodName = 'GenericConnector.sync';
+        context.errorMessage = 'Generic link check';
+        context.sourceObjectApiName = 'Account';
+        context.sourceRecordId = acc.Id;
+
+        Test.startTest();
+        ErrorLogUtility.logError(context);
+        Test.stopTest();
+
+        Error_Log__c logRecord = [
+            SELECT Id
+            FROM Error_Log__c
+            WHERE Class_Method_Name__c = 'GenericConnector.sync'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+        Error_Log_Link__c link = [
+            SELECT Error_Log__c, Linked_Object_API_Name__c, Linked_Record_Id__c, Relationship_Role__c
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :logRecord.Id
+            LIMIT 1
+        ];
+        System.assertEquals(logRecord.Id, link.Error_Log__c);
+        System.assertEquals('Account', link.Linked_Object_API_Name__c);
+        System.assertEquals(String.valueOf(acc.Id), link.Linked_Record_Id__c);
+        System.assertEquals('Source', link.Relationship_Role__c);
+    }
+
+    @isTest
+    static void testLogErrorCreatesGenericLinksForSourceAndActionSource() {
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        Invoice__c inv = [SELECT Id FROM Invoice__c LIMIT 1];
+
+        ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+        context.gatewayName = 'Payment';
+        context.classMethodName = 'GenericConnector.action';
+        context.errorMessage = 'Action link check';
+        context.sourceObjectApiName = 'Account';
+        context.sourceRecordId = acc.Id;
+        context.actionSourceObjectApiName = 'Invoice__c';
+        context.actionSourceRecordId = inv.Id;
+
+        Test.startTest();
+        ErrorLogUtility.logError(context);
+        Test.stopTest();
+
+        Error_Log__c logRecord = [
+            SELECT Id
+            FROM Error_Log__c
+            WHERE Class_Method_Name__c = 'GenericConnector.action'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+        System.assertEquals(2, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :logRecord.Id
+        ]);
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c = :logRecord.Id
+            AND Relationship_Role__c = 'Action Source'
+            AND Linked_Object_API_Name__c = 'Invoice__c'
+        ]);
+    }
+
+    @isTest
+    static void testUpdateRetryCountIncrementsExistingLog() {
+        ErrorLogUtility.logPaymentError('Stripe', 'RetryMethod', 'Retry me', 'ORDER-RETRY');
+        Error_Log__c logRecord = [
+            SELECT Id, Retry_Count__c
+            FROM Error_Log__c
+            WHERE Class_Method_Name__c = 'RetryMethod'
+            LIMIT 1
+        ];
+
+        Test.startTest();
+        ErrorLogUtility.updateRetryCount(logRecord.Id);
+        Test.stopTest();
+
+        Error_Log__c updatedLog = [SELECT Retry_Count__c FROM Error_Log__c WHERE Id = :logRecord.Id];
+        System.assertEquals(1, updatedLog.Retry_Count__c);
+    }
+
+    @isTest
     static void testLogDmlResultsOnlyLogsFailures() {
         Account acc = [SELECT Id FROM Account LIMIT 1];
 

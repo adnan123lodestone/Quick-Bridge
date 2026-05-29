@@ -48,13 +48,23 @@ public with sharing class QuickBridgeRecordEngine {
                 WHERE Is_Active__c = true
             ];
 
-        if (!activeMappings.isEmpty()) {
-            String targetObjName = activeMappings[0].Target_Object_API_Name__c;
+        Map<String, List<Invoice_Field_Mapping__mdt>> mappingsByTarget = new Map<String, List<Invoice_Field_Mapping__mdt>>();
+        for (Invoice_Field_Mapping__mdt mapping : activeMappings) {
+            if (String.isBlank(mapping.Target_Object_API_Name__c)) {
+                continue;
+            }
+            if (!mappingsByTarget.containsKey(mapping.Target_Object_API_Name__c)) {
+                mappingsByTarget.put(mapping.Target_Object_API_Name__c, new List<Invoice_Field_Mapping__mdt>());
+            }
+            mappingsByTarget.get(mapping.Target_Object_API_Name__c).add(mapping);
+        }
+
+        for (String targetObjName : mappingsByTarget.keySet()) {
             SObjectType customObjType = Schema.getGlobalDescribe().get(targetObjName);
 
             if (customObjType != null) {
                 SObject clientRecord = customObjType.newSObject();
-                for (Invoice_Field_Mapping__mdt m : activeMappings) {
+                for (Invoice_Field_Mapping__mdt m : mappingsByTarget.get(targetObjName)) {
                     if (incomingData.containsKey(m.Source_Field_API_Name__c)) {
                         clientRecord.put(m.Target_Field_API_Name__c, incomingData.get(m.Source_Field_API_Name__c));
                     }

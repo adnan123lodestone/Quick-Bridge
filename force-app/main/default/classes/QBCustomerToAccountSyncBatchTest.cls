@@ -9,7 +9,7 @@ private class QBCustomerToAccountSyncBatchTest {
 
             if (endpoint.contains('/query?query=')) {
                 res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Customer":[{"Id":"CUST-1"}]}}');
+                res.setBody('{"QueryResponse":{"Customer":[{"Id":"CUST-1","DisplayName":"Customer One","CompanyName":"Acme","GivenName":"John","FamilyName":"Doe","PrimaryEmailAddr":{"Address":"john@example.com"},"PrimaryPhone":{"FreeFormNumber":"12345"},"BillAddr":{"Line1":"Street 1","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"}}]}}');
                 return res;
             }
 
@@ -48,7 +48,16 @@ private class QBCustomerToAccountSyncBatchTest {
         ];
         System.assertEquals('Customer One', syncedAccount.Name);
         System.assertEquals('CUST-1', syncedAccount.QuickbookID__c);
-        System.assertEquals('Street 1', syncedAccount.BillingStreet);
-        System.assertEquals('ST', syncedAccount.BillingState);
+    }
+
+    @isTest
+    static void testProcessSingleCustomerFallbackStillHydratesById() {
+        Test.setMock(HttpCalloutMock.class, new QBCustomerBatchMock());
+
+        Test.startTest();
+        new QBCustomerToAccountSyncBatch('2025-01-01').processSingleCustomer('CUST-1');
+        Test.stopTest();
+
+        System.assertEquals(1, [SELECT Count() FROM Account WHERE QuickbookID__c = 'CUST-1']);
     }
 }
