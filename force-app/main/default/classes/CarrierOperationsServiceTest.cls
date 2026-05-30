@@ -155,7 +155,7 @@ private class CarrierOperationsServiceTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Carrier_Rate_Quote__c = :quote.Id
+            WHERE Source_Record_Id__c = :String.valueOf(quote.Id)
             AND Class_Method_Name__c = 'CarrierOperationsService.selectRateQuote'
         ]);
     }

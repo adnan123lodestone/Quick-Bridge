@@ -44,6 +44,16 @@
                 <default>false</default>
                 <label>UPS</label>
             </value>
+            <value>
+                <fullName>DHL</fullName>
+                <default>false</default>
+                <label>DHL</label>
+            </value>
+            <value>
+                <fullName>klaviyo</fullName>
+                <default>false</default>
+                <label>Klaviyo</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

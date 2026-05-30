@@ -6,7 +6,10 @@ private class IntegrationProductSeedServiceTest {
         IntegrationProductSeedService.seedDefaultProducts();
         Test.stopTest();
 
-        System.assertEquals(8, [SELECT Count() FROM Integration_Product__c]);
+        System.assertEquals(
+            Integration_Product_Default__mdt.getAll().size(),
+            [SELECT Count() FROM Integration_Product__c]
+        );
         Integration_Product__c quickBooks = [
             SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Has_Scheduler__c
             FROM Integration_Product__c
@@ -35,6 +38,16 @@ private class IntegrationProductSeedServiceTest {
         System.assertEquals('klaviyo', klaviyo.Connector_Key__c);
         System.assertEquals('Klaviyo', klaviyo.Product_Label__c);
         System.assertEquals(true, klaviyo.System_Managed__c);
+
+        Integration_Product__c dhl = [
+            SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Has_Carrier__c
+            FROM Integration_Product__c
+            WHERE Product_Key__c = 'dhl'
+            LIMIT 1
+        ];
+        System.assertEquals('dhl', dhl.Connector_Key__c);
+        System.assertEquals('DHL', dhl.Product_Label__c);
+        System.assertEquals(true, dhl.Has_Carrier__c);
     }
 
     @IsTest

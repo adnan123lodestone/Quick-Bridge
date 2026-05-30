@@ -10,7 +10,7 @@ private class IntegrationUsageServiceTest {
     Test.stopTest();
 
     System.assertEquals(
-      7,
+      IntegrationConnectorRegistry.productKeys().size(),
       rows.size(),
       'A summary row should be returned for each supported product.'
     );
@@ -23,6 +23,7 @@ private class IntegrationUsageServiceTest {
     System.assertEquals(2, byKey.get('quickbooks').endpointUsageCount);
     System.assertEquals(1, byKey.get('shopify').errorCount);
     System.assertEquals(3, byKey.get('fedex').taskUsageCount);
+    System.assertEquals(0, byKey.get('dhl').endpointUsageCount);
     System.assertEquals(0, byKey.get('paypal').recordSyncCount);
   }
 

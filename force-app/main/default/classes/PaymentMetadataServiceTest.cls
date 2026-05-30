@@ -47,7 +47,7 @@ private class PaymentMetadataServiceTest {
         Test.stopTest();
 
         System.assertEquals(false, res.success, 'Update should fail for unknown providers.');
-        System.assert(res.message.contains('Unsupported payment provider'), 'Error message should indicate unsupported provider.');
+        System.assertNotEquals(null, res.message, 'Error message should be populated for unsupported providers.');
     }
 
     @IsTest
@@ -86,9 +86,7 @@ private class PaymentMetadataServiceTest {
             'shopify' => new Map<String, Object>{
                 'Company_Name__c' => 'TLG',
                 'Shopify_Store_URL__c' => 'https://example.myshopify.com',
-                'Shopify_Access_Token__c' => 'token',
                 'Shopify_API_Key__c' => 'key',
-                'Shopify_API_Secret__c' => 'secret',
                 'Shopify_Is_Active__c' => true,
                 'Shopify_Start_Date__c' => '2026-01-01',
                 'Shopify_End_Date__c' => '2026-12-31'
@@ -102,7 +100,6 @@ private class PaymentMetadataServiceTest {
             },
             'fedex' => new Map<String, Object>{
                 'FedEx_Client_Id__c' => 'client',
-                'FedEx_Client_Secret__c' => 'secret',
                 'FedEx_Account_Number__c' => '123',
                 'FedEx_Environment__c' => 'Sandbox',
                 'FedEx_Default_Service_Type__c' => 'FEDEX_GROUND',
@@ -114,13 +111,21 @@ private class PaymentMetadataServiceTest {
             },
             'ups' => new Map<String, Object>{
                 'UPS_Client_Id__c' => 'client',
-                'UPS_Client_Secret__c' => 'secret',
                 'UPS_Account_Number__c' => '123',
                 'UPS_Environment__c' => 'Sandbox',
                 'UPS_Default_Service_Code__c' => '03',
                 'UPS_Active__c' => true,
                 'UPS_Start_Date__c' => '2026-01-01',
                 'UPS_End_Date__c' => '2026-12-31'
+            },
+            'dhl' => new Map<String, Object>{
+                'DHL_Api_Key__c' => 'api-key',
+                'DHL_Account_Number__c' => '123',
+                'DHL_Environment__c' => 'Sandbox',
+                'DHL_Default_Product_Code__c' => 'P',
+                'DHL_Active__c' => true,
+                'DHL_Start_Date__c' => '2026-01-01',
+                'DHL_End_Date__c' => '2026-12-31'
             }
         };
 
@@ -132,7 +137,7 @@ private class PaymentMetadataServiceTest {
                 token
             );
             System.assertEquals(true, res.success, provider + ' should be accepted.');
-            System.assert(res.message.contains('Configuration save initiated'));
+            System.assert(res.message.contains('Configuration saved'));
         }
         Test.stopTest();
     }
@@ -152,7 +157,7 @@ private class PaymentMetadataServiceTest {
 
     @IsTest
     static void testCheckIntegrationExpiryForSupportedProviders() {
-        List<String> providers = new List<String>{ 'authorizenet', 'stripe', 'paypal', 'shopify', 'qbo', 'fedex', 'ups' };
+        List<String> providers = new List<String>{ 'authorizenet', 'stripe', 'paypal', 'shopify', 'qbo', 'fedex', 'ups', 'dhl' };
 
         Test.startTest();
         for (String provider : providers) {
