@@ -259,6 +259,7 @@ public with sharing class ConnectorConfigService {
     ];
     if (instances.isEmpty()) {
       config.fromNormalizedConfig = false;
+      config.active = false;
       return;
     }
 

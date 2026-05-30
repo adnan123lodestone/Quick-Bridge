@@ -26,6 +26,10 @@ private class QuickBridgeArchitectureRefactorTest {
       ConnectorRegistryService.adapterClassFor('ups', 'carrier.operation')
     );
     System.assertEquals(
+      'DHLCarrierAdapter',
+      ConnectorRegistryService.adapterClassFor('dhl', 'carrier.operation')
+    );
+    System.assertEquals(
       'QBAccountWorker',
       ConnectorRegistryService.adapterClassFor(
         'quickbooks',
@@ -668,11 +672,18 @@ private class QuickBridgeArchitectureRefactorTest {
     );
     System.assertNotEquals(null, CarrierAdapterFactory.getAdapter('FedEx'));
     System.assertNotEquals(null, CarrierAdapterFactory.getAdapter('UPS'));
+    System.assertNotEquals(null, CarrierAdapterFactory.getAdapter('DHL'));
     System.assert(
       CarrierAdapterFactory.supportedCarrierKeys().contains('fedex')
     );
     System.assert(
+      CarrierAdapterFactory.supportedCarrierKeys().contains('dhl')
+    );
+    System.assert(
       CarrierAdapterFactory.supportedCarrierLabels().contains('FedEx')
+    );
+    System.assert(
+      CarrierAdapterFactory.supportedCarrierLabels().contains('DHL')
     );
 
     try {
@@ -683,7 +694,7 @@ private class QuickBridgeArchitectureRefactorTest {
     }
 
     try {
-      CarrierAdapterFactory.getAdapter('DHL');
+      CarrierAdapterFactory.getAdapter('not-a-carrier');
       System.assert(false, 'Expected unsupported carrier rejection.');
     } catch (AuraHandledException expected) {
       System.assertNotEquals(null, expected);

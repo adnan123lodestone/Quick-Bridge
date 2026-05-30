@@ -58,6 +58,10 @@
             <fullName>UPS</fullName>
             <default>false</default>
         </values>
+        <values>
+            <fullName>DHL</fullName>
+            <default>false</default>
+        </values>
     </picklistValues>
     <picklistValues>
         <picklist>CustomerPriority__c</picklist>

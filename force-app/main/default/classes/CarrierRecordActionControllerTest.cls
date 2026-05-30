@@ -25,6 +25,18 @@ private class CarrierRecordActionControllerTest {
     }
 
     @IsTest
+    static void runActionReadsDhlCarrierType() {
+        Account account = new Account(Name = 'DHL Source', Carrier_Type__c = 'DHL');
+        insert account;
+
+        CarrierOperationsService.OperationResult result =
+            CarrierRecordActionController.runAction(account.Id, 'Account', 'unknownAction');
+
+        System.assertEquals(false, result.success);
+        System.assertEquals('Unknown action: unknownAction', result.message);
+    }
+
+    @IsTest
     static void runActionErrorsWhenCarrierTypeMissing() {
         Account account = new Account(Name = 'Missing Carrier');
         insert account;
@@ -39,7 +51,7 @@ private class CarrierRecordActionControllerTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Account__c = :account.Id
+            WHERE Source_Record_Id__c = :String.valueOf(account.Id)
             AND Class_Method_Name__c = 'CarrierRecordActionController.runAction'
         ]);
     }
@@ -66,7 +78,7 @@ private class CarrierRecordActionControllerTest {
     static void normalizeCarrierRejectsUnsupportedValues() {
         Boolean didThrow = false;
         try {
-            CarrierOperationsService.normalizeCarrier('DHL');
+            CarrierOperationsService.normalizeCarrier('not-a-carrier');
         } catch (AuraHandledException e) {
             didThrow = true;
         }
@@ -122,6 +134,18 @@ private class CarrierRecordActionControllerTest {
     }
 
     @IsTest
+    static void getActionsForObjectReturnsDhlCarrierType() {
+        Account account = new Account(Name = 'DHL Account', Carrier_Type__c = 'DHL');
+        insert account;
+
+        CarrierRecordActionController.ActionPanelData data =
+            CarrierRecordActionController.getActionsForObject(account.Id, 'Account');
+
+        System.assertEquals('DHL', data.carrierType);
+        System.assertNotEquals(null, data.actions);
+    }
+
+    @IsTest
     static void updateCarrierTypeSavesToRecord() {
         Account account = new Account(Name = 'Carrier Switch Account', Carrier_Type__c = 'FedEx');
         insert account;
@@ -139,7 +163,7 @@ private class CarrierRecordActionControllerTest {
 
         Boolean didThrow = false;
         try {
-            CarrierRecordActionController.updateCarrierType(account.Id, 'Account', 'DHL');
+            CarrierRecordActionController.updateCarrierType(account.Id, 'Account', 'not-a-carrier');
         } catch (AuraHandledException e) {
             didThrow = true;
         }
@@ -155,6 +179,33 @@ private class CarrierRecordActionControllerTest {
         // booleans default false when no mdt record exists in test context
         System.assertNotEquals(null, result.fedexActive);
         System.assertNotEquals(null, result.upsActive);
+        System.assertNotEquals(null, result.activeCarriers);
+    }
+
+    @IsTest
+    static void getActiveCarriersIncludesConfiguredDhl() {
+        Connector_Instance__c instanceRecord = new Connector_Instance__c(
+            Name = 'DHL',
+            Connector_Key__c = 'dhl',
+            Connector_Label__c = 'DHL',
+            Active__c = true,
+            Environment__c = 'Sandbox',
+            Entitlement_Status__c = 'Active',
+            Expiry_Date__c = Date.today().addDays(30),
+            Health_Status__c = 'Unknown'
+        );
+        insert instanceRecord;
+
+        CarrierRecordActionController.ActiveCarriersResult result =
+            CarrierRecordActionController.getActiveCarriers();
+
+        Boolean foundDhl = false;
+        for (CarrierRecordActionController.CarrierOption option : result.activeCarriers) {
+            if (option.connectorKey == 'dhl' && option.value == 'DHL') {
+                foundDhl = true;
+            }
+        }
+        System.assertEquals(true, foundDhl);
     }
 
     @IsTest
@@ -171,7 +222,7 @@ private class CarrierRecordActionControllerTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Account__c = :account.Id
+            WHERE Source_Record_Id__c = :String.valueOf(account.Id)
             AND Gateway_Name__c = 'FedEx'
             AND Class_Method_Name__c = 'CarrierOperationsService.getRateQuote'
         ]);

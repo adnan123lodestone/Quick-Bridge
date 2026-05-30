@@ -8,11 +8,6 @@ import runAction from '@salesforce/apex/CarrierRecordActionController.runAction'
 import applyValidatedAddress from '@salesforce/apex/CarrierRecordActionController.applyValidatedAddress';
 import selectRateQuote from '@salesforce/apex/CarrierRecordActionController.selectRateQuote';
 
-const ALL_CARRIER_OPTIONS = [
-    { label: 'FedEx', value: 'FedEx', key: 'fedexActive' },
-    { label: 'UPS',   value: 'UPS',   key: 'upsActive'   }
-];
-
 export default class CarrierRecordAction extends LightningElement {
     @api recordId;
     @api objectApiName;
@@ -38,7 +33,10 @@ export default class CarrierRecordAction extends LightningElement {
     loadActiveCarriers() {
         getActiveCarriers()
             .then((data) => {
-                this.carrierOptions = ALL_CARRIER_OPTIONS.filter((opt) => data[opt.key] === true);
+                this.carrierOptions = (data.activeCarriers || []).map((carrier) => ({
+                    label: carrier.label,
+                    value: carrier.value
+                }));
                 this.loadPanel();
             })
             .catch(() => {

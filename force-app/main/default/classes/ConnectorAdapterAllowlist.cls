@@ -8,6 +8,7 @@ public with sharing class ConnectorAdapterAllowlist {
         'AuthorizeNetPaymentAdapter',
         'FedExCarrierAdapter',
         'UPSCarrierAdapter',
+        'DHLCarrierAdapter',
         'QuickBooksScheduledOperationAdapter',
         'ShopifyScheduledOperationAdapter',
         'KlaviyoScheduledOperationAdapter',

@@ -20,9 +20,23 @@ public with sharing class CarrierRecordActionController {
     public class ActiveCarriersResult {
         @AuraEnabled public Boolean fedexActive;
         @AuraEnabled public Boolean upsActive;
+        @AuraEnabled public List<CarrierOption> activeCarriers;
         public ActiveCarriersResult() {
             fedexActive = false;
             upsActive = false;
+            activeCarriers = new List<CarrierOption>();
+        }
+    }
+
+    public class CarrierOption {
+        @AuraEnabled public String label;
+        @AuraEnabled public String value;
+        @AuraEnabled public String connectorKey;
+
+        public CarrierOption(String label, String value, String connectorKey) {
+            this.label = label;
+            this.value = value;
+            this.connectorKey = connectorKey;
         }
     }
 
@@ -30,10 +44,19 @@ public with sharing class CarrierRecordActionController {
     public static ActiveCarriersResult getActiveCarriers() {
         try {
             ActiveCarriersResult result = new ActiveCarriersResult();
-            ConnectorConfigService.ConnectorConfig fedex = ConnectorConfigService.getAuthoritativeConfig('fedex');
-            result.fedexActive = isEntitled(fedex);
-            ConnectorConfigService.ConnectorConfig ups = ConnectorConfigService.getAuthoritativeConfig('ups');
-            result.upsActive = isEntitled(ups);
+            for (ConnectorRegistryService.ConnectorDescriptor descriptor : ConnectorRegistryService.byCapability('carrier.operation')) {
+                ConnectorConfigService.ConnectorConfig config = ConnectorConfigService.getAuthoritativeConfig(descriptor.connectorKey);
+                Boolean active = isEntitled(config);
+                if (descriptor.connectorKey == 'fedex') {
+                    result.fedexActive = active;
+                } else if (descriptor.connectorKey == 'ups') {
+                    result.upsActive = active;
+                }
+                if (active == true) {
+                    String label = String.isBlank(descriptor.label) ? descriptor.connectorKey : descriptor.label;
+                    result.activeCarriers.add(new CarrierOption(label, label, descriptor.connectorKey));
+                }
+            }
             return result;
         } catch (Exception e) {
             throw new AuraHandledException(e.getMessage());

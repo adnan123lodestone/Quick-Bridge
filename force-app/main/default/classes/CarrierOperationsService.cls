@@ -453,6 +453,13 @@ public with sharing class CarrierOperationsService {
                 option.totalNetCharge = decimalValue(CarrierMappingService.getPath(detail, 'TotalCharges.MonetaryValue'));
                 option.currencyCode = stringValue(CarrierMappingService.getPath(detail, 'TotalCharges.CurrencyCode'));
                 option.transitTime = stringValue(CarrierMappingService.getPath(detail, 'TimeInTransit.ServiceSummary.EstimatedArrival.BusinessDaysInTransit'));
+            } else if (integration == 'dhl') {
+                option.serviceType = stringValue(detail.get('serviceType'));
+                option.serviceName = stringValue(detail.get('serviceName'));
+                option.totalNetCharge = decimalValue(detail.get('totalNetCharge'));
+                option.currencyCode = stringValue(detail.get('currency'));
+                option.transitTime = stringValue(detail.get('transitTime'));
+                option.deliveryTimestamp = stringValue(detail.get('deliveryTimestamp'));
             }
 
             option.rawResponse = JSON.serialize(detail);

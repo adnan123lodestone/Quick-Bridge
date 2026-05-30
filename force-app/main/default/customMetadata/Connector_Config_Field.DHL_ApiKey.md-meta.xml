@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>DHL API Key</label>
+    <protected>false</protected>
+    <values><field>Connector_Key__c</field><value xsi:type="xsd:string">dhl</value></values>
+    <values><field>Field_Key__c</field><value xsi:type="xsd:string">DHL_Api_Key__c</value></values>
+    <values><field>Label__c</field><value xsi:type="xsd:string">API Key</value></values>
+    <values><field>Data_Type__c</field><value xsi:type="xsd:string">Text</value></values>
+    <values><field>Required__c</field><value xsi:type="xsd:boolean">true</value></values>
+    <values><field>Secret__c</field><value xsi:type="xsd:boolean">false</value></values>
+    <values><field>Legacy_Field_API_Name__c</field><value xsi:type="xsd:string">DHL_Api_Key__c</value></values>
+    <values><field>Sort_Order__c</field><value xsi:type="xsd:double">1</value></values>
+</CustomMetadata>
