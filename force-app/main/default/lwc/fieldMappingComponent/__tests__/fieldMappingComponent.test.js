@@ -142,4 +142,32 @@ describe("c-field-mapping-component reset", () => {
     expect(resetSfFieldSelect.value).toBe("");
     expect(getExistingMappings).toHaveBeenCalledTimes(1);
   });
+
+  it("merges assistant suggestions into local rows without saving", async () => {
+    const element = appendComponent();
+    await flushPromises();
+    await flushPromises();
+
+    element.applyMappingSuggestions([
+      {
+        sfField: "AccountNumber",
+        salesforceField: "AccountNumber",
+        externalField: "Notes",
+        syncDirection: "SF to QBO",
+        required: false
+      },
+      {
+        sfField: "Name",
+        salesforceField: "Name",
+        externalField: "DisplayName",
+        syncDirection: "Two-Way",
+        required: true
+      }
+    ]);
+    await flushPromises();
+
+    const rows = element.shadowRoot.querySelectorAll("tbody tr");
+    expect(rows.length).toBe(2);
+    expect(getExistingMappings).toHaveBeenCalledTimes(1);
+  });
 });

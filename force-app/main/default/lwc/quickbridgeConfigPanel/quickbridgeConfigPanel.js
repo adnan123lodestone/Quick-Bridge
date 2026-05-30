@@ -31,6 +31,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   adminSessionToken = "";
   adminSessionExpiresAt = null;
   @track selectedTile = "";
+  @track mappingAssistantContext = {};
   quickBridgeLogo = QuickBridge_Logo;
 
   allTilesDefinition = [];
@@ -90,6 +91,31 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   }
   get selectedTileDefinition() {
     return this.getTileDefinition(this.selectedTile) || null;
+  }
+  get mappingAssistantConnectorKey() {
+    return this.mappingAssistantContext?.connectorKey || this.selectedTile || "";
+  }
+  get mappingAssistantConnectorLabel() {
+    return (
+      this.mappingAssistantContext?.connectorLabel ||
+      this.selectedTileDefinition?.label ||
+      ""
+    );
+  }
+  get mappingAssistantSalesforceObject() {
+    return this.mappingAssistantContext?.salesforceObject || "";
+  }
+  get mappingAssistantExternalObject() {
+    return this.mappingAssistantContext?.externalObject || "";
+  }
+  get mappingAssistantSyncDirection() {
+    return this.mappingAssistantContext?.syncDirection || "";
+  }
+  get mappingAssistantMappings() {
+    return this.mappingAssistantContext?.mappings || [];
+  }
+  get mappingAssistantAllowApply() {
+    return this.mappingAssistantContext?.allowApply === true;
   }
   get isSchedulerUnavailable() {
     return this.selectedTileDefinition?.hasScheduler !== true;
@@ -1045,6 +1071,37 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     if (this.isLoggedIn) {
       this.currentScreen = "mapping";
     }
+  }
+
+  handleMappingContextChange(event) {
+    this.mappingAssistantContext = { ...(event.detail || {}) };
+  }
+
+  handleApplySuggestions(event) {
+    const connectorKey = (event.detail?.connectorKey || "").toLowerCase();
+    const selectorByConnector = {
+      qbo: "c-field-mapping-component",
+      qbonline: "c-field-mapping-component",
+      shopify: "c-shopify-field-mapping-component",
+      fedex: "c-fedex-field-mapping-component",
+      ups: "c-ups-field-mapping-component"
+    };
+    const selector = selectorByConnector[connectorKey];
+    const target = selector ? this.template.querySelector(selector) : null;
+    if (!target || typeof target.applyMappingSuggestions !== "function") {
+      this.showToast(
+        "Mapping Assistant",
+        "Suggestions can be reviewed here, but this mapping tool does not support local apply yet.",
+        "info"
+      );
+      return;
+    }
+    target.applyMappingSuggestions(event.detail?.suggestions || []);
+    this.showToast(
+      "Suggestions Applied",
+      "Suggestions were added to the visible table. Click Save Mappings to persist them.",
+      "success"
+    );
   }
 
   restoreSessionFromStorage() {

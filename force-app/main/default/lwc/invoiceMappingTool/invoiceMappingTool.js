@@ -387,6 +387,7 @@ export default class InvoiceMappingTool extends LightningElement {
             this.showToast('Error', this.getErrorMessage(error, 'Failed to load invoice mapping setup.'), 'error');
         } finally {
             this.isLoading = false;
+            this.notifyMappingContextChange();
         }
     }
 
@@ -551,6 +552,7 @@ export default class InvoiceMappingTool extends LightningElement {
         };
         await this.refreshDependentOptions();
         this.syncLockedSections();
+        this.notifyMappingContextChange();
     }
 
     handleCustomerLookupChange(event) {
@@ -561,6 +563,7 @@ export default class InvoiceMappingTool extends LightningElement {
             sourceCustomerTargetObject: selected?.referenceTo || ''
         };
         this.syncLockedSections();
+        this.notifyMappingContextChange();
     }
 
     async handleInvoiceObjectChange(event) {
@@ -574,6 +577,7 @@ export default class InvoiceMappingTool extends LightningElement {
             invoiceSourceLookupField: ''
         };
         await this.refreshInvoiceOptions();
+        this.notifyMappingContextChange();
     }
 
     handleInvoiceLookupChange(event) {
@@ -582,6 +586,7 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.config = { ...this.config, invoiceSourceLookupField: event.detail.value };
+        this.notifyMappingContextChange();
     }
 
     async handleTransactionObjectChange(event) {
@@ -595,6 +600,7 @@ export default class InvoiceMappingTool extends LightningElement {
             transactionSourceLookupField: ''
         };
         await this.refreshTransactionOptions();
+        this.notifyMappingContextChange();
     }
 
     handleTransactionLookupChange(event) {
@@ -603,11 +609,13 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.config = { ...this.config, transactionSourceLookupField: event.detail.value };
+        this.notifyMappingContextChange();
     }
 
     addSourceRow() {
         this.sourceRows = [...this.sourceRows, this.newRow(false, 'source')];
         this.syncLockedSections();
+        this.notifyMappingContextChange();
     }
 
     addInvoiceRow() {
@@ -616,6 +624,7 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.invoiceRows = [...this.invoiceRows, this.newRow(false, 'invoice')];
+        this.notifyMappingContextChange();
     }
 
     addTransactionRow() {
@@ -624,11 +633,13 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.transactionRows = [...this.transactionRows, this.newRow(false, 'transaction')];
+        this.notifyMappingContextChange();
     }
 
     removeSourceRow(event) {
         this.sourceRows = this.removeRow(this.sourceRows, event.currentTarget.dataset.id, 'source');
         this.syncLockedSections();
+        this.notifyMappingContextChange();
     }
 
     removeInvoiceRow(event) {
@@ -637,6 +648,7 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.invoiceRows = this.removeRow(this.invoiceRows, event.currentTarget.dataset.id, 'invoice');
+        this.notifyMappingContextChange();
     }
 
     removeTransactionRow(event) {
@@ -645,11 +657,13 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.transactionRows = this.removeRow(this.transactionRows, event.currentTarget.dataset.id, 'transaction');
+        this.notifyMappingContextChange();
     }
 
     handleSourceRowChange(event) {
         this.sourceRows = this.updateRow(this.sourceRows, event);
         this.syncLockedSections();
+        this.notifyMappingContextChange();
     }
 
     handleInvoiceRowChange(event) {
@@ -658,6 +672,7 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.invoiceRows = this.updateRow(this.invoiceRows, event);
+        this.notifyMappingContextChange();
     }
 
     handleTransactionRowChange(event) {
@@ -666,6 +681,7 @@ export default class InvoiceMappingTool extends LightningElement {
             return;
         }
         this.transactionRows = this.updateRow(this.transactionRows, event);
+        this.notifyMappingContextChange();
     }
 
     async handleSave() {
@@ -910,5 +926,41 @@ export default class InvoiceMappingTool extends LightningElement {
 
     showToast(title, message, variant) {
         this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+    }
+
+    notifyMappingContextChange() {
+        const mappings = [
+            ...this.sourceRows.map((row) => ({
+                sfField: row.sourceField,
+                externalField: row.targetField,
+                syncDirection: 'Source',
+                isMandatory: row.isRequired
+            })),
+            ...this.invoiceRows.map((row) => ({
+                sfField: row.sourceField,
+                externalField: row.targetField,
+                syncDirection: 'Invoice',
+                isMandatory: row.isRequired
+            })),
+            ...this.transactionRows.map((row) => ({
+                sfField: row.sourceField,
+                externalField: row.targetField,
+                syncDirection: 'Transaction',
+                isMandatory: row.isRequired
+            }))
+        ];
+        this.dispatchEvent(new CustomEvent('mappingcontextchange', {
+            bubbles: true,
+            composed: true,
+            detail: {
+                connectorKey: this.gateway,
+                connectorLabel: this.gatewayLabel,
+                salesforceObject: this.config.sourceObject,
+                externalObject: 'paymentInvoice',
+                syncDirection: null,
+                allowApply: false,
+                mappings
+            }
+        }));
     }
 }

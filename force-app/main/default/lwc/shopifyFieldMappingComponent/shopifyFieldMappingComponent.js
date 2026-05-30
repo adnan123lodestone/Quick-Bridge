@@ -1,4 +1,4 @@
-import { LightningElement, track } from 'lwc';
+import { LightningElement, api, track } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getSalesforceObjects from '@salesforce/apex/FieldMappingController.getSalesforceObjects';
 import getObjectFields from '@salesforce/apex/FieldMappingController.getObjectFields';
@@ -136,6 +136,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
         this.mappingRows = rows;
         this.rowCounter = counter;
         this.updateRowDropdowns();
+        this.notifyMappingContextChange();
     }
 
     handleSalesforceObjectChange(event) {
@@ -228,6 +229,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
             }
         ];
         this.updateRowDropdowns();
+        this.notifyMappingContextChange();
     }
 
     handleRemoveRow(event) {
@@ -238,6 +240,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
             return;
         }
         this.updateRowDropdowns();
+        this.notifyMappingContextChange();
     }
 
     handleSFFieldChange(event) {
@@ -247,6 +250,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
             row.id === rowId ? { ...row, sfField: value } : row
         );
         this.updateRowDropdowns();
+        this.notifyMappingContextChange();
     }
 
     handleExternalFieldChange(event) {
@@ -265,6 +269,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
             };
         });
         this.updateRowDropdowns();
+        this.notifyMappingContextChange();
     }
 
     handleSyncDirectionChange(event) {
@@ -274,6 +279,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
             row.id === rowId ? { ...row, syncDirection: value } : row
         );
         this.updateRowDropdowns();
+        this.notifyMappingContextChange();
     }
 
     handleSave() {
@@ -318,6 +324,65 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
 
     handleReset() {
         this.handleSalesforceObjectChange({ target: { value: this.selectedSFObject } });
+    }
+
+    @api
+    applyMappingSuggestions(suggestions = []) {
+        const rows = [...this.mappingRows];
+        let changed = false;
+
+        suggestions.forEach((suggestion) => {
+            const sfField = suggestion.salesforceField || suggestion.sfField;
+            const externalField = suggestion.externalField;
+            if (!sfField || !externalField) return;
+            if (rows.some((row) => row.sfField === sfField && row.externalField === externalField)) return;
+
+            const existingExternal = rows.find((row) => row.externalField === externalField);
+            if (existingExternal) {
+                if (!existingExternal.sfField) {
+                    existingExternal.sfField = sfField;
+                    existingExternal.syncDirection = suggestion.syncDirection || existingExternal.syncDirection;
+                    changed = true;
+                }
+                return;
+            }
+
+            rows.push({
+                id: this.rowCounter++,
+                sfField,
+                externalField,
+                syncDirection: suggestion.syncDirection || 'Two-Way',
+                isMandatory: suggestion.required === true
+            });
+            changed = true;
+        });
+
+        if (changed) {
+            this.mappingRows = rows;
+            this.updateRowDropdowns();
+            this.notifyMappingContextChange();
+        }
+    }
+
+    notifyMappingContextChange() {
+        this.dispatchEvent(new CustomEvent('mappingcontextchange', {
+            bubbles: true,
+            composed: true,
+            detail: {
+                connectorKey: this.selectedIntegration,
+                connectorLabel: 'Shopify',
+                salesforceObject: this.selectedSFObject,
+                externalObject: this.selectedShopifyObject,
+                syncDirection: null,
+                allowApply: true,
+                mappings: this.mappingRows.map((row) => ({
+                    sfField: row.sfField,
+                    externalField: row.externalField,
+                    syncDirection: row.syncDirection,
+                    isMandatory: row.isMandatory
+                }))
+            }
+        }));
     }
 
     getDuplicateExternalFields() {

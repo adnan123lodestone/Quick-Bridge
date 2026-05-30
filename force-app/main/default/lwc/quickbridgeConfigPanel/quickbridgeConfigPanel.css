@@ -2133,6 +2133,22 @@ form {
     padding: 2rem !important; /* Add padding to match the settings page look */
 }
 
+.mapping-layout {
+    align-items: start;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.mapping-main-panel {
+    min-width: 0;
+}
+
+.mapping-assistant-panel {
+    position: sticky;
+    top: 1rem;
+}
+
 .dashboard-content .slds-grid:last-child,
 .mapping-content > .slds-box,
 .scheduler-content > .slds-box {
@@ -2146,6 +2162,16 @@ form {
 .mapping-content .slds-box,
 .scheduler-content .slds-box {
     border-radius: 8px !important;
+}
+
+@media screen and (max-width: 1100px) {
+    .mapping-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .mapping-assistant-panel {
+        position: static;
+    }
 }
 
 @media (max-width: 900px) {
