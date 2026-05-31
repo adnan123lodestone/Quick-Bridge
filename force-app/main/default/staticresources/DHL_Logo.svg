@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" role="img" aria-label="DHL">
+  <rect width="320" height="120" rx="14" fill="#ffcc00"/>
+  <g fill="#d40511">
+    <rect x="28" y="34" width="264" height="6"/>
+    <rect x="28" y="80" width="264" height="6"/>
+    <text x="82" y="75" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="58" font-weight="900" font-style="italic">DHL</text>
+  </g>
+</svg>

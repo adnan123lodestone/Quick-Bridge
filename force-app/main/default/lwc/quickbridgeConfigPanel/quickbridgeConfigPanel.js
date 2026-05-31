@@ -11,8 +11,31 @@ import revokeAdminSession from "@salesforce/apex/QuickBridgeAdminControlPlaneSer
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import LightningConfirm from "lightning/confirm";
 import QuickBridge_Logo from "@salesforce/resourceUrl/QuickBridge_Logo";
+import QuickBooks_Logo from "@salesforce/resourceUrl/QuickBooks_Logo";
+import DHL_Logo from "@salesforce/resourceUrl/DHL_Logo";
+import Shopify_Logo from "@salesforce/resourceUrl/Shopify_Logo";
+import Stripe_Logo from "@salesforce/resourceUrl/Stripe_Logo";
+import PayPal_Logo from "@salesforce/resourceUrl/PayPal_Logo";
+import Authorize_Net_logo from "@salesforce/resourceUrl/Authorize_Net_logo";
+import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
+import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
+import Klaviyo_Logo from "@salesforce/resourceUrl/Klaviyo_Logo";
 import recoverPin from "@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin";
 import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses";
+
+const BUILT_IN_BRAND_LOGOS = {
+  qbo: QuickBooks_Logo,
+  quickbooks: QuickBooks_Logo,
+  dhl: DHL_Logo,
+  shopify: Shopify_Logo,
+  stripe: Stripe_Logo,
+  paypal: PayPal_Logo,
+  authorizenet: Authorize_Net_logo,
+  authnet: Authorize_Net_logo,
+  fedex: FedEx_Logo,
+  ups: UPS_Logo,
+  klaviyo: Klaviyo_Logo
+};
 
 export default class QuickbridgeConfigPanel extends LightningElement {
   @track currentScreen = "login";
@@ -371,7 +394,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         .map((connector) => ({
           id: connector.connectorKey,
           label: connector.label,
-          logoUrl: this.resolveTileLogoUrl(connector.logoUrl),
+          logoUrl: this.resolveTileLogoUrl(connector),
           productKey: connector.productKey,
           aliases: this.buildTileAliases(connector),
           activeField: connector.activeField,
@@ -391,8 +414,24 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
   }
 
-  resolveTileLogoUrl(descriptorLogoUrl) {
-    return descriptorLogoUrl || QuickBridge_Logo;
+  resolveTileLogoUrl(connector) {
+    const keys = [
+      connector?.connectorKey,
+      connector?.productKey,
+      connector?.label,
+      ...(connector?.aliases ? connector.aliases.split(",") : [])
+    ];
+    for (const value of keys) {
+      const normalized = this.normalizeBrandKey(value);
+      if (BUILT_IN_BRAND_LOGOS[normalized]) {
+        return BUILT_IN_BRAND_LOGOS[normalized];
+      }
+    }
+    return connector?.logoUrl || QuickBridge_Logo;
+  }
+
+  normalizeBrandKey(value) {
+    return (value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   }
 
   buildTileAliases(connector) {

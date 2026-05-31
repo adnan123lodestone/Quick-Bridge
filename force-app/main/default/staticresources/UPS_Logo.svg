@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" role="img" aria-label="UPS">
+  <rect width="320" height="120" rx="14" fill="#ffffff"/>
+  <path d="M62 18h80v40c0 24-16 38-40 48-24-10-40-24-40-48V18z" fill="#351c15"/>
+  <path d="M76 29h52v27c0 16-10 26-26 34-16-8-26-18-26-34V29z" fill="#ffb500"/>
+  <text x="82" y="62" fill="#351c15" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="26" font-weight="900">UPS</text>
+  <text x="164" y="72" fill="#351c15" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800">UPS</text>
+</svg>
