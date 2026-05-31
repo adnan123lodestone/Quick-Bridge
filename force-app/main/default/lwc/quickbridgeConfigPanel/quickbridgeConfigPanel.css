@@ -2688,14 +2688,21 @@ form {
 
 /* Logo sizing */
 .integrations-body .tile-logo-wrapper {
-    height: 48px;
-    margin-bottom: 0.75rem;
+    width: 100%;
+    height: 72px;
+    margin-bottom: 0.55rem;
 }
 
 .integrations-body .tile-logo-img {
-    max-width: 115px;
-    max-height: 48px;
+    width: 178px;
+    max-width: 90%;
+    max-height: 72px;
     object-fit: contain;
+}
+
+.integrations-body .tile-logo-wrapper.grayscale {
+    filter: grayscale(100%);
+    opacity: 0.82;
 }
 
 .integrations-body .tile-label {
