@@ -29,7 +29,10 @@ public with sharing class ConnectorConfigService {
   }
 
   @AuraEnabled(cacheable=false)
-  public static ConnectorConfig getPublicConfig(String connectorKey, String sessionToken) {
+  public static ConnectorConfig getPublicConfig(
+    String connectorKey,
+    String sessionToken
+  ) {
     QuickBridgeAdminGuard.requireView();
     QuickBridgeAdminSessionService.requireValidSession(sessionToken);
     ConnectorConfig cfg = getConfig(connectorKey);
@@ -38,6 +41,13 @@ public with sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfig(String connectorKey) {
+    return getConfig(connectorKey, false);
+  }
+
+  public static ConnectorConfig getConfig(
+    String connectorKey,
+    Boolean includeLegacyForMigration
+  ) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
     );
@@ -52,6 +62,12 @@ public with sharing class ConnectorConfigService {
     config.label = descriptor.label;
     config.values = new Map<String, String>();
     hydrateFromNormalizedConfig(config, descriptor);
+    if (
+      includeLegacyForMigration == true &&
+      config.fromNormalizedConfig != true
+    ) {
+      hydrateFromLegacyConfig(config, descriptor);
+    }
     return config;
   }
 
@@ -60,19 +76,19 @@ public with sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfigForMigration(String connectorKey) {
-    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(connectorKey);
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
+      connectorKey
+    );
     if (descriptor == null) {
-      throw new AuraHandledException('Unsupported QuickBridge connector: ' + connectorKey);
+      throw new AuraHandledException(
+        'Unsupported QuickBridge connector: ' + connectorKey
+      );
     }
     ConnectorConfig config = new ConnectorConfig();
     config.connectorKey = descriptor.connectorKey;
     config.label = descriptor.label;
     config.values = new Map<String, String>();
-    hydrateFromNormalizedConfig(config, descriptor);
-    if (config.fromNormalizedConfig != true) {
-      hydrateFromLegacyConfig(config, descriptor);
-    }
-    return config;
+    return getConfig(connectorKey, true);
   }
 
   private static void redactSecretFields(ConnectorConfig cfg) {

@@ -7,14 +7,9 @@ private class QuickBooksInvoiceBatchTest {
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
             String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            System.assertEquals(
-                false,
-                endpoint.contains('/invoice/'),
-                'Batch updates must not hydrate invoices with per-record GET endpoints.'
-            );
 
-            if (endpoint.contains('/query')) {
-                res.setBody('{"QueryResponse":{"Invoice":[{"Id":"INV-1","SyncToken":"0","Line":[]}]}}');
+            if (endpoint.contains('/invoice/')) {
+                res.setBody('{"Invoice":{"Id":"INV-1","SyncToken":"0","Line":[]}}');
             } else {
                 res.setBody('{"Invoice":{"Id":"INV-1","Line":[]}}');
             }

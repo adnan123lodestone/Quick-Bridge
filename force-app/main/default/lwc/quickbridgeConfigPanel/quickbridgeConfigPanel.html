@@ -18,102 +18,17 @@
         </div> -->
 
     <div class="app-layout">
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <img
-            src={quickBridgeLogo}
-            alt="QuickBridge"
-            class="sidebar-logo-image"
-          />
-        </div>
-        <nav class="sidebar-nav">
-          <template if:true={isLoggedIn}>
-            <button class={navHomeClass} onclick={navigateToHome}>
-              <lightning-icon
-                icon-name="utility:home"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Integrations
-            </button>
-            <button class={navReportingClass} onclick={navigateToReporting}>
-              <lightning-icon
-                icon-name="utility:chart"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Reporting
-            </button>
-            <button class={navDashboardClass} onclick={navigateToDashboard}>
-              <lightning-icon
-                icon-name="utility:error"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Error Log
-            </button>
-            <button class={navMappingClass} onclick={navigateToMapping}>
-              <lightning-icon
-                icon-name="utility:setup"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Field Mapping
-            </button>
-            <button class={navSettingsClass} onclick={navigateToSettings}>
-              <lightning-icon
-                icon-name="utility:settings"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Settings
-            </button>
-            <template if:true={isSchedulerAvailable}>
-              <button class={navSchedulerClass} onclick={navigateToScheduler}>
-                <lightning-icon
-                  icon-name="utility:clock"
-                  size="x-small"
-                  class="nav-icon"
-                ></lightning-icon>
-                Scheduler
-              </button>
-            </template>
-            <template if:true={showSidebarBackButton}>
-              <button class="nav-button" onclick={handleSidebarBack}>
-                <lightning-icon
-                  icon-name="utility:back"
-                  size="x-small"
-                  class="nav-icon"
-                ></lightning-icon>
-                Back
-              </button>
-            </template>
-          </template>
-          <template if:false={isLoggedIn}>
-            <button class="nav-button active" onclick={handleBackToLogin}>
-              <lightning-icon
-                icon-name="utility:user"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Login
-            </button>
-          </template>
-        </nav>
-        <div class="sidebar-footer">
-          <template if:true={isLoggedIn}>
-            <button class="nav-button logout" onclick={handleLogout}>
-              <lightning-icon
-                icon-name="utility:logout"
-                size="x-small"
-                class="nav-icon"
-              ></lightning-icon>
-              Logout
-            </button>
-          </template>
-          <p>Product of The Lodestone Group</p>
-        </div>
-      </aside>
+      <c-quickbridge-control-plane-shell
+        quick-bridge-logo={quickBridgeLogo}
+        is-logged-in={isLoggedIn}
+        current-screen={currentScreen}
+        is-scheduler-available={isSchedulerAvailable}
+        show-sidebar-back-button={showSidebarBackButton}
+        onnavigate={handleControlPlaneNavigate}
+        onback={handleSidebarBack}
+        onlogin={handleBackToLogin}
+        onlogout={handleLogout}
+      ></c-quickbridge-control-plane-shell>
 
       <main class="main-content">
         <template if:true={isLoginScreen}>
@@ -925,193 +840,193 @@
               <template if:true={selectedTile}>
                 <div class="mapping-layout">
                   <div class="mapping-main-panel">
-                <template if:true={tileIs.qbo}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      QuickBooks Online Mapping
-                    </h2>
-                    <p>
-                      <c-field-mapping-component
-                        onmappingcontextchange={handleMappingContextChange}
-                      ></c-field-mapping-component>
-                    </p>
-                  </div>
-                </template>
+                    <template if:true={tileIs.qbo}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          QuickBooks Online Mapping
+                        </h2>
+                        <p>
+                          <c-field-mapping-component
+                            onmappingcontextchange={handleMappingContextChange}
+                          ></c-field-mapping-component>
+                        </p>
+                      </div>
+                    </template>
 
-                <template if:true={tileIs.stripe}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      Stripe Mapping
-                    </h2>
-                    <p>
-                      <c-invoice-mapping-tool
-                        gateway="stripe"
-                        onmappingcontextchange={handleMappingContextChange}
-                      ></c-invoice-mapping-tool>
-                    </p>
-                  </div>
-                </template>
+                    <template if:true={tileIs.stripe}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          Stripe Mapping
+                        </h2>
+                        <p>
+                          <c-invoice-mapping-tool
+                            gateway="stripe"
+                            onmappingcontextchange={handleMappingContextChange}
+                          ></c-invoice-mapping-tool>
+                        </p>
+                      </div>
+                    </template>
 
-                <template if:true={tileIs.paypal}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      PayPal Mapping
-                    </h2>
-                    <p>
-                      <c-invoice-mapping-tool
-                        gateway="paypal"
-                        onmappingcontextchange={handleMappingContextChange}
-                      ></c-invoice-mapping-tool>
-                    </p>
-                  </div>
-                </template>
+                    <template if:true={tileIs.paypal}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          PayPal Mapping
+                        </h2>
+                        <p>
+                          <c-invoice-mapping-tool
+                            gateway="paypal"
+                            onmappingcontextchange={handleMappingContextChange}
+                          ></c-invoice-mapping-tool>
+                        </p>
+                      </div>
+                    </template>
 
-                <template if:true={tileIs.authorizenet}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      Authorize.Net Mapping
-                    </h2>
-                    <p>
-                      <c-invoice-mapping-tool
-                        gateway="authorizenet"
-                        onmappingcontextchange={handleMappingContextChange}
-                      ></c-invoice-mapping-tool>
-                    </p>
-                  </div>
-                </template>
+                    <template if:true={tileIs.authorizenet}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          Authorize.Net Mapping
+                        </h2>
+                        <p>
+                          <c-invoice-mapping-tool
+                            gateway="authorizenet"
+                            onmappingcontextchange={handleMappingContextChange}
+                          ></c-invoice-mapping-tool>
+                        </p>
+                      </div>
+                    </template>
 
-                <template if:true={tileIs.shopify}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      Shopify Mapping
-                    </h2>
-                    <p>
-                      <c-shopify-field-mapping-component
-                        onmappingcontextchange={handleMappingContextChange}
-                      ></c-shopify-field-mapping-component>
-                    </p>
-                  </div>
-                </template>
+                    <template if:true={tileIs.shopify}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          Shopify Mapping
+                        </h2>
+                        <p>
+                          <c-shopify-field-mapping-component
+                            onmappingcontextchange={handleMappingContextChange}
+                          ></c-shopify-field-mapping-component>
+                        </p>
+                      </div>
+                    </template>
 
-                <template if:true={tileIs.fedex}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      FedEx Mapping
-                    </h2>
-                    <c-fedex-field-mapping-component
-                      onmappingcontextchange={handleMappingContextChange}
-                    ></c-fedex-field-mapping-component>
-                  </div>
-                </template>
+                    <template if:true={tileIs.fedex}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          FedEx Mapping
+                        </h2>
+                        <c-fedex-field-mapping-component
+                          onmappingcontextchange={handleMappingContextChange}
+                        ></c-fedex-field-mapping-component>
+                      </div>
+                    </template>
 
-                <template if:true={tileIs.ups}>
-                  <div
-                    class="slds-box"
-                    style="
-                      background: white;
-                      padding: 2rem;
-                      border-radius: 12px;
-                      border: 1px solid #e2e8f0;
-                    "
-                  >
-                    <h2
-                      style="
-                        font-size: 1.2rem;
-                        font-weight: bold;
-                        margin-bottom: 1rem;
-                      "
-                    >
-                      UPS Mapping
-                    </h2>
-                    <c-ups-field-mapping-component
-                      onmappingcontextchange={handleMappingContextChange}
-                    ></c-ups-field-mapping-component>
-                  </div>
-                </template>
+                    <template if:true={tileIs.ups}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          UPS Mapping
+                        </h2>
+                        <c-ups-field-mapping-component
+                          onmappingcontextchange={handleMappingContextChange}
+                        ></c-ups-field-mapping-component>
+                      </div>
+                    </template>
                   </div>
                   <div class="mapping-assistant-panel">
                     <c-quickbridge-mapping-assistant

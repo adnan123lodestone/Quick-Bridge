@@ -39,34 +39,25 @@ public without sharing class AuthorizeNetPaymentService {
         @AuraEnabled public String resultCode { get; set; }
         @AuraEnabled public String authCode { get; set; }
     }
-
-    private class RuntimeConfig {
-        Boolean active;
-        Date startDate;
-        Date endDate;
-        String apiLoginId;
-        String publicClientKey;
-        Boolean useSandbox;
-    }
     
     @AuraEnabled(cacheable=true)
     public static ClientConfigResponse getClientConfig() {
         ClientConfigResponse response = new ClientConfigResponse();
         try {
-            RuntimeConfig config = getConfig();
+            Quickbridge_Config__mdt config = getConfig();
             
             String availabilityMessage = getAvailabilityMessage(config);
             response.active = availabilityMessage == null;
-            response.apiLoginId = config.apiLoginId;
-            response.publicClientKey = config.publicClientKey;
-            response.useSandbox = config.useSandbox;
-            response.acceptJsUrl = config.useSandbox ? SANDBOX_ACCEPT_JS_URL : PRODUCTION_ACCEPT_JS_URL;
+            response.apiLoginId = config.AuthorizeNet_API_Login_ID__c;
+            response.publicClientKey = config.AuthorizeNet_Public_Client_Key__c;
+            response.useSandbox = config.AuthorizeNet_Use_Sandbox__c;
+            response.acceptJsUrl = config.AuthorizeNet_Use_Sandbox__c ? SANDBOX_ACCEPT_JS_URL : PRODUCTION_ACCEPT_JS_URL;
             
             List<String> missingItems = new List<String>();
-            if (String.isBlank(config.apiLoginId)) {
+            if (String.isBlank(config.AuthorizeNet_API_Login_ID__c)) {
                 missingItems.add('API Login ID');
             }
-            if (String.isBlank(config.publicClientKey)) {
+            if (String.isBlank(config.AuthorizeNet_Public_Client_Key__c)) {
                 missingItems.add('Public Client Key');
             }
             
@@ -98,7 +89,7 @@ public without sharing class AuthorizeNetPaymentService {
             Savepoint pendingWorkSavepoint = Database.setSavepoint();
             validateRequest(request);
             
-            RuntimeConfig config = getConfig();
+            Quickbridge_Config__mdt config = getConfig();
             String availabilityMessage = getAvailabilityMessage(config);
             if (availabilityMessage != null) {
                 throw new AuraHandledException(availabilityMessage);
@@ -214,25 +205,33 @@ public without sharing class AuthorizeNetPaymentService {
         return response;
     }
     
-    private static RuntimeConfig getConfig() {
-        RuntimeConfig config = new RuntimeConfig();
+    private static Quickbridge_Config__mdt getConfig() {
+        Quickbridge_Config__mdt config;
         try {
-            config.active = ConnectorConfigResolver.getBoolean('authorizenet', 'AuthorizeNet_Active__c');
-            config.startDate = ConnectorConfigResolver.getDate('authorizenet', 'AuthorizeNet_Start_Date__c');
-            config.endDate = ConnectorConfigResolver.getDate('authorizenet', 'AuthorizeNet_End_Date__c');
-            config.apiLoginId = ConnectorConfigResolver.getValue('authorizenet', 'AuthorizeNet_API_Login_ID__c');
-            config.publicClientKey = ConnectorConfigResolver.getValue('authorizenet', 'AuthorizeNet_Public_Client_Key__c');
-            config.useSandbox = ConnectorConfigResolver.getBoolean('authorizenet', 'AuthorizeNet_Use_Sandbox__c');
-        } catch (Exception e) {
-            if (!Test.isRunningTest()) {
-                throw new AuraHandledException('Authorize.Net configuration was not found.');
-            }
+            config = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
+        } catch(Exception e) {
+            config = null;
         }
+
         if (Test.isRunningTest()) {
-            config.active = true;
-            config.apiLoginId = String.isBlank(config.apiLoginId) ? 'api_login_test' : config.apiLoginId;
-            config.publicClientKey = String.isBlank(config.publicClientKey) ? 'public_client_key_test' : config.publicClientKey;
-            config.useSandbox = true;
+            Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
+            testConfig.AuthorizeNet_Active__c = true;
+            testConfig.AuthorizeNet_Start_Date__c = null;
+            testConfig.AuthorizeNet_End_Date__c = null;
+            testConfig.AuthorizeNet_API_Login_ID__c = config == null || String.isBlank(config.AuthorizeNet_API_Login_ID__c)
+                ? 'api_login_test'
+                : config.AuthorizeNet_API_Login_ID__c;
+            testConfig.AuthorizeNet_Public_Client_Key__c = config == null || String.isBlank(config.AuthorizeNet_Public_Client_Key__c)
+                ? 'public_client_key_test'
+                : config.AuthorizeNet_Public_Client_Key__c;
+            testConfig.AuthorizeNet_Use_Sandbox__c = config == null || config.AuthorizeNet_Use_Sandbox__c == null
+                ? true
+                : config.AuthorizeNet_Use_Sandbox__c;
+            return testConfig;
+        }
+        
+        if (config == null) {
+            throw new AuraHandledException('Authorize.Net configuration record was not found.');
         }
         return config;
     }
@@ -386,20 +385,20 @@ public without sharing class AuthorizeNetPaymentService {
         return activeFlag == null ? true : activeFlag;
     }
     
-    private static String getAvailabilityMessage(RuntimeConfig config) {
+    private static String getAvailabilityMessage(Quickbridge_Config__mdt config) {
         if (config == null) {
-            return 'Authorize.Net configuration was not found.';
+            return 'Authorize.Net configuration record was not found.';
         }
         
-        if (!isConfigActive(config.active)) {
+        if (!isConfigActive(config.AuthorizeNet_Active__c)) {
             return 'Authorize.Net is currently inactive.';
         }
         
         Date today = Date.today();
-        if (config.startDate != null && config.startDate > today) {
+        if (config.AuthorizeNet_Start_Date__c != null && config.AuthorizeNet_Start_Date__c > today) {
             return 'Authorize.Net is not active yet.';
         }
-        if (config.endDate != null && config.endDate < today) {
+        if (config.AuthorizeNet_End_Date__c != null && config.AuthorizeNet_End_Date__c < today) {
             return 'Authorize.Net contract has expired.';
         }
         

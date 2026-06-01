@@ -1263,15 +1263,19 @@ public with sharing class FieldMappingController {
   ) {
     List<Map<String, Object>> qbFields = new List<Map<String, Object>>();
 
-    String realmId = ConnectorConfigResolver.getValue(
-      'qbo',
-      'QuickBooks_Realm_ID__c'
-    );
-    if (String.isBlank(realmId)) {
+    List<Quickbridge_Config__mdt> configs = [
+      SELECT QuickBooks_Realm_ID__c
+      FROM Quickbridge_Config__mdt
+      WHERE QuickBooks_Realm_ID__c != NULL
+      LIMIT 1
+    ];
+    if (
+      configs.isEmpty() || String.isBlank(configs[0].QuickBooks_Realm_ID__c)
+    ) {
       throw new CalloutException('Realm ID is missing in configuration.');
     }
 
-    realmId = realmId.trim();
+    String realmId = configs[0].QuickBooks_Realm_ID__c.trim();
 
     HttpRequest req = new HttpRequest();
     String query = EncodingUtil.urlEncode(
@@ -2935,24 +2939,58 @@ public with sharing class FieldMappingController {
   @AuraEnabled(cacheable=true)
   public static Boolean getDraftOrderSetting() {
     try {
-      return ConnectorConfigResolver.getBoolean(
-        'qbo',
-        'Map_Draft_Orders_as_Estimates__c'
-      );
+      Quickbridge_Config__mdt config = [
+        SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c
+        FROM QuickBridgeTLG__Quickbridge_Config__mdt
+        WHERE DeveloperName = 'QuickBooks'
+        LIMIT 1
+      ];
+      return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
     } catch (Exception e) {
       return false;
     }
   }
 
-  // Save the value through the normalized connector config model.
+  // Save the value using Metadata API deployment
   @AuraEnabled
   public static void saveDraftOrderSetting(Boolean value) {
     try {
-      ConnectorConfigService.upsertNonSecretValue(
-        'qbo',
-        'Map_Draft_Orders_as_Estimates__c',
-        String.valueOf(value == true)
-      );
+      // Fetch the existing custom metadata record to get its full name
+      Quickbridge_Config__mdt config = [
+        SELECT Id, DeveloperName
+        FROM QuickBridgeTLG__Quickbridge_Config__mdt
+        WHERE DeveloperName = 'QuickBooks'
+        LIMIT 1
+      ];
+      if (config == null) {
+        throw new AuraHandledException(
+          'QuickBooks configuration record not found.'
+        );
+      }
+
+      String nsPrefix = getNamespacePrefix();
+      String fullRecordName =
+        nsPrefix +
+        'Quickbridge_Config__mdt.' +
+        config.DeveloperName;
+
+      Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
+      customMetadata.fullName = fullRecordName;
+      customMetadata.label = 'QuickBooks';
+
+      // Add the field value (boolean)
+      Metadata.CustomMetadataValue fieldValue = new Metadata.CustomMetadataValue();
+      fieldValue.field = nsPrefix + 'Map_Draft_Orders_as_Estimates__c';
+      fieldValue.value = value;
+      customMetadata.values.add(fieldValue);
+
+      Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
+      mdContainer.addMetadata(customMetadata);
+
+      if (!Test.isRunningTest()) {
+        Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
+        System.debug('Deployment started for draft order setting: ' + jobId);
+      }
     } catch (Exception e) {
       throw new AuraHandledException(e.getMessage());
     }

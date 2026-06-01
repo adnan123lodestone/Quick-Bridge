@@ -51,7 +51,9 @@ export default class QuickbridgeMappingAssistant extends LightningElement {
   }
 
   get hasContext() {
-    return Boolean(this.connectorKey && this.salesforceObject && this.externalObject);
+    return Boolean(
+      this.connectorKey && this.salesforceObject && this.externalObject
+    );
   }
 
   get displayConnectorLabel() {
@@ -87,7 +89,9 @@ export default class QuickbridgeMappingAssistant extends LightningElement {
   }
 
   get statusClass() {
-    const normalized = (this.statusText || "").toLowerCase().replace(/\s+/g, "-");
+    const normalized = (this.statusText || "")
+      .toLowerCase()
+      .replace(/\s+/g, "-");
     return `status-badge ${normalized}`;
   }
 
@@ -180,9 +184,11 @@ export default class QuickbridgeMappingAssistant extends LightningElement {
   handleSuggestionToggle(event) {
     const index = Number(event.currentTarget.dataset.index);
     const checked = event.currentTarget.checked;
-    this.suggestions = this.suggestions.map((suggestion, suggestionIndex) =>
-      suggestionIndex === index ? { ...suggestion, selected: checked } : suggestion
-    );
+    this.suggestions = this.suggestions.map((suggestion, suggestionIndex) => {
+      return suggestionIndex === index
+        ? { ...suggestion, selected: checked }
+        : suggestion;
+    });
   }
 
   handleApplySelected() {
@@ -193,7 +199,8 @@ export default class QuickbridgeMappingAssistant extends LightningElement {
     const highConfidence = this.suggestions.filter(
       (suggestion) =>
         suggestion.canApply !== false &&
-        (suggestion.confidenceLabel === "High" || Number(suggestion.confidence) >= 80)
+        (suggestion.confidenceLabel === "High" ||
+          Number(suggestion.confidence) >= 80)
     );
     this.emitSuggestions(highConfidence);
   }

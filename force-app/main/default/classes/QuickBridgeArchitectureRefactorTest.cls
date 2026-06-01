@@ -83,6 +83,8 @@ private class QuickBridgeArchitectureRefactorTest {
       Connector_Key__c = 'configtest',
       Product_Label__c = 'Config Test',
       Category__c = 'Test',
+      Active_Field__c = 'activeFlag',
+      Expiry_Field__c = 'expiryOn',
       Display_Order__c = 5,
       Enabled__c = true,
       Catalog_Active__c = true,
@@ -153,6 +155,33 @@ private class QuickBridgeArchitectureRefactorTest {
       ]
       .Value__c
     );
+    ConnectorConfigService.upsertNonSecretValue(
+      'configtest',
+      'activeFlag',
+      'no'
+    );
+    System.assertEquals(false, ConnectorConfigService.isActive('configtest'));
+    ConnectorConfigService.upsertNonSecretValue(
+      'configtest',
+      'activeFlag',
+      'yes'
+    );
+    ConnectorConfigService.upsertNonSecretValue(
+      'configtest',
+      'expiryOn',
+      String.valueOf(Date.today().addDays(20))
+    );
+    System.assertEquals(true, ConnectorConfigService.isActive('configtest'));
+    try {
+      ConnectorConfigService.upsertNonSecretValue(
+        'configtest',
+        'expiryOn',
+        'not-a-date'
+      );
+      System.assert(false, 'Expected invalid date rejection.');
+    } catch (AuraHandledException expected) {
+      System.assertNotEquals(null, expected);
+    }
 
     try {
       ConnectorConfigService.upsertNonSecretValue(
@@ -235,13 +264,27 @@ private class QuickBridgeArchitectureRefactorTest {
   }
 
   @IsTest
-  static void configServiceReadsLegacyFallbackWhenNoProductRowsExist() {
+  static void configServiceSkipsLegacyFallbackForRuntimeAccess() {
     ConnectorRegistryService.clearCache();
     ConnectorConfigService.ConnectorConfig stripeConfig = ConnectorConfigService.getConfig(
       'stripe'
     );
     System.assertNotEquals(null, stripeConfig);
     System.assertEquals(false, stripeConfig.fromNormalizedConfig);
+    System.assertEquals(true, stripeConfig.values.isEmpty());
+    ConnectorConfigService.ConnectorConfig migrationStripeConfig = ConnectorConfigService.getConfigForMigration(
+      'stripe'
+    );
+    System.assertNotEquals(null, migrationStripeConfig.values);
+    try {
+      ConnectorConfigService.getConfigForMigration('missing-connector');
+      System.assert(
+        false,
+        'Expected unsupported migration connector rejection.'
+      );
+    } catch (AuraHandledException expected) {
+      System.assertNotEquals(null, expected);
+    }
     System.assertNotEquals(null, ConnectorConfigService.getConfig('paypal'));
     System.assertNotEquals(
       null,
@@ -520,9 +563,18 @@ private class QuickBridgeArchitectureRefactorTest {
       'Incremental Sync',
       GenericSchedulerController.getSyncSettingsSummary('shopify').get('type')
     );
-    System.assertEquals(0, GenericSchedulerController.getRecentRuns(null).size());
+    System.assertEquals(
+      0,
+      GenericSchedulerController.getRecentRuns(null).size()
+    );
     try {
-      GenericSchedulerController.scheduleJob('qbo', 'abc', 'Hours', 'Account', 'Out');
+      GenericSchedulerController.scheduleJob(
+        'qbo',
+        'abc',
+        'Hours',
+        'Account',
+        'Out'
+      );
       System.assert(false, 'Expected invalid QuickBooks schedule value.');
     } catch (Exception expected) {
       System.assertNotEquals(null, expected);
@@ -542,7 +594,10 @@ private class QuickBridgeArchitectureRefactorTest {
     GenericSchedulerController.togglePauseStatus('qbo', true);
     System.assertEquals(true, GenericSchedulerController.getPauseStatus('qbo'));
     GenericSchedulerController.togglePauseStatus('qbo', false);
-    System.assertEquals(false, GenericSchedulerController.getPauseStatus('qbo'));
+    System.assertEquals(
+      false,
+      GenericSchedulerController.getPauseStatus('qbo')
+    );
 
     QuickBooksScheduledOperationAdapter.skipExecutionForTests = true;
     ShopifyScheduledOperationAdapter.skipExecutionForTests = true;
@@ -676,9 +731,7 @@ private class QuickBridgeArchitectureRefactorTest {
     System.assert(
       CarrierAdapterFactory.supportedCarrierKeys().contains('fedex')
     );
-    System.assert(
-      CarrierAdapterFactory.supportedCarrierKeys().contains('dhl')
-    );
+    System.assert(CarrierAdapterFactory.supportedCarrierKeys().contains('dhl'));
     System.assert(
       CarrierAdapterFactory.supportedCarrierLabels().contains('FedEx')
     );

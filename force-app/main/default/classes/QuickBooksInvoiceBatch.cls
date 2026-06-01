@@ -55,18 +55,6 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
                'FROM ' + mappedObject + ' WHERE Id IN :recordIds';
 
             Map<Id, SObject> recordsWithItems = new Map<Id, SObject>((List<SObject>)Database.query(query));
-            Set<String> invoiceIdsToUpdate = new Set<String>();
-            if (!isInitialSync) {
-                for (SObject recordWithItems : recordsWithItems.values()) {
-                    String existingQbId = (String) recordWithItems.get('QuickBridgeTLG__External_Id__c');
-                    if (String.isNotBlank(existingQbId)) {
-                        invoiceIdsToUpdate.add(existingQbId);
-                    }
-                }
-            }
-            Map<String, Map<String, Object>> existingInvoicesById = invoiceIdsToUpdate.isEmpty()
-                ? new Map<String, Map<String, Object>>()
-                : QuickBooksBulkQueryService.queryByIdsMap('Invoice', invoiceIdsToUpdate);
 
             for (SObject obj : scope) {
                 SObject currentRecord = recordsWithItems.get(obj.Id);
@@ -84,7 +72,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
                         recordsToUpdate.add(currentRecord);
                     }
                 } else if (qbId != null && !isInitialSync) {
-                    Map<String, Object> result = updateInvoice(currentRecord, childItems, fieldMap, existingInvoicesById.get(qbId));
+                    Map<String, Object> result = updateInvoice(currentRecord, childItems, fieldMap);
                 }
             }
 
@@ -139,19 +127,22 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
         return null;
     }
 
-    private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, Map<String, Object> existingInvoice) {
+    private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
         String qbId = (String)record.get('QuickBridgeTLG__External_Id__c');
-        if (existingInvoice == null || existingInvoice.get('SyncToken') == null) {
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId, null);
+        if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'QuickBooksInvoiceBatch.updateInvoice.bulkInvoiceLookup',
-                'QuickBooks invoice bulk query did not return a SyncToken for QBO Id ' + qbId + '.',
-                null,
+                'QuickBooksInvoiceBatch.updateInvoice.getInvoice',
+                'QuickBooks invoice query failed: ' + (getRes == null ? 'Null Response' : getRes.getBody()),
+                getRes == null ? null : getRes.getStatusCode(),
                 'Invoice__c',
                 record == null ? null : record.Id
             );
             return null;
         }
+
+        Map<String, Object> existingInvoice = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('Invoice');
 
         Map<String, Object> requestBody = new Map<String, Object>();
         requestBody.put('Id', qbId);
@@ -399,7 +390,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
 
 //     private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
 //         String qbId = (String)record.get('QuickbookID__c');
-//         Legacy per-record invoice hydration call removed from batch update paths.
+//         HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId + '?minorversion=65', null);
 //         if (getRes.getStatusCode() != 200) return null;
 
 //         Map<String, Object> existingInvoice = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('Invoice');

@@ -116,7 +116,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     return this.getTileDefinition(this.selectedTile) || null;
   }
   get mappingAssistantConnectorKey() {
-    return this.mappingAssistantContext?.connectorKey || this.selectedTile || "";
+    return (
+      this.mappingAssistantContext?.connectorKey || this.selectedTile || ""
+    );
   }
   get mappingAssistantConnectorLabel() {
     return (
@@ -638,6 +640,23 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       this.selectedTile = "";
       this.currentGatewayProperName = "";
       this.currentScreen = "tiles";
+    }
+  }
+
+  handleControlPlaneNavigate(event) {
+    const target = event.detail?.screen;
+    if (target === "home") {
+      this.navigateToHome();
+    } else if (target === "reporting") {
+      this.navigateToReporting();
+    } else if (target === "dashboard") {
+      this.navigateToDashboard();
+    } else if (target === "mapping") {
+      this.navigateToMapping();
+    } else if (target === "settings") {
+      this.navigateToSettings();
+    } else if (target === "scheduler") {
+      this.navigateToScheduler();
     }
   }
 

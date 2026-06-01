@@ -32,25 +32,12 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                            'FROM Purchase_Order__c WHERE Id IN :recordIds';
             
             Map<Id, SObject> recordsWithItems = new Map<Id, SObject>((List<SObject>)Database.query(query));
-            Set<String> purchaseOrderIdsToUpdate = new Set<String>();
-            if (!isInitialSync) {
-                for (SObject recordWithItems : recordsWithItems.values()) {
-                    String existingQbId = (String)recordWithItems.get('External_Id__c');
-                    if (String.isNotBlank(existingQbId)) {
-                        purchaseOrderIdsToUpdate.add(existingQbId);
-                    }
-                }
-            }
-            Map<String, Map<String, Object>> existingPurchaseOrdersById = purchaseOrderIdsToUpdate.isEmpty()
-                ? new Map<String, Map<String, Object>>()
-                : QuickBooksBulkQueryService.queryByIdsMap('PurchaseOrder', purchaseOrderIdsToUpdate);
 
             for (SObject obj : scope) {
                 SObject currentRecord = recordsWithItems.get(obj.Id);
-                if (currentRecord == null) continue;
                 List<SObject> childItems = currentRecord.getSObjects('Purchase_Order_Lines__r');
                 
-                if (childItems == null || childItems.isEmpty()) continue;
+                if (currentRecord == null || childItems == null || childItems.isEmpty()) continue;
                 
                 String qbId = (String)currentRecord.get('External_Id__c');
                 
@@ -61,7 +48,7 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                         recordsToUpdate.add(currentRecord);
                     }
                 } else if (qbId != null && !isInitialSync) {
-                    updatePurchaseOrder(currentRecord, childItems, fieldMap, qbId, lineFieldMap, existingPurchaseOrdersById.get(qbId));
+                    updatePurchaseOrder(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
                 }
             }
             
@@ -115,18 +102,21 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         return null;
     }
     
-    private void updatePurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap, Map<String, Object> existingPO) {
-        if (existingPO == null || existingPO.get('SyncToken') == null) {
+    private void updatePurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/purchaseorder/' + qbId, null);
+        if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'QuickBooksPurchaseOrderBatch.updatePurchaseOrder.bulkPurchaseOrderLookup',
-                'QuickBooks purchase order bulk query did not return a SyncToken for QBO Id ' + qbId + '.',
-                null,
+                'QuickBooksPurchaseOrderBatch.updatePurchaseOrder.getPurchaseOrder',
+                'QuickBooks purchase order query failed: ' + (getRes == null ? 'Null Response' : getRes.getBody()),
+                getRes == null ? null : getRes.getStatusCode(),
                 'Purchase_Order__c',
                 record == null ? null : record.Id
             );
             return;
         }
+        
+        Map<String, Object> existingPO = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('PurchaseOrder');
         
         Map<String, Object> requestBody = new Map<String, Object>();
         requestBody.put('Id', qbId);

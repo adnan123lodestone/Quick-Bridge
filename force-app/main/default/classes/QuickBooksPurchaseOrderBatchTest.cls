@@ -3,17 +3,11 @@ private class QuickBooksPurchaseOrderBatchTest {
 
     private class QBPurchaseOrderMock implements HttpCalloutMock {
         public HttpResponse respond(HttpRequest req) {
-            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            System.assertEquals(
-                false,
-                endpoint.contains('/purchaseorder/'),
-                'Batch updates must not hydrate purchase orders with per-record GET endpoints.'
-            );
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
-            if (endpoint.contains('/query')) {
-                res.setBody('{"QueryResponse":{"PurchaseOrder":[{"Id":"PO-EXISTING","SyncToken":"0"}]}}');
+            if (req.getMethod() == 'GET') {
+                res.setBody('{"PurchaseOrder":{"Id":"PO-1","SyncToken":"0"}}');
             } else {
                 res.setBody('{"PurchaseOrder":{"Id":"PO-NEW","SyncToken":"0"}}');
             }

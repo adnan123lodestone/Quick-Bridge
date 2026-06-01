@@ -2,9 +2,7 @@ public with sharing class QuickBridgeRecordEngine {
   @TestVisible
   private static List<Invoice_Field_Mapping__mdt> testActiveMappings;
   @TestVisible
-  private static List<String> testInvoicePipelineTargetObjects;
-  @TestVisible
-  private static String testCanonicalInvoicePipelineTargetObject;
+  private static String testInvoicePipelineTargetObject;
   @TestVisible
   private static Boolean forcePipelineFailureForTest = false;
   private static Map<String, Schema.SObjectType> objectTypeByApiName = new Map<String, Schema.SObjectType>();
@@ -13,7 +11,6 @@ public with sharing class QuickBridgeRecordEngine {
 
   private class PipelineResult {
     Id canonicalInvoiceId;
-    String canonicalInvoiceObjectApiName;
   }
 
   private class PipelineTarget {
@@ -21,8 +18,6 @@ public with sharing class QuickBridgeRecordEngine {
     Map<String, String> sourceToTargetFields = new Map<String, String>();
     Map<String, Object> defaultValues = new Map<String, Object>();
     String methodName;
-    Boolean canonical = false;
-    Integer sequence = 0;
   }
 
   public static void processIncomingInvoice(Map<String, Object> incomingData) {
@@ -32,13 +27,8 @@ public with sharing class QuickBridgeRecordEngine {
           'Forced invoice pipeline failure for logging coverage.'
         );
       }
-      PipelineResult result = runInvoicePipeline(
+      runInvoicePipeline(
         incomingData == null ? new Map<String, Object>() : incomingData
-      );
-      checkAndCreateClientMappedRecord(
-        incomingData,
-        result.canonicalInvoiceId,
-        result.canonicalInvoiceObjectApiName
       );
     } catch (Exception e) {
       System.debug('QuickBridge Engine Error: ' + e.getMessage());
@@ -76,90 +66,110 @@ public with sharing class QuickBridgeRecordEngine {
     Map<String, Object> incomingData
   ) {
     PipelineResult result = new PipelineResult();
-    List<PipelineTarget> targets = defaultInvoiceTargets();
-    PipelineTarget canonicalTarget = resolveCanonicalTarget(targets);
+    List<PipelineTarget> targets = invoicePipelineTargets();
+    if (targets.isEmpty()) {
+      throw new AuraHandledException(
+        'No invoice pipeline targets are configured.'
+      );
+    }
+    String canonicalObject = targets[0].objectApiName;
     for (PipelineTarget target : targets) {
       SObject record = buildRecord(target, incomingData);
-      insert record;
-      if (target == canonicalTarget) {
+      if (target.objectApiName == canonicalObject) {
+        insert record;
         result.canonicalInvoiceId = (Id) record.get('Id');
-        result.canonicalInvoiceObjectApiName = target.objectApiName;
         System.debug(
           'QuickBridge Invoice Created: ' + result.canonicalInvoiceId
         );
+      } else {
+        try {
+          insert record;
+          System.debug('Client Specific Record Created: ' + record.get('Id'));
+        } catch (Exception e) {
+          ErrorLogUtility.logDmlFailure(
+            'Payment',
+            'QuickBridgeRecordEngine.runInvoicePipeline',
+            'insert',
+            target.objectApiName,
+            null,
+            e.getTypeName() + ': ' + e.getMessage(),
+            canonicalObject,
+            result.canonicalInvoiceId
+          );
+        }
       }
     }
     return result;
   }
 
-  private static List<PipelineTarget> defaultInvoiceTargets() {
-    List<String> targetObjects = new List<String>();
-    if (Test.isRunningTest() && testInvoicePipelineTargetObjects != null) {
-      targetObjects.addAll(testInvoicePipelineTargetObjects);
-    } else {
-      try {
-        QBOInvoiceMappingResolver.ResolverResult res = QBOInvoiceMappingResolver.resolve();
-        if (String.isNotBlank(res.invoiceSourceObject)) {
-          targetObjects.add(res.invoiceSourceObject);
-        }
-      } catch (Exception ignored) {
-      }
-    }
+  private static List<PipelineTarget> invoicePipelineTargets() {
+    String canonicalTargetObject = resolveCanonicalInvoiceObject();
+    PipelineTarget canonicalTarget = defaultInvoiceTarget(
+      canonicalTargetObject
+    );
+    List<PipelineTarget> targets = new List<PipelineTarget>{ canonicalTarget };
+    Map<String, PipelineTarget> targetsByObject = new Map<String, PipelineTarget>{
+      canonicalTargetObject => canonicalTarget
+    };
 
-    List<PipelineTarget> targets = new List<PipelineTarget>();
-    for (String targetObject : targetObjects) {
-      if (String.isBlank(targetObject)) {
+    for (Invoice_Field_Mapping__mdt mapping : loadActiveMappings()) {
+      if (
+        String.isBlank(mapping.Target_Object_API_Name__c) ||
+        String.isBlank(mapping.Source_Field_API_Name__c) ||
+        String.isBlank(mapping.Target_Field_API_Name__c)
+      ) {
         continue;
       }
-      PipelineTarget invoiceTarget = new PipelineTarget();
-      invoiceTarget.objectApiName = targetObject;
-      invoiceTarget.methodName = 'QuickBridgeRecordEngine.processIncomingInvoice';
-      invoiceTarget.sequence = targets.size() + 1;
-      invoiceTarget.canonical =
-        Test.isRunningTest() &&
-        testInvoicePipelineTargetObjects != null &&
-        String.isNotBlank(testCanonicalInvoicePipelineTargetObject)
-          ? targetObject == testCanonicalInvoicePipelineTargetObject
-          : targets.isEmpty();
-      invoiceTarget.sourceToTargetFields.put('Amount__c', 'Amount__c');
-      invoiceTarget.sourceToTargetFields.put('Order__c', 'Order__c');
-      invoiceTarget.sourceToTargetFields.put(
-        'Related_Account__c',
-        'Related_Account__c'
+      PipelineTarget target = targetsByObject.get(
+        mapping.Target_Object_API_Name__c
       );
-      invoiceTarget.sourceToTargetFields.put(
-        'Reference_number__c',
-        'Reference_number__c'
+      if (target == null) {
+        target = new PipelineTarget();
+        target.objectApiName = mapping.Target_Object_API_Name__c;
+        target.methodName = 'QuickBridgeRecordEngine.processIncomingInvoice';
+        targetsByObject.put(target.objectApiName, target);
+        targets.add(target);
+      }
+      target.sourceToTargetFields.put(
+        mapping.Source_Field_API_Name__c,
+        mapping.Target_Field_API_Name__c
       );
-      invoiceTarget.defaultValues.put('Status__c', 'Paid');
-      invoiceTarget.defaultValues.put('Invoice_Date__c', Date.today());
-      targets.add(invoiceTarget);
     }
     return targets;
   }
 
-  private static PipelineTarget resolveCanonicalTarget(List<PipelineTarget> targets) {
-    if (targets == null || targets.isEmpty()) {
-      throw new PipelineException(
-        'No active invoice pipeline target is configured. Configure at least one active invoice target and mark exactly one as canonical.'
+  private static String resolveCanonicalInvoiceObject() {
+    if (
+      Test.isRunningTest() && String.isNotBlank(testInvoicePipelineTargetObject)
+    ) {
+      return testInvoicePipelineTargetObject;
+    }
+    QBOInvoiceMappingResolver.ResolverResult res = QBOInvoiceMappingResolver.resolve();
+    if (String.isBlank(res.invoiceSourceObject)) {
+      throw new AuraHandledException(
+        'QBO invoice mapping did not resolve a Salesforce invoice source object.'
       );
     }
-    PipelineTarget canonicalTarget;
-    Integer canonicalCount = 0;
-    for (PipelineTarget target : targets) {
-      if (target.canonical == true) {
-        canonicalTarget = target;
-        canonicalCount++;
-      }
-    }
-    if (canonicalCount != 1) {
-      throw new PipelineException(
-        'Exactly one active canonical invoice pipeline target is required; found ' +
-          canonicalCount +
-          '.'
-      );
-    }
-    return canonicalTarget;
+    return res.invoiceSourceObject;
+  }
+
+  private static PipelineTarget defaultInvoiceTarget(String targetObject) {
+    PipelineTarget invoiceTarget = new PipelineTarget();
+    invoiceTarget.objectApiName = targetObject;
+    invoiceTarget.methodName = 'QuickBridgeRecordEngine.processIncomingInvoice';
+    invoiceTarget.sourceToTargetFields.put('Amount__c', 'Amount__c');
+    invoiceTarget.sourceToTargetFields.put('Order__c', 'Order__c');
+    invoiceTarget.sourceToTargetFields.put(
+      'Related_Account__c',
+      'Related_Account__c'
+    );
+    invoiceTarget.sourceToTargetFields.put(
+      'Reference_number__c',
+      'Reference_number__c'
+    );
+    invoiceTarget.defaultValues.put('Status__c', 'Paid');
+    invoiceTarget.defaultValues.put('Invoice_Date__c', Date.today());
+    return invoiceTarget;
   }
 
   private static SObject buildRecord(
@@ -198,13 +208,8 @@ public with sharing class QuickBridgeRecordEngine {
     return record;
   }
 
-  private static void checkAndCreateClientMappedRecord(
-    Map<String, Object> incomingData,
-    Id standardInvoiceId,
-    String standardInvoiceObjectApiName
-  ) {
-    List<Invoice_Field_Mapping__mdt> activeMappings = Test.isRunningTest() &&
-      testActiveMappings != null
+  private static List<Invoice_Field_Mapping__mdt> loadActiveMappings() {
+    return Test.isRunningTest() && testActiveMappings != null
       ? testActiveMappings
       : [
           SELECT
@@ -214,56 +219,6 @@ public with sharing class QuickBridgeRecordEngine {
           FROM Invoice_Field_Mapping__mdt
           WHERE Is_Active__c = TRUE
         ];
-
-    Map<String, List<Invoice_Field_Mapping__mdt>> mappingsByTarget = new Map<String, List<Invoice_Field_Mapping__mdt>>();
-    for (Invoice_Field_Mapping__mdt mapping : activeMappings) {
-      if (String.isBlank(mapping.Target_Object_API_Name__c)) {
-        continue;
-      }
-      if (!mappingsByTarget.containsKey(mapping.Target_Object_API_Name__c)) {
-        mappingsByTarget.put(
-          mapping.Target_Object_API_Name__c,
-          new List<Invoice_Field_Mapping__mdt>()
-        );
-      }
-      mappingsByTarget.get(mapping.Target_Object_API_Name__c).add(mapping);
-    }
-
-    for (String targetObjName : mappingsByTarget.keySet()) {
-      Schema.SObjectType customObjType = objectTypeFor(targetObjName);
-      if (customObjType == null) {
-        continue;
-      }
-
-      SObject clientRecord = customObjType.newSObject();
-      Map<String, Schema.SObjectField> fields = customObjType.getDescribe()
-        .fields.getMap();
-      for (Invoice_Field_Mapping__mdt m : mappingsByTarget.get(targetObjName)) {
-        if (incomingData.containsKey(m.Source_Field_API_Name__c)) {
-          putIfFieldExists(
-            clientRecord,
-            fields,
-            m.Target_Field_API_Name__c,
-            incomingData.get(m.Source_Field_API_Name__c)
-          );
-        }
-      }
-      try {
-        insert clientRecord;
-        System.debug('Client Specific Record Created: ' + clientRecord.Id);
-      } catch (Exception e) {
-        ErrorLogUtility.logDmlFailure(
-          'Payment',
-          'QuickBridgeRecordEngine.checkAndCreateClientMappedRecord',
-          'insert',
-          targetObjName,
-          null,
-          e.getTypeName() + ': ' + e.getMessage(),
-          standardInvoiceObjectApiName,
-          standardInvoiceId
-        );
-      }
-    }
   }
 
   private static Schema.SObjectType objectTypeFor(String objectApiName) {

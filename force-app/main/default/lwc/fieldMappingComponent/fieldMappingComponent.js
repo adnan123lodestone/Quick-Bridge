@@ -503,7 +503,11 @@ export default class FieldMappingComponent extends LightningElement {
       sfObject: this.selectedSFObject
     })
       .then(() => {
-        this.showToast("Success", "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.", "success");
+        this.showToast(
+          "Success",
+          "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.",
+          "success"
+        );
         this.resetParentMappingRows();
         if (this.showChildMapping) {
           this.resetChildMappingRows();
@@ -693,7 +697,8 @@ export default class FieldMappingComponent extends LightningElement {
         id: this.rowCounter++,
         sfField,
         externalField,
-        syncDirection: suggestion.syncDirection || this.getDefaultSyncDirection(),
+        syncDirection:
+          suggestion.syncDirection || this.getDefaultSyncDirection(),
         isMandatory: suggestion.required === true
       });
       changed = true;

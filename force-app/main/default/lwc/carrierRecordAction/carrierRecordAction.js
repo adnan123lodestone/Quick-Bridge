@@ -1,227 +1,325 @@
-import { LightningElement, api, track, wire } from 'lwc';
-import { ShowToastEvent } from 'lightning/platformShowToastEvent';
-import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
-import getActionsForObject from '@salesforce/apex/CarrierRecordActionController.getActionsForObject';
-import getActiveCarriers from '@salesforce/apex/CarrierRecordActionController.getActiveCarriers';
-import updateCarrierType from '@salesforce/apex/CarrierRecordActionController.updateCarrierType';
-import runAction from '@salesforce/apex/CarrierRecordActionController.runAction';
-import applyValidatedAddress from '@salesforce/apex/CarrierRecordActionController.applyValidatedAddress';
-import selectRateQuote from '@salesforce/apex/CarrierRecordActionController.selectRateQuote';
+import { LightningElement, api, track } from "lwc";
+import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import getActionsForObject from "@salesforce/apex/CarrierRecordActionController.getActionsForObject";
+import getActiveCarriers from "@salesforce/apex/CarrierRecordActionController.getActiveCarriers";
+import updateCarrierType from "@salesforce/apex/CarrierRecordActionController.updateCarrierType";
+import runAction from "@salesforce/apex/CarrierRecordActionController.runAction";
+import applyValidatedAddress from "@salesforce/apex/CarrierRecordActionController.applyValidatedAddress";
+import selectRateQuote from "@salesforce/apex/CarrierRecordActionController.selectRateQuote";
 
 export default class CarrierRecordAction extends LightningElement {
-    @api recordId;
-    @api objectApiName;
+  @api recordId;
+  @api objectApiName;
 
-    @track carrierType = null;
-    @track actions = [];
-    @track isLoading = false;
-    @track isPanelLoading = false;
+  @track carrierType = null;
+  @track actions = [];
+  @track isLoading = false;
+  @track isPanelLoading = false;
 
-    @track result = null;
-    @track rateQuotes = [];
-    @track showRateModal = false;
-    @track showConfirmModal = false;
-    @track confirmedAddress = null;
-    @track activeActionName = null;
+  @track result = null;
+  @track rateQuotes = [];
+  @track showRateModal = false;
+  @track showConfirmModal = false;
+  @track confirmedAddress = null;
+  @track activeActionName = null;
 
-    carrierOptions = [];
+  carrierOptions = [];
 
-    connectedCallback() {
-        this.loadActiveCarriers();
+  connectedCallback() {
+    this.loadActiveCarriers();
+  }
+
+  loadActiveCarriers() {
+    getActiveCarriers()
+      .then((data) => {
+        this.carrierOptions = (data.activeCarriers || []).map((carrier) => ({
+          label: carrier.label,
+          value: carrier.value
+        }));
+        this.loadPanel();
+      })
+      .catch(() => {
+        this.carrierOptions = [];
+        this.loadPanel();
+      });
+  }
+
+  loadPanel() {
+    this.isPanelLoading = true;
+    getActionsForObject({
+      recordId: this.recordId,
+      objectApiName: this.objectApiName
+    })
+      .then((data) => {
+        this.carrierType = data.carrierType;
+        this.actions = data.actions || [];
+      })
+      .catch((error) => {
+        this.showToast(
+          "Error",
+          error.body?.message ||
+            error.message ||
+            "Failed to load carrier actions.",
+          "error"
+        );
+      })
+      .finally(() => {
+        this.isPanelLoading = false;
+      });
+  }
+
+  get hasActiveCarriers() {
+    return this.carrierOptions && this.carrierOptions.length > 0;
+  }
+
+  get hasActions() {
+    return this.actions && this.actions.length > 0;
+  }
+
+  get noActionsMessage() {
+    if (!this.carrierType) {
+      return "Select a carrier type to see available actions.";
     }
+    return (
+      "No field mappings configured for " +
+      this.carrierType +
+      " on this object. Configure mappings in the Quickbridge settings."
+    );
+  }
 
-    loadActiveCarriers() {
-        getActiveCarriers()
-            .then((data) => {
-                this.carrierOptions = (data.activeCarriers || []).map((carrier) => ({
-                    label: carrier.label,
-                    value: carrier.value
-                }));
-                this.loadPanel();
-            })
-            .catch(() => {
-                this.carrierOptions = [];
-                this.loadPanel();
-            });
-    }
+  handleCarrierChange(event) {
+    const newCarrier = event.detail.value;
+    if (newCarrier === this.carrierType) return;
 
-    loadPanel() {
-        this.isPanelLoading = true;
-        getActionsForObject({ recordId: this.recordId, objectApiName: this.objectApiName })
-            .then((data) => {
-                this.carrierType = data.carrierType;
-                this.actions = data.actions || [];
-            })
-            .catch((error) => {
-                this.showToast('Error', error.body?.message || error.message || 'Failed to load carrier actions.', 'error');
-            })
-            .finally(() => {
-                this.isPanelLoading = false;
-            });
-    }
+    this.isLoading = true;
+    updateCarrierType({
+      recordId: this.recordId,
+      objectApiName: this.objectApiName,
+      carrierType: newCarrier
+    })
+      .then(() => {
+        this.carrierType = newCarrier;
+        return getActionsForObject({
+          recordId: this.recordId,
+          objectApiName: this.objectApiName
+        });
+      })
+      .then((data) => {
+        this.actions = data.actions || [];
+        this.showToast(
+          "Success",
+          "Carrier type updated to " + newCarrier + ".",
+          "success"
+        );
+      })
+      .catch((error) => {
+        this.showToast(
+          "Error",
+          error.body?.message ||
+            error.message ||
+            "Failed to update carrier type.",
+          "error"
+        );
+      })
+      .finally(() => {
+        this.isLoading = false;
+      });
+  }
 
-    get hasActiveCarriers() {
-        return this.carrierOptions && this.carrierOptions.length > 0;
-    }
+  handleActionClick(event) {
+    const actionName = event.currentTarget.dataset.action;
+    this.activeActionName = actionName;
+    this.isLoading = true;
+    this.result = null;
+    this.rateQuotes = [];
 
-    get hasActions() {
-        return this.actions && this.actions.length > 0;
-    }
+    const apexActionName =
+      actionName === "validateAddress" ||
+      actionName === "validateAddressAndUpdate"
+        ? "validateAddress"
+        : actionName;
 
-    get noActionsMessage() {
-        if (!this.carrierType) {
-            return 'Select a carrier type to see available actions.';
-        }
-        return 'No field mappings configured for ' + this.carrierType + ' on this object. Configure mappings in the Quickbridge settings.';
-    }
+    runAction({
+      recordId: this.recordId,
+      objectApiName: this.objectApiName,
+      actionName: apexActionName
+    })
+      .then((res) => {
+        this.result = res;
 
-    handleCarrierChange(event) {
-        const newCarrier = event.detail.value;
-        if (newCarrier === this.carrierType) return;
-
-        this.isLoading = true;
-        updateCarrierType({ recordId: this.recordId, objectApiName: this.objectApiName, carrierType: newCarrier })
-            .then(() => {
-                this.carrierType = newCarrier;
-                return getActionsForObject({ recordId: this.recordId, objectApiName: this.objectApiName });
-            })
-            .then((data) => {
-                this.actions = data.actions || [];
-                this.showToast('Success', 'Carrier type updated to ' + newCarrier + '.', 'success');
-            })
-            .catch((error) => {
-                this.showToast('Error', error.body?.message || error.message || 'Failed to update carrier type.', 'error');
-            })
-            .finally(() => {
-                this.isLoading = false;
-            });
-    }
-
-    handleActionClick(event) {
-        const actionName = event.currentTarget.dataset.action;
-        this.activeActionName = actionName;
-        this.isLoading = true;
-        this.result = null;
-        this.rateQuotes = [];
-
-        const apexActionName = (actionName === 'validateAddress' || actionName === 'validateAddressAndUpdate')
-            ? 'validateAddress'
-            : actionName;
-
-        runAction({ recordId: this.recordId, objectApiName: this.objectApiName, actionName: apexActionName })
-            .then((res) => {
-                this.result = res;
-
-                if (!res.success) {
-                    this.showToast('Error', res.message || 'Action failed.', 'error');
-                    return;
-                }
-
-                if (actionName === 'validateAddress' && res.correctedAddress) {
-                    this.confirmedAddress = res.correctedAddress;
-                    this.showConfirmModal = true;
-                    return;
-                }
-
-                if (actionName === 'getRateQuote' && res.rateQuotes && res.rateQuotes.length) {
-                    this.rateQuotes = res.rateQuotes.map((q) => ({ ...q, selected: false }));
-                    this.showRateModal = true;
-                    return;
-                }
-
-                let message = res.message || 'Action completed successfully.';
-                if (res.trackingNumber) message += ' Tracking: ' + res.trackingNumber;
-                if (res.fileId) message += ' Label stored.';
-                this.showToast('Success', message, 'success');
-            })
-            .catch((error) => {
-                this.showToast('Error', error.body?.message || error.message || 'Unexpected error.', 'error');
-            })
-            .finally(() => {
-                this.isLoading = false;
-            });
-    }
-
-    handleConfirmAddress() {
-        this.showConfirmModal = false;
-        this.isLoading = true;
-        applyValidatedAddress({ recordId: this.recordId, objectApiName: this.objectApiName, validatedAddress: this.confirmedAddress })
-            .then((res) => {
-                if (res.success) {
-                    this.showToast('Success', res.message || 'Validated address applied to record.', 'success');
-                } else {
-                    this.showToast('Error', res.message || 'Could not apply address.', 'error');
-                }
-            })
-            .catch((error) => {
-                this.showToast('Error', error.body?.message || error.message || 'Unexpected error.', 'error');
-            })
-            .finally(() => {
-                this.isLoading = false;
-            });
-    }
-
-    handleCancelConfirmModal() {
-        this.showConfirmModal = false;
-        this.showToast('Info', 'Address validation result discarded. Salesforce record was not updated.', 'info');
-    }
-
-    handleRateQuoteSelect(event) {
-        const quoteId = event.currentTarget.dataset.quoteId;
-        this.rateQuotes = this.rateQuotes.map((q) => ({ ...q, selected: q.rateQuoteId === quoteId }));
-    }
-
-    handleConfirmRateQuote() {
-        const selected = this.rateQuotes.find((q) => q.selected);
-        if (!selected) {
-            this.showToast('Select a Rate', 'Please select a rate option before confirming.', 'warning');
-            return;
+        if (!res.success) {
+          this.showToast("Error", res.message || "Action failed.", "error");
+          return;
         }
 
-        this.isLoading = true;
-        selectRateQuote({ rateQuoteId: selected.rateQuoteId, targetRecordId: this.recordId, targetObjectApiName: this.objectApiName })
-            .then((res) => {
-                this.showRateModal = false;
-                if (res.success) {
-                    this.showToast('Success', 'Rate quote applied: ' + selected.serviceName + ' (' + selected.totalNetCharge + ' ' + selected.currencyCode + ')', 'success');
-                } else {
-                    this.showToast('Error', res.message || 'Could not apply rate quote.', 'error');
-                }
-            })
-            .catch((error) => {
-                this.showToast('Error', error.body?.message || error.message || 'Unexpected error.', 'error');
-            })
-            .finally(() => {
-                this.isLoading = false;
-            });
+        if (actionName === "validateAddress" && res.correctedAddress) {
+          this.confirmedAddress = res.correctedAddress;
+          this.showConfirmModal = true;
+          return;
+        }
+
+        if (
+          actionName === "getRateQuote" &&
+          res.rateQuotes &&
+          res.rateQuotes.length
+        ) {
+          this.rateQuotes = res.rateQuotes.map((q) => ({
+            ...q,
+            selected: false
+          }));
+          this.showRateModal = true;
+          return;
+        }
+
+        let message = res.message || "Action completed successfully.";
+        if (res.trackingNumber) message += " Tracking: " + res.trackingNumber;
+        if (res.fileId) message += " Label stored.";
+        this.showToast("Success", message, "success");
+      })
+      .catch((error) => {
+        this.showToast(
+          "Error",
+          error.body?.message || error.message || "Unexpected error.",
+          "error"
+        );
+      })
+      .finally(() => {
+        this.isLoading = false;
+      });
+  }
+
+  handleConfirmAddress() {
+    this.showConfirmModal = false;
+    this.isLoading = true;
+    applyValidatedAddress({
+      recordId: this.recordId,
+      objectApiName: this.objectApiName,
+      validatedAddress: this.confirmedAddress
+    })
+      .then((res) => {
+        if (res.success) {
+          this.showToast(
+            "Success",
+            res.message || "Validated address applied to record.",
+            "success"
+          );
+        } else {
+          this.showToast(
+            "Error",
+            res.message || "Could not apply address.",
+            "error"
+          );
+        }
+      })
+      .catch((error) => {
+        this.showToast(
+          "Error",
+          error.body?.message || error.message || "Unexpected error.",
+          "error"
+        );
+      })
+      .finally(() => {
+        this.isLoading = false;
+      });
+  }
+
+  handleCancelConfirmModal() {
+    this.showConfirmModal = false;
+    this.showToast(
+      "Info",
+      "Address validation result discarded. Salesforce record was not updated.",
+      "info"
+    );
+  }
+
+  handleRateQuoteSelect(event) {
+    const quoteId = event.currentTarget.dataset.quoteId;
+    this.rateQuotes = this.rateQuotes.map((q) => ({
+      ...q,
+      selected: q.rateQuoteId === quoteId
+    }));
+  }
+
+  handleConfirmRateQuote() {
+    const selected = this.rateQuotes.find((q) => q.selected);
+    if (!selected) {
+      this.showToast(
+        "Select a Rate",
+        "Please select a rate option before confirming.",
+        "warning"
+      );
+      return;
     }
 
-    handleCancelRateModal() {
+    this.isLoading = true;
+    selectRateQuote({
+      rateQuoteId: selected.rateQuoteId,
+      targetRecordId: this.recordId,
+      targetObjectApiName: this.objectApiName
+    })
+      .then((res) => {
         this.showRateModal = false;
-    }
+        if (res.success) {
+          this.showToast(
+            "Success",
+            "Rate quote applied: " +
+              selected.serviceName +
+              " (" +
+              selected.totalNetCharge +
+              " " +
+              selected.currencyCode +
+              ")",
+            "success"
+          );
+        } else {
+          this.showToast(
+            "Error",
+            res.message || "Could not apply rate quote.",
+            "error"
+          );
+        }
+      })
+      .catch((error) => {
+        this.showToast(
+          "Error",
+          error.body?.message || error.message || "Unexpected error.",
+          "error"
+        );
+      })
+      .finally(() => {
+        this.isLoading = false;
+      });
+  }
 
-    get confirmedAddressLines() {
-        if (!this.confirmedAddress) return [];
-        const a = this.confirmedAddress;
-        const lines = [];
-        const street = Array.isArray(a.streetLines)
-            ? a.streetLines.filter(Boolean).join(', ')
-            : (a.streetLines || '');
-        if (street) lines.push({ label: 'Street', value: street });
-        if (a.city) lines.push({ label: 'City', value: a.city });
-        if (a.stateOrProvinceCode) lines.push({ label: 'State', value: a.stateOrProvinceCode });
-        if (a.postalCode) lines.push({ label: 'Postal Code', value: a.postalCode });
-        if (a.countryCode) lines.push({ label: 'Country', value: a.countryCode });
-        if (a.classification) lines.push({ label: 'Classification', value: a.classification });
-        if (a.residential != null) lines.push({ label: 'Residential', value: a.residential ? 'Yes' : 'No' });
-        return lines;
-    }
+  handleCancelRateModal() {
+    this.showRateModal = false;
+  }
 
-    get hasRateQuotes() {
-        return this.rateQuotes && this.rateQuotes.length > 0;
-    }
+  get confirmedAddressLines() {
+    if (!this.confirmedAddress) return [];
+    const a = this.confirmedAddress;
+    const lines = [];
+    const street = Array.isArray(a.streetLines)
+      ? a.streetLines.filter(Boolean).join(", ")
+      : a.streetLines || "";
+    if (street) lines.push({ label: "Street", value: street });
+    if (a.city) lines.push({ label: "City", value: a.city });
+    if (a.stateOrProvinceCode)
+      lines.push({ label: "State", value: a.stateOrProvinceCode });
+    if (a.postalCode) lines.push({ label: "Postal Code", value: a.postalCode });
+    if (a.countryCode) lines.push({ label: "Country", value: a.countryCode });
+    if (a.classification)
+      lines.push({ label: "Classification", value: a.classification });
+    if (a.residential != null)
+      lines.push({ label: "Residential", value: a.residential ? "Yes" : "No" });
+    return lines;
+  }
 
-    showToast(title, message, variant) {
-        this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
-    }
+  get hasRateQuotes() {
+    return this.rateQuotes && this.rateQuotes.length > 0;
+  }
+
+  showToast(title, message, variant) {
+    this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+  }
 }

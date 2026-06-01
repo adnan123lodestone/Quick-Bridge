@@ -8,12 +8,26 @@ let acceptJsPromise;
 let stripeJsPromise;
 let paypalJsPromise;
 
-const SUPPORTED_RENDERER_MODES = new Set([
-  "acceptJs",
-  "stripeElements",
-  "paypalButtons",
-  "hosted"
-]);
+const FALLBACK_PAYMENT_PROVIDERS = [];
+
+const PAYMENT_ACTIONS = {
+  ACCEPT_JS: "acceptJs",
+  STRIPE_ELEMENTS: "stripeElements",
+  PAYPAL_BUTTONS: "paypalButtons",
+  HOSTED: "hosted"
+};
+
+const PAYMENT_ACTION_HANDLERS = {
+  [PAYMENT_ACTIONS.ACCEPT_JS]: "primeAuthorizeNet",
+  [PAYMENT_ACTIONS.STRIPE_ELEMENTS]: "primeStripe",
+  [PAYMENT_ACTIONS.PAYPAL_BUTTONS]: "primePayPal"
+};
+
+const PAYMENT_ACTION_LABELS = {
+  [PAYMENT_ACTIONS.ACCEPT_JS]: "Proceed with card",
+  [PAYMENT_ACTIONS.STRIPE_ELEMENTS]: "Proceed with card",
+  [PAYMENT_ACTIONS.PAYPAL_BUTTONS]: "Pay with PayPal"
+};
 
 export default class PaymentComponent extends LightningElement {
   selectedProvider = null;
@@ -57,7 +71,7 @@ export default class PaymentComponent extends LightningElement {
   paypalButtonsInstance;
   isPaypalInitializing = false;
   isSubmitting = false;
-  paymentProviderDescriptors = [];
+  paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
   providerConfigs = {};
 
   CardPayment_lables = Object.fromEntries(
@@ -86,7 +100,7 @@ export default class PaymentComponent extends LightningElement {
 
   renderedCallback() {
     if (
-      this.selectedRendererMode === "stripeElements" &&
+      this.isStripeSelected &&
       this.stripeInstance &&
       !this.stripeCardMounted &&
       !this.isStripeInitializing
@@ -94,7 +108,7 @@ export default class PaymentComponent extends LightningElement {
       this.mountStripeCardElement();
     }
     if (
-      this.selectedRendererMode === "paypalButtons" &&
+      this.isPayPalSelected &&
       this.canRenderPayPalButtons &&
       !this.paypalButtonsMounted &&
       !this.isPaypalInitializing
@@ -123,28 +137,29 @@ export default class PaymentComponent extends LightningElement {
   get selectedActionType() {
     return this.getProviderConfig(this.selectedProvider)?.actionType || null;
   }
-  get selectedRendererMode() {
-    return (
-      this.getProviderConfig(this.selectedProvider)?.rendererMode || "hosted"
-    );
-  }
   get isCardMode() {
     return (
-      this.selectedRendererMode === "acceptJs" ||
-      this.selectedRendererMode === "stripeElements"
+      this.selectedActionType === PAYMENT_ACTIONS.ACCEPT_JS ||
+      this.selectedActionType === PAYMENT_ACTIONS.STRIPE_ELEMENTS
     );
   }
   get isButtonMode() {
-    return this.selectedRendererMode === "paypalButtons";
+    return this.selectedActionType === PAYMENT_ACTIONS.PAYPAL_BUTTONS;
   }
   get isHostedMode() {
-    return !!this.selectedProvider && !this.isCardMode && !this.isButtonMode;
+    return (
+      !!this.selectedProvider &&
+      this.selectedActionType === PAYMENT_ACTIONS.HOSTED
+    );
   }
-  get isAcceptJsRenderer() {
-    return this.selectedRendererMode === "acceptJs";
+  get isAuthorizeNetSelected() {
+    return this.selectedActionType === PAYMENT_ACTIONS.ACCEPT_JS;
   }
-  get isStripeElementsRenderer() {
-    return this.selectedRendererMode === "stripeElements";
+  get isStripeSelected() {
+    return this.selectedActionType === PAYMENT_ACTIONS.STRIPE_ELEMENTS;
+  }
+  get isPayPalSelected() {
+    return this.selectedActionType === PAYMENT_ACTIONS.PAYPAL_BUTTONS;
   }
   get hasAvailableProviders() {
     return this.availableProviderCount > 0;
@@ -163,7 +178,7 @@ export default class PaymentComponent extends LightningElement {
         key: provider.connectorKey,
         label: provider.label,
         logoText: this.getProviderLogoText(provider.connectorKey),
-        logoClass: `tile-logo tile-logo-${provider.connectorKey}`,
+        logoClass: this.getProviderLogoClass(provider.connectorKey),
         tileClass: this.getProviderTileClass(provider.connectorKey),
         statusText: this.getProviderStatusText(
           this.getProviderConfig(provider.connectorKey)
@@ -172,7 +187,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   get canRenderPayPalButtons() {
-    const cfg = this.getProviderConfig(this.selectedProvider);
+    const cfg = this.getSelectedProviderConfig();
     return cfg?.active === true && cfg?.configured === true;
   }
 
@@ -186,15 +201,10 @@ export default class PaymentComponent extends LightningElement {
   }
 
   get showStripeLoader() {
-    return (
-      this.selectedRendererMode === "stripeElements" &&
-      this.isStripeInitializing
-    );
+    return this.isStripeSelected && this.isStripeInitializing;
   }
   get showPaypalLoader() {
-    return (
-      this.selectedRendererMode === "paypalButtons" && this.isPaypalInitializing
-    );
+    return this.isPayPalSelected && this.isPaypalInitializing;
   }
 
   get paypalPreviewMessage() {
@@ -206,7 +216,7 @@ export default class PaymentComponent extends LightningElement {
   get paypalStatusMessage() {
     return this.canRenderPayPalButtons
       ? ""
-      : this.getProviderConfig(this.selectedProvider)?.message || "";
+      : this.getSelectedProviderConfig()?.message || "";
   }
   get showPaypalStatusMessage() {
     return !!this.paypalStatusMessage;
@@ -215,14 +225,14 @@ export default class PaymentComponent extends LightningElement {
   get proceedButtonLabel() {
     if (this.isSubmitting) return "Processing...";
     return (
-      this.getProviderConfig(this.selectedProvider)?.buttonLabel ||
+      PAYMENT_ACTION_LABELS[this.selectedActionType] ||
       `Continue with ${this.getProviderLabel(this.selectedProvider)}`
     );
   }
 
   get isProceedDisabled() {
     if (!this.hasAvailableProviders) return true;
-    if (this.selectedRendererMode === "paypalButtons") return true;
+    if (this.isPayPalSelected) return true;
     return (
       this.isSubmitting ||
       this.showStripeLoader ||
@@ -254,7 +264,7 @@ export default class PaymentComponent extends LightningElement {
       }
 
       this.primeSelectedProvider();
-      this.preloadRendererInBackground("stripeElements");
+      this.preloadBackgroundProviders();
     } catch (error) {
       this.selectedProvider = null;
       this.dispatchError(
@@ -279,7 +289,7 @@ export default class PaymentComponent extends LightningElement {
           hasPayment: true,
           hasCheckout: true
         }))
-      : [];
+      : FALLBACK_PAYMENT_PROVIDERS;
 
     this.providerConfigs = this.paymentProviderDescriptors.reduce(
       (acc, provider) => {
@@ -300,11 +310,7 @@ export default class PaymentComponent extends LightningElement {
       active: provider.active === true,
       configured: provider.configured === true,
       message: provider.message,
-      actionType: provider.actionType || "hosted",
-      rendererMode: this.normalizeRendererMode(
-        provider.rendererMode || provider.actionType
-      ),
-      buttonLabel: provider.buttonLabel || provider.config?.buttonLabel,
+      actionType: provider.actionType || PAYMENT_ACTIONS.HOSTED,
       connectorKey: provider.connectorKey,
       label: provider.label,
       acceptJsUrl: provider.config?.acceptJsUrl || provider.clientScriptUrl,
@@ -312,10 +318,6 @@ export default class PaymentComponent extends LightningElement {
       payPalJsUrl: provider.config?.payPalJsUrl || provider.clientScriptUrl,
       clientScriptUrl: provider.clientScriptUrl
     };
-  }
-
-  normalizeRendererMode(rendererMode) {
-    return SUPPORTED_RENDERER_MODES.has(rendererMode) ? rendererMode : "hosted";
   }
 
   buildUnavailableProviderConfig(message, error) {
@@ -334,18 +336,25 @@ export default class PaymentComponent extends LightningElement {
     return this.providerConfigs?.[providerName] || null;
   }
 
-  providerKeyForRenderer(rendererMode) {
-    if (
-      this.getProviderConfig(this.selectedProvider)?.rendererMode ===
-      rendererMode
-    ) {
-      return this.selectedProvider;
-    }
+  getSelectedProviderConfig() {
+    return this.getProviderConfig(this.selectedProvider);
+  }
+
+  getProviderByActionType(actionType) {
     return this.paymentProviderDescriptors.find(
       (provider) =>
-        this.getProviderConfig(provider.connectorKey)?.rendererMode ===
-        rendererMode
-    )?.connectorKey;
+        this.getProviderConfig(provider.connectorKey)?.actionType === actionType
+    );
+  }
+
+  getConfigForActionType(actionType) {
+    const provider =
+      this.selectedActionType === actionType
+        ? this.paymentProviderDescriptors.find(
+            (descriptor) => descriptor.connectorKey === this.selectedProvider
+          )
+        : this.getProviderByActionType(actionType);
+    return provider ? this.getProviderConfig(provider.connectorKey) : null;
   }
 
   getProviderLabel(providerName) {
@@ -364,6 +373,13 @@ export default class PaymentComponent extends LightningElement {
     return words.length >= 2
       ? (words[0][0] + words[1][0]).toUpperCase()
       : label.slice(0, 2).toUpperCase();
+  }
+
+  getProviderLogoClass(providerName) {
+    const normalizedName = (providerName || "provider")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-");
+    return `tile-logo tile-logo-${normalizedName}`;
   }
 
   getDisabledProviderMessage(config) {
@@ -385,9 +401,8 @@ export default class PaymentComponent extends LightningElement {
     )
       return;
 
-    const previousMode = this.selectedRendererMode;
-    if (previousMode === "stripeElements") this.unmountStripeCardElement();
-    if (previousMode === "paypalButtons") this.unmountPayPalButtons();
+    if (this.isStripeSelected) this.unmountStripeCardElement();
+    if (this.isPayPalSelected) this.unmountPayPalButtons();
 
     this.selectedProvider = selected;
     this.applyProviderTestDefaults();
@@ -448,32 +463,28 @@ export default class PaymentComponent extends LightningElement {
   }
 
   primeSelectedProvider() {
-    if (this.selectedRendererMode === "acceptJs") {
-      this.primeAuthorizeNet();
-    } else if (this.selectedRendererMode === "stripeElements") {
+    const handlerName = PAYMENT_ACTION_HANDLERS[this.selectedActionType];
+    if (!handlerName || typeof this[handlerName] !== "function") return;
+    if (this.isStripeSelected) {
       this.resetStripeDiagnostics();
-      this.logStripeStep("Stripe provider selected");
-      this.primeStripe();
-    } else if (this.selectedRendererMode === "paypalButtons") {
-      this.primePayPal();
+      this.logStripeStep(
+        `${this.getProviderLabel(this.selectedProvider)} provider selected`
+      );
     }
+    this[handlerName]();
   }
 
-  preloadRendererInBackground(rendererMode) {
-    const provider = this.paymentProviderDescriptors.find(
-      (descriptor) =>
-        this.getProviderConfig(descriptor.connectorKey)?.rendererMode ===
-          rendererMode &&
-        this.getProviderConfig(descriptor.connectorKey)?.active === true
+  preloadBackgroundProviders() {
+    this.preloadStripeInBackground();
+  }
+
+  preloadStripeInBackground() {
+    const stripeProvider = this.getProviderByActionType(
+      PAYMENT_ACTIONS.STRIPE_ELEMENTS
     );
-    if (rendererMode === "stripeElements" && provider) {
-      this.preloadStripeInBackground(provider.connectorKey);
-    }
-  }
-
-  preloadStripeInBackground(providerKey = this.selectedProvider) {
     if (
-      !this.getProviderConfig(providerKey)?.active ||
+      !stripeProvider ||
+      !this.getProviderConfig(stripeProvider.connectorKey)?.active ||
       this.stripePreloadQueued ||
       this.stripeReadyPromise ||
       this.stripeInstance
@@ -483,7 +494,10 @@ export default class PaymentComponent extends LightningElement {
     const schedulePreload =
       typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback.bind(window)
-        : (callback) => window.setTimeout(callback, 0);
+        : (callback) => {
+            // eslint-disable-next-line @lwc/lwc/no-async-operation
+            window.setTimeout(callback, 0);
+          };
 
     schedulePreload(() => {
       this.ensureStripeReady().catch(() => {
@@ -493,6 +507,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async waitForStripeMount(maxAttempts = 20, delayMs = 50) {
+    /* eslint-disable no-await-in-loop, @lwc/lwc/no-async-operation */
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       this.mountStripeCardElement();
       if (this.stripeCardMounted) {
@@ -505,10 +520,11 @@ export default class PaymentComponent extends LightningElement {
     }
     this.isStripeInitializing = false;
     throw new Error("Stripe card entry could not be rendered.");
+    /* eslint-enable no-await-in-loop, @lwc/lwc/no-async-operation */
   }
 
   @api async handlesubmit(priceValue) {
-    if (this.selectedRendererMode === "paypalButtons") {
+    if (this.isPayPalSelected) {
       this.dispatchError("Use the PayPal button to complete checkout.");
       return;
     }
@@ -519,14 +535,14 @@ export default class PaymentComponent extends LightningElement {
       this.showErrorModal = false;
       const resolvedAmount = this.resolveAmount(priceValue);
 
-      const rendererMode = this.selectedRendererMode;
-      if (rendererMode === "stripeElements") {
+      const actionType = this.selectedActionType;
+      if (actionType === PAYMENT_ACTIONS.STRIPE_ELEMENTS) {
         this.resetStripeDiagnostics();
         this.logStripeStep(
           `Stripe submit started for amount ${resolvedAmount}`
         );
         await this.handleStripeSubmit(resolvedAmount);
-      } else if (rendererMode === "acceptJs") {
+      } else if (actionType === PAYMENT_ACTIONS.ACCEPT_JS) {
         await this.handleAuthorizeNetSubmit(resolvedAmount);
       } else {
         await this.handleHostedSubmit(resolvedAmount);
@@ -975,15 +991,20 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadAuthorizeNetResources() {
-    let cfg = this.getProviderConfig(this.providerKeyForRenderer("acceptJs"));
+    let cfg = this.getConfigForActionType(PAYMENT_ACTIONS.ACCEPT_JS);
     if (!cfg) {
       await this.initializeProviderConfigs();
-      cfg = this.getProviderConfig(this.providerKeyForRenderer("acceptJs"));
+      cfg = this.getConfigForActionType(PAYMENT_ACTIONS.ACCEPT_JS);
     }
     if (cfg?.active === false)
-      throw new Error(cfg?.message || "Authorize.Net is currently inactive.");
+      throw new Error(
+        cfg?.message || `${cfg?.label || "Card gateway"} is currently inactive.`
+      );
     if (!cfg?.configured)
-      throw new Error(cfg?.message || "Authorize.Net is not fully configured.");
+      throw new Error(
+        cfg?.message ||
+          `${cfg?.label || "Card gateway"} is not fully configured.`
+      );
 
     const libraryUrl = cfg.acceptJsUrl;
     if (!libraryUrl) throw new Error("Authorize.Net script URL is missing.");
@@ -1011,19 +1032,20 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadStripeResources() {
-    let cfg = this.getProviderConfig(
-      this.providerKeyForRenderer("stripeElements")
-    );
+    let cfg = this.getConfigForActionType(PAYMENT_ACTIONS.STRIPE_ELEMENTS);
     if (!cfg) {
       await this.initializeProviderConfigs();
-      cfg = this.getProviderConfig(
-        this.providerKeyForRenderer("stripeElements")
-      );
+      cfg = this.getConfigForActionType(PAYMENT_ACTIONS.STRIPE_ELEMENTS);
     }
     if (cfg?.active === false)
-      throw new Error(cfg?.message || "Stripe is currently inactive.");
+      throw new Error(
+        cfg?.message || `${cfg?.label || "Card gateway"} is currently inactive.`
+      );
     if (!cfg?.configured)
-      throw new Error(cfg?.message || "Stripe is not fully configured.");
+      throw new Error(
+        cfg?.message ||
+          `${cfg?.label || "Card gateway"} is not fully configured.`
+      );
     if (!cfg?.publishableKey)
       throw new Error("Stripe publishable key is missing.");
 
@@ -1057,19 +1079,21 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async loadPayPalResources() {
-    let cfg = this.getProviderConfig(
-      this.providerKeyForRenderer("paypalButtons")
-    );
+    let cfg = this.getConfigForActionType(PAYMENT_ACTIONS.PAYPAL_BUTTONS);
     if (!cfg) {
       await this.initializeProviderConfigs();
-      cfg = this.getProviderConfig(
-        this.providerKeyForRenderer("paypalButtons")
-      );
+      cfg = this.getConfigForActionType(PAYMENT_ACTIONS.PAYPAL_BUTTONS);
     }
     if (cfg?.active === false)
-      throw new Error(cfg?.message || "PayPal is currently inactive.");
+      throw new Error(
+        cfg?.message ||
+          `${cfg?.label || "PayPal gateway"} is currently inactive.`
+      );
     if (!cfg?.configured)
-      throw new Error(cfg?.message || "PayPal is not fully configured.");
+      throw new Error(
+        cfg?.message ||
+          `${cfg?.label || "PayPal gateway"} is not fully configured.`
+      );
 
     const libraryUrl = cfg.payPalJsUrl;
     if (!libraryUrl) throw new Error("PayPal script URL is missing.");
@@ -1086,6 +1110,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   waitForAcceptGlobal(maxWaitMs = 3000, intervalMs = 50) {
+    /* eslint-disable @lwc/lwc/no-async-operation */
     return new Promise((resolve, reject) => {
       if (window.Accept && typeof window.Accept.dispatchData === "function") {
         resolve();
@@ -1105,9 +1130,11 @@ export default class PaymentComponent extends LightningElement {
         }
       }, intervalMs);
     });
+    /* eslint-enable @lwc/lwc/no-async-operation */
   }
 
   waitForStripeGlobal(maxWaitMs = 3000, intervalMs = 50) {
+    /* eslint-disable @lwc/lwc/no-async-operation */
     return new Promise((resolve, reject) => {
       if (window.Stripe && typeof window.Stripe === "function") {
         resolve();
@@ -1125,9 +1152,11 @@ export default class PaymentComponent extends LightningElement {
         }
       }, intervalMs);
     });
+    /* eslint-enable @lwc/lwc/no-async-operation */
   }
 
   waitForPayPalGlobal(maxWaitMs = 3000, intervalMs = 50) {
+    /* eslint-disable @lwc/lwc/no-async-operation */
     return new Promise((resolve, reject) => {
       if (window.paypal && typeof window.paypal.Buttons === "function") {
         resolve();
@@ -1145,10 +1174,12 @@ export default class PaymentComponent extends LightningElement {
         }
       }, intervalMs);
     });
+    /* eslint-enable @lwc/lwc/no-async-operation */
   }
 
   loadExternalScript(url) {
     return new Promise((resolve, reject) => {
+      // eslint-disable-next-line @lwc/lwc/no-document-query
       const existingScript = document.querySelector(
         `script[data-authorize-net-src="${url}"]`
       );
@@ -1181,6 +1212,7 @@ export default class PaymentComponent extends LightningElement {
 
   loadStripeScript(url) {
     return new Promise((resolve, reject) => {
+      // eslint-disable-next-line @lwc/lwc/no-document-query
       const existingScript = document.querySelector(
         `script[data-stripe-src="${url}"]`
       );
@@ -1213,6 +1245,7 @@ export default class PaymentComponent extends LightningElement {
 
   loadPayPalScript(url) {
     return new Promise((resolve, reject) => {
+      // eslint-disable-next-line @lwc/lwc/no-document-query
       const existingScript = document.querySelector(
         `script[data-paypal-src="${url}"]`
       );
@@ -1250,7 +1283,7 @@ export default class PaymentComponent extends LightningElement {
     this.isPaypalInitializing = true;
     await this.ensurePayPalReady();
 
-    host.innerHTML = "";
+    host.textContent = "";
     this.paypalButtonsInstance = window.paypal.Buttons({
       createOrder: async () => {
         const resolvedAmount = this.resolveAmount(this.amount);
@@ -1315,7 +1348,7 @@ export default class PaymentComponent extends LightningElement {
 
   unmountPayPalButtons() {
     const host = this.template.querySelector(".paypal-button-container");
-    if (host) host.innerHTML = "";
+    if (host) host.textContent = "";
     if (
       this.paypalButtonsInstance &&
       typeof this.paypalButtonsInstance.close === "function"
@@ -1442,7 +1475,7 @@ export default class PaymentComponent extends LightningElement {
   }
 
   dispatchSuccess(response) {
-    if (this.selectedRendererMode === "stripeElements")
+    if (this.isStripeSelected)
       this.logStripeStep("Dispatching Stripe success event", response);
 
     this.successDetails = {
@@ -1467,15 +1500,12 @@ export default class PaymentComponent extends LightningElement {
   }
 
   dispatchError(message) {
-    if (this.selectedRendererMode === "stripeElements")
+    if (this.isStripeSelected)
       this.logStripeStep(`Dispatching Stripe error: ${message}`);
     this.errorDetails = {
       message,
       provider: this.selectedProvider,
-      step:
-        this.selectedRendererMode === "stripeElements"
-          ? this.stripeLastStep
-          : "Payment failed"
+      step: this.isStripeSelected ? this.stripeLastStep : "Payment failed"
     };
     this.showErrorModal = true;
 

@@ -48,29 +48,21 @@ public with sharing class PayPalPaymentService {
         @AuraEnabled public String paypalOrderId { get; set; }
         @AuraEnabled public String approveLink { get; set; }
     }
-
-    private class RuntimeConfig {
-        Boolean active;
-        Date startDate;
-        Date endDate;
-        String clientId;
-        Boolean useSandbox;
-    }
     
     @AuraEnabled(cacheable=true)
     public static ClientConfigResponse getClientConfig() {
         ClientConfigResponse response = new ClientConfigResponse();
         try {
-            RuntimeConfig config = getConfig();
+            Quickbridge_Config__mdt config = getConfig();
             
             String availabilityMessage = getAvailabilityMessage(config);
             response.active = availabilityMessage == null;
-            response.clientId = config.clientId;
-            response.useSandbox = config.useSandbox;
-            response.payPalJsUrl = buildPayPalJsUrl(config.clientId);
+            response.clientId = config.PayPal_ClientId__c;
+            response.useSandbox = config.PayPal_UseSandbox__c;
+            response.payPalJsUrl = buildPayPalJsUrl(config.PayPal_ClientId__c);
             
             List<String> missingItems = new List<String>();
-            if (String.isBlank(config.clientId)) {
+            if (String.isBlank(config.PayPal_ClientId__c)) {
                 missingItems.add('Client Id');
             }
             
@@ -102,18 +94,18 @@ public with sharing class PayPalPaymentService {
             Savepoint pendingWorkSavepoint = Database.setSavepoint();
             validateCreateRequest(request);
             
-            RuntimeConfig config = getConfig();
+            Quickbridge_Config__mdt config = getConfig();
             String availabilityMessage = getAvailabilityMessage(config);
             if (availabilityMessage != null) {
                 throw new AuraHandledException(availabilityMessage);
             }
-            if (String.isBlank(config.clientId)) {
+            if (String.isBlank(config.PayPal_ClientId__c)) {
                 throw new AuraHandledException('PayPal client configuration is incomplete.');
             }
 
             IntegrationUsageService.assertCanConsumeTask('PayPal', 1);
 
-            String baseEndpoint = getBaseEndpoint(config.useSandbox);
+            String baseEndpoint = getBaseEndpoint(config.PayPal_UseSandbox__c);
             Database.rollback(pendingWorkSavepoint);
             Database.releaseSavepoint(pendingWorkSavepoint);
             String accessToken = fetchAccessToken(baseEndpoint);
@@ -189,7 +181,7 @@ public with sharing class PayPalPaymentService {
             Savepoint pendingWorkSavepoint = Database.setSavepoint();
             validateCaptureRequest(request);
             
-            RuntimeConfig config = getConfig();
+            Quickbridge_Config__mdt config = getConfig();
             String availabilityMessage = getAvailabilityMessage(config);
             if (availabilityMessage != null) {
                 throw new AuraHandledException(availabilityMessage);
@@ -197,7 +189,7 @@ public with sharing class PayPalPaymentService {
 
             IntegrationUsageService.assertCanConsumeTask('PayPal', 1);
 
-            String baseEndpoint = getBaseEndpoint(config.useSandbox);
+            String baseEndpoint = getBaseEndpoint(config.PayPal_UseSandbox__c);
             Database.rollback(pendingWorkSavepoint);
             Database.releaseSavepoint(pendingWorkSavepoint);
             String accessToken = fetchAccessToken(baseEndpoint);
@@ -304,23 +296,38 @@ public with sharing class PayPalPaymentService {
         return response;
     }
     
-    private static RuntimeConfig getConfig() {
-        RuntimeConfig config = new RuntimeConfig();
+    private static Quickbridge_Config__mdt getConfig() {
+        Quickbridge_Config__mdt config;
         try {
-            config.active = ConnectorConfigResolver.getBoolean('paypal', 'PayPal_Active__c');
-            config.startDate = ConnectorConfigResolver.getDate('paypal', 'PayPal_StartDate__c');
-            config.endDate = ConnectorConfigResolver.getDate('paypal', 'PayPal_EndDate__c');
-            config.clientId = ConnectorConfigResolver.getValue('paypal', 'PayPal_ClientId__c');
-            config.useSandbox = ConnectorConfigResolver.getBoolean('paypal', 'PayPal_UseSandbox__c');
-        } catch (Exception e) {
-            if (!Test.isRunningTest()) {
-                throw new AuraHandledException('PayPal configuration was not found.');
-            }
+            config = Quickbridge_Config__mdt.getInstance('PayPal');
+        } catch(Exception e) {
+            config = null;
         }
+        
+        // if (Test.isRunningTest()) {
+        //     Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
+        //     testConfig.PayPal_Active__c = config == null || config.PayPal_Active__c == null ? true : config.PayPal_Active__c;
+        //     testConfig.PayPal_StartDate__c = config == null ? null : config.PayPal_StartDate__c;
+        //     testConfig.PayPal_EndDate__c = config == null ? null : config.PayPal_EndDate__c;
+        //     testConfig.PayPal_ClientId__c = config == null || String.isBlank(config.PayPal_ClientId__c)
+        //         ? 'paypal-client-id-test'
+        //         : config.PayPal_ClientId__c;
+        //     testConfig.PayPal_UseSandbox__c = config == null || config.PayPal_UseSandbox__c == null ? true : config.PayPal_UseSandbox__c;
+        //     return testConfig;
+        // }
+        
         if (Test.isRunningTest()) {
-            config.active = true;
-            config.clientId = String.isBlank(config.clientId) ? 'paypal-client-id-test' : config.clientId;
-            config.useSandbox = true;
+            Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
+            testConfig.PayPal_Active__c = true;
+            testConfig.PayPal_StartDate__c = null;
+            testConfig.PayPal_EndDate__c = null;
+            testConfig.PayPal_ClientId__c = 'paypal-client-id-test';
+            testConfig.PayPal_UseSandbox__c = true;
+            return testConfig;
+        }
+
+        if (config == null) {
+            throw new AuraHandledException('PayPal configuration record was not found.');
         }
         return config;
     }
@@ -539,20 +546,20 @@ public with sharing class PayPalPaymentService {
         return activeFlag == null ? true : activeFlag;
     }
     
-    private static String getAvailabilityMessage(RuntimeConfig config) {
+    private static String getAvailabilityMessage(Quickbridge_Config__mdt config) {
         if (config == null) {
-            return 'PayPal configuration was not found.';
+            return 'PayPal configuration record was not found.';
         }
         
-        if (!isConfigActive(config.active)) {
+        if (!isConfigActive(config.PayPal_Active__c)) {
             return 'PayPal is currently inactive.';
         }
         
         Date today = Date.today();
-        if (config.startDate != null && config.startDate > today) {
+        if (config.PayPal_StartDate__c != null && config.PayPal_StartDate__c > today) {
             return 'PayPal is not active yet.';
         }
-        if (config.endDate != null && config.endDate < today) {
+        if (config.PayPal_EndDate__c != null && config.PayPal_EndDate__c < today) {
             return 'PayPal contract has expired.';
         }
         

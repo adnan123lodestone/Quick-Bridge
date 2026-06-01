@@ -34,14 +34,19 @@
           <div>
             <div class="score-label">Mapping health</div>
             <div class="score-meta">
-              {requiredFieldsMapped}/{requiredFieldsTotal} required fields mapped
+              {requiredFieldsMapped}/{requiredFieldsTotal} required fields
+              mapped
             </div>
           </div>
         </section>
 
         <div class="action-grid">
-          <button type="button" onclick={handleRefresh}>Refresh Analysis</button>
-          <button type="button" onclick={handleSuggest}>Suggest Mappings</button>
+          <button type="button" onclick={handleRefresh}>
+            Refresh Analysis
+          </button>
+          <button type="button" onclick={handleSuggest}>
+            Suggest Mappings
+          </button>
           <button
             type="button"
             onclick={handleApplySelected}
@@ -91,7 +96,11 @@
         <section class="assistant-section">
           <div class="section-title">Suggested Mappings</div>
           <template if:true={hasSuggestions}>
-            <template for:each={suggestions} for:item="suggestion" for:index="index">
+            <template
+              for:each={suggestions}
+              for:item="suggestion"
+              for:index="index"
+            >
               <label key={suggestion.key} class="suggestion-row">
                 <input
                   type="checkbox"
@@ -102,7 +111,8 @@
                 />
                 <span class="suggestion-main">
                   <span class="suggestion-fields">
-                    {suggestion.salesforceFieldLabel} -> {suggestion.externalFieldLabel}
+                    {suggestion.salesforceFieldLabel} ->
+                    {suggestion.externalFieldLabel}
                   </span>
                   <span class="suggestion-reason">{suggestion.reason}</span>
                 </span>
@@ -113,12 +123,18 @@
             </template>
           </template>
           <template if:false={hasSuggestions}>
-            <div class="quiet-text">No suggestions available for this context.</div>
+            <div class="quiet-text">
+              No suggestions available for this context.
+            </div>
           </template>
         </section>
 
         <section class="assistant-section prompt-section">
-          <button type="button" class="prompt-button" onclick={handleGeneratePrompt}>
+          <button
+            type="button"
+            class="prompt-button"
+            onclick={handleGeneratePrompt}
+          >
             Generate Fix Prompt
           </button>
           <template if:true={generatedPrompt}>

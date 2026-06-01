@@ -65,8 +65,18 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                             
                         if (accountToSync != null) {
                             String companyName = (String)customerData.get('CompanyName');
-                                
-                            if (isPersonAccountEnabled && personAccountRecordTypeId != null && String.isBlank(companyName)) {
+
+                            // Only treat as a Person Account when it is safe to do so:
+                            //  - the record is brand new (no Id yet), or
+                            //  - it already IS a Person Account.
+                            // Flipping an existing Business Account to a Person Account in the
+                            // same DML is not allowed and causes
+                            // "Business Account may not use Person Account field PersonEmail".
+                            Boolean canBePersonAccount = personAccountRecordTypeId != null
+                                && (accountToSync.Id == null
+                                    || accountToSync.RecordTypeId == personAccountRecordTypeId);
+
+                            if (isPersonAccountEnabled && canBePersonAccount && String.isBlank(companyName)) {
                                 accountToSync.RecordTypeId = personAccountRecordTypeId;
                                     
                                 String fName = (String)customerData.get('GivenName');

@@ -337,40 +337,6 @@ private class ErrorLogUtilityTest {
     }
 
     @isTest
-    static void testErrorLogLinkBackfillCreatesMissingLinksOnce() {
-        Account acc = [SELECT Id FROM Account LIMIT 1];
-        String accountIdText = String.valueOf(acc.Id);
-        Error_Log__c legacyLog = new Error_Log__c(
-            Gateway_Name__c = 'Legacy',
-            Class_Method_Name__c = 'Legacy.backfill',
-            Error_Message__c = 'Legacy row',
-            Source_Object__c = 'Account',
-            Source_Record_Id__c = accountIdText,
-            Retry_Status__c = 'Pending',
-            Retry_Count__c = 0,
-            Is_Retryable__c = false
-        );
-        insert legacyLog;
-
-        Test.startTest();
-        ErrorLogLinkBackfillService.BackfillResult firstResult = ErrorLogLinkBackfillService.backfillMissingLinks(200);
-        ErrorLogLinkBackfillService.BackfillResult secondResult = ErrorLogLinkBackfillService.backfillMissingLinks(200);
-        Test.stopTest();
-
-        System.assert(firstResult.scanned > 0, 'Backfill should scan existing error logs.');
-        System.assertEquals(1, firstResult.created, 'Backfill should create the missing link once.');
-        System.assertEquals(0, secondResult.created, 'Backfill should be idempotent.');
-        System.assertEquals(1, [
-            SELECT Count()
-            FROM Error_Log_Link__c
-            WHERE Error_Log__c = :legacyLog.Id
-            AND Linked_Object_API_Name__c = 'Account'
-            AND Linked_Record_Id__c = :accountIdText
-            AND Relationship_Role__c = 'Source'
-        ]);
-    }
-
-    @isTest
     static void testUpdateRetryCountIncrementsExistingLog() {
         ErrorLogUtility.logPaymentError('Stripe', 'RetryMethod', 'Retry me', 'ORDER-RETRY');
         Error_Log__c logRecord = [

@@ -4,6 +4,12 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
     private Boolean isInitialSync;
     private Boolean mapDraftOrdersAsEstimates;
 
+    // QBO Invoice/Estimate properties that are server-calculated and must never be sent;
+    // including them causes ValidationFault 2010 ("unsupported property").
+    private static final Set<String> QBO_READONLY_PROPS = new Set<String>{
+        'TotalAmt', 'Balance', 'HomeTotalAmt', 'HomeBalance'
+    };
+
     public QBSalesOrderSyncBatch(Set<Id> ids, Boolean isInitial) {
         this.orderIds = ids;
         this.isInitialSync = isInitial;
@@ -12,7 +18,13 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
     private Boolean getConfigValue() {
         try {
-            return ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
+            Quickbridge_Config__mdt config = [
+                SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c 
+                FROM QuickBridgeTLG__Quickbridge_Config__mdt 
+                WHERE DeveloperName = 'QuickBooks' 
+                LIMIT 1
+            ];
+            return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
         } catch (Exception e) {
             System.debug('Could not load Draft Order setting: ' + e.getMessage());
             return false;
@@ -71,17 +83,31 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                 // Build request body
                 Map<String, Object> requestBody = new Map<String, Object>();
 
+                Boolean isCreate = String.isBlank(ord.QuickbookID__c) || isInitialSync;
                 for (String sfField : headerMap.keySet()) {
                     String qboFieldMapping = headerMap.get(sfField);
+                    if (String.isBlank(qboFieldMapping)) {
+                        continue;
+                    }
+                    // CustomerRef is set explicitly below from the related Account.
                     if (qboFieldMapping == 'CustomerRef.value' || qboFieldMapping == 'CustomerRef') {
                         continue;
+                    }
+                    String rootProp = qboFieldMapping.contains('.')
+                        ? qboFieldMapping.substringBefore('.')
+                        : qboFieldMapping;
+                    if (QBO_READONLY_PROPS.contains(rootProp)) {
+                        continue; // never push server-calculated totals
+                    }
+                    if (rootProp == 'Id' && isCreate) {
+                        continue; // Id is only valid on update
                     }
                     Object val = getFieldValue(ord, sfField);
                     if (val != null) {
                         if (val instanceof Date) {
                             val = DateTime.newInstance((Date)val, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
                         }
-                        requestBody.put(qboFieldMapping, val);
+                        putPath(requestBody, qboFieldMapping, val);
                     }
                 }
 
@@ -105,18 +131,31 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                     for (String sfField : lineMap.keySet()) {
                         Object val = getFieldValue(item, sfField);
                         String qboField = lineMap.get(sfField);
-                        if (val != null) {
-                            if (qboField == 'Qty') {
-                                quantity = (Decimal)val;
-                                itemDetail.put('Qty', quantity);
-                            } else if (qboField == 'UnitPrice') {
-                                unitPrice = (Decimal)val;
-                                itemDetail.put('UnitPrice', unitPrice);
-                            } else if (qboField == 'Description') {
-                                line.put('Description', val);
-                            } else {
-                                itemDetail.put(qboField, val);
-                            }
+                        if (val == null || String.isBlank(qboField)) {
+                            continue;
+                        }
+                        // Mappings may be stored as full nested paths
+                        // (e.g. 'Line.SalesItemLineDetail.Qty'); normalize to the leaf so
+                        // they land on the correct QBO node instead of becoming a literal
+                        // dotted property name (which QBO rejects with fault 2010).
+                        String leaf = normalizeLineLeaf(qboField);
+                        if (leaf == 'Qty') {
+                            quantity = (Decimal)val;
+                            itemDetail.put('Qty', quantity);
+                        } else if (leaf == 'UnitPrice') {
+                            unitPrice = (Decimal)val;
+                            itemDetail.put('UnitPrice', unitPrice);
+                        } else if (leaf == 'Description') {
+                            line.put('Description', val);
+                        } else if (leaf == 'Amount') {
+                            // Line amount is computed below from quantity * unitPrice.
+                            continue;
+                        } else if (leaf == 'ItemRef.value' || leaf == 'ItemRef') {
+                            // ItemRef is set below from Product2.QuickbookID__c; never push a
+                            // raw Salesforce Id here.
+                            continue;
+                        } else if (!leaf.contains('.')) {
+                            itemDetail.put(leaf, val);
                         }
                     }
                     line.put('Amount', quantity * unitPrice);
@@ -227,6 +266,43 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
     public void finish(Database.BatchableContext bc) {
         System.debug('Order Sync Completed Successfully.');
+    }
+
+    // Writes value into requestBody, creating nested maps for a dotted QBO path
+    // (e.g. 'CustomerMemo.value' -> {"CustomerMemo":{"value": ...}}).
+    private void putPath(Map<String, Object> root, String dottedPath, Object value) {
+        if (root == null || String.isBlank(dottedPath)) {
+            return;
+        }
+        if (!dottedPath.contains('.')) {
+            root.put(dottedPath, value);
+            return;
+        }
+        List<String> parts = dottedPath.split('\\.');
+        Map<String, Object> current = root;
+        for (Integer i = 0; i < parts.size() - 1; i++) {
+            String part = parts[i];
+            if (!(current.get(part) instanceof Map<String, Object>)) {
+                current.put(part, new Map<String, Object>());
+            }
+            current = (Map<String, Object>) current.get(part);
+        }
+        current.put(parts[parts.size() - 1], value);
+    }
+
+    // Reduces a line-item mapping path to the leaf the line builder understands,
+    // stripping the leading 'Line.' wrapper and a 'SalesItemLineDetail.' prefix.
+    // 'Line.SalesItemLineDetail.Qty' -> 'Qty'; 'Line.SalesItemLineDetail.ItemRef.value'
+    // -> 'ItemRef.value'; 'Line.Description' -> 'Description'; 'Line.Amount' -> 'Amount'.
+    private String normalizeLineLeaf(String qboField) {
+        String leaf = qboField;
+        if (leaf.startsWith('Line.')) {
+            leaf = leaf.substringAfter('Line.');
+        }
+        if (leaf.startsWith('SalesItemLineDetail.')) {
+            leaf = leaf.substringAfter('SalesItemLineDetail.');
+        }
+        return leaf;
     }
 
     private Object getFieldValue(SObject obj, String fieldPath) {
