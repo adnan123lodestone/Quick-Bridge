@@ -143,13 +143,20 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
 
         // Upsert Accounts
         if(!accountsToUpsert.isEmpty()) {
+            Map<String, Account> dedupMap = new Map<String, Account>();
+            for (Account a : accountsToUpsert) {
+                if (String.isNotBlank(a.QuickbookID__c)) {
+                    dedupMap.put(a.QuickbookID__c, a);
+                }
+            }
+            List<Account> deduped = dedupMap.isEmpty() ? accountsToUpsert : dedupMap.values();
             Schema.SObjectField externalIdField = Account.Fields.QuickbookID__c;
-            Database.UpsertResult[] results = Database.upsert(accountsToUpsert, externalIdField, false);
+            Database.UpsertResult[] results = Database.upsert(deduped, externalIdField, false);
             ErrorLogUtility.logUpsertResults(
                 'QuickBooks',
                 'QBInvoiceToOrderSyncBatch.processAccountsAndProducts.upsertAccounts',
                 'upsert',
-                accountsToUpsert,
+                deduped,
                 results,
                 null,
                 null
@@ -157,7 +164,7 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
 
             for(Integer i = 0; i < results.size(); i++) {
                 if(results[i].isSuccess()) {
-                    customerIdMap.put(accountsToUpsert[i].QuickbookID__c, results[i].getId());
+                    customerIdMap.put(deduped[i].QuickbookID__c, results[i].getId());
                 } else {
                     System.debug('Error upserting account: ' + results[i].getErrors());
                 }
@@ -265,14 +272,15 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
 
                 if(customerIdMap.containsKey(qbCustomerId)) {
                     Order newOrder = new Order(
-                        QuickbookID__c = qbInvoiceId,
-                        AccountId = customerIdMap.get(qbCustomerId),
                         Status = 'Draft',
                         EffectiveDate = Date.today(),
                         Pricebook2Id = standardPricebookId
                     );
 
                     applyDynamicMapping(newOrder, invoice, invoiceToOrderMapping);
+                    // Re-set after dynamic mapping to prevent CustomerRef.value → AccountId
+                    // from overwriting the resolved SF Account Id with a raw QBO string.
+                    newOrder.AccountId = customerIdMap.get(qbCustomerId);
                     newOrder.QuickbookID__c = qbInvoiceId;
 
                     ordersToUpsert.add(newOrder);

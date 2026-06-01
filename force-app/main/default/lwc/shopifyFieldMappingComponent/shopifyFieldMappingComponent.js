@@ -167,7 +167,8 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
       this.loadShopifyFields(),
       getExistingMappings({
         integration: this.selectedIntegration,
-        sfObject: objectName
+        sfObject: objectName,
+        qbObject: null
       })
     ])
       .then(([, , savedMappings]) => {
@@ -192,7 +193,8 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
       this.loadShopifyFields(),
       getExistingMappings({
         integration: this.selectedIntegration,
-        sfObject: this.selectedSFObject
+        sfObject: this.selectedSFObject,
+        qbObject: null
       })
     ])
       .then(([, savedMappings]) => {

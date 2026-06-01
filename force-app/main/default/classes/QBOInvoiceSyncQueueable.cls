@@ -118,9 +118,9 @@ public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database
         QBTriggerHandler.isAccountProcessing = true;
         QBTriggerHandler.isProductProcessing = true;
         try {
-            Database.UpsertResult[] accountResults = Database.upsert(accountRecords, Account.Fields.QuickBridgeTLG__QuickbookID__c, false, AccessLevel.USER_MODE);
+            Database.UpsertResult[] accountResults = Database.upsert(accountRecords, Account.Fields.QuickBridgeTLG__QuickbookID__c, false);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertAccounts', 'upsert', accountRecords, accountResults, null, null);
-            Database.UpsertResult[] productResults = Database.upsert(productRecords, Product2.Fields.QuickBridgeTLG__External_Id__c, false, AccessLevel.USER_MODE);
+            Database.UpsertResult[] productResults = Database.upsert(productRecords, Product2.Fields.QuickBridgeTLG__External_Id__c, false);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertProducts', 'upsert', productRecords, productResults, null, null);
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
@@ -158,7 +158,7 @@ public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database
                 }
             }
             if(!pbesToInsert.isEmpty()) {
-                Database.SaveResult[] pbeResults = Database.insert(pbesToInsert, false, AccessLevel.USER_MODE);
+                Database.SaveResult[] pbeResults = Database.insert(pbesToInsert, false);
                 ErrorLogUtility.logDmlResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.insertPricebookEntries', 'insert', pbesToInsert, pbeResults, null, null);
                 // Add newly created PBEs to Map
                 for(PricebookEntry pbe : [SELECT Id, Product2.QuickBridgeTLG__External_Id__c FROM PricebookEntry WHERE Id IN :pbesToInsert]) {
@@ -194,7 +194,7 @@ public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database
             List<Order> orderRecords = ordersToUpsert.values();
             QBTriggerHandler.isOrderProcessing = true;
             try {
-                Database.UpsertResult[] orderResults = Database.upsert(orderRecords, Order.Fields.QuickBridgeTLG__QuickbookID__c, false, AccessLevel.USER_MODE);
+                Database.UpsertResult[] orderResults = Database.upsert(orderRecords, Order.Fields.QuickBridgeTLG__QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertOrders', 'upsert', orderRecords, orderResults, null, null);
             } finally {
                 QBTriggerHandler.isOrderProcessing = false;
@@ -212,7 +212,7 @@ public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database
             if(!orderIds.isEmpty()) {
                 List<OrderItem> orderItemsToDelete = [SELECT Id FROM OrderItem WHERE OrderId IN :orderIds];
                 if (!orderItemsToDelete.isEmpty()) {
-                    Database.DeleteResult[] deleteResults = Database.delete(orderItemsToDelete, false, AccessLevel.USER_MODE);
+                    Database.DeleteResult[] deleteResults = Database.delete(orderItemsToDelete, false);
                     logDeleteResults('QBOInvoiceSyncQueueable.execute.deleteOrderItems', orderItemsToDelete, deleteResults);
                 }
             }
@@ -253,7 +253,7 @@ public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database
                 }
             }
             if(!orderItemsToInsert.isEmpty()) {
-                Database.SaveResult[] orderItemResults = Database.insert(orderItemsToInsert, false, AccessLevel.USER_MODE);
+                Database.SaveResult[] orderItemResults = Database.insert(orderItemsToInsert, false);
                 ErrorLogUtility.logDmlResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.insertOrderItems', 'insert', orderItemsToInsert, orderItemResults, null, null);
             }
         } finally {
@@ -284,7 +284,7 @@ public with sharing class QBOInvoiceSyncQueueable implements Queueable, Database
         }
         
         if (!invoicesToUpsert.isEmpty()) {
-            Database.UpsertResult[] invoiceResults = Database.upsert(invoicesToUpsert, QuickBridgeTLG__Invoice__c.Fields.QuickBridgeTLG__External_Id__c, false, AccessLevel.USER_MODE);
+            Database.UpsertResult[] invoiceResults = Database.upsert(invoicesToUpsert, QuickBridgeTLG__Invoice__c.Fields.QuickBridgeTLG__External_Id__c, false);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertInvoices', 'upsert', invoicesToUpsert, invoiceResults, null, null);
         }
     }

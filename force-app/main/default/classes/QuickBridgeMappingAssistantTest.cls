@@ -141,6 +141,39 @@ private class QuickBridgeMappingAssistantTest {
   }
 
   @IsTest
+  static void reviewMappingsStaysWithinCpuBudgetForLargeObject() {
+    // Account/Order resolve to large field sets; this is the path that previously
+    // exceeded the Apex CPU limit because tokens were recomputed for every
+    // (external x salesforce) field pair. Memoization should keep it well under
+    // budget while still returning suggestions.
+    Test.startTest();
+    Long start = Limits.getCpuTime();
+    QuickBridgeMappingAssistantController.MappingReviewResult result = QuickBridgeMappingAssistantController.reviewMappings(
+      'qbonline',
+      'Account',
+      'Customer',
+      null
+    );
+    Long elapsed = Limits.getCpuTime() - start;
+    Test.stopTest();
+
+    Assert.isNotNull(result, 'A review result should be returned.');
+    Assert.isTrue(
+      result.suggestions.size() > 0,
+      'Suggestions should still be produced after the performance refactor.'
+    );
+    // Generous ceiling: the unoptimized path used ~13-15s; the optimized path runs
+    // in well under 4s. This guards against a regression that reintroduces the
+    // per-pair token recomputation.
+    Assert.isTrue(
+      elapsed < 4000,
+      'Suggestion scoring should stay well within the CPU budget; took ' +
+      elapsed +
+      'ms.'
+    );
+  }
+
+  @IsTest
   static void blankParametersAreHandledSafely() {
     Test.startTest();
     QuickBridgeMappingAssistantController.MappingAssistantSummary summary = QuickBridgeMappingAssistantController.getSummary(

@@ -183,7 +183,13 @@ export default class FieldMappingComponent extends LightningElement {
       const isRequired = requiredQbFields.some(
         (field) => field.value === mapping.externalField
       );
-      if (!isRequired) {
+      // Skip saved rows whose QBO field does not exist for the currently selected
+      // QBO object (e.g. a legacy Customer mapping viewed on the Vendor tab). These
+      // would otherwise render as a blank "-- None --" row.
+      const isValidForObject = this.qbFieldOptions.some(
+        (field) => field.value === mapping.externalField
+      );
+      if (!isRequired && isValidForObject) {
         rows.push({
           id: counter++,
           sfField: mapping.sfField,
@@ -261,7 +267,8 @@ export default class FieldMappingComponent extends LightningElement {
       this.loadDirectionAvailability(objectName),
       getExistingMappings({
         integration: this.selectedIntegration,
-        sfObject: objectName
+        sfObject: objectName,
+        qbObject: this.selectedQBObject
       })
     ])
       .then(([, , , savedMappings]) => {
@@ -287,7 +294,8 @@ export default class FieldMappingComponent extends LightningElement {
       this.loadDirectionAvailability(this.selectedSFObject),
       getExistingMappings({
         integration: this.selectedIntegration,
-        sfObject: this.selectedSFObject
+        sfObject: this.selectedSFObject,
+        qbObject: this.selectedQBObject
       })
     ])
       .then(([, , savedMappings]) => {
@@ -747,7 +755,8 @@ export default class FieldMappingComponent extends LightningElement {
       }),
       getExistingMappings({
         integration: this.selectedIntegration,
-        sfObject: this.childSfObject
+        sfObject: this.childSfObject,
+        qbObject: this.childQbObject
       })
     ])
       .then(([sfFields, qbFields, savedMappings]) => {

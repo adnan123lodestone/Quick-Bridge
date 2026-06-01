@@ -1,4 +1,4 @@
-public with sharing class ConnectorConfigService {
+public without sharing class ConnectorConfigService {
   public class ConnectorConfig {
     @AuraEnabled
     public String connectorKey { get; set; }

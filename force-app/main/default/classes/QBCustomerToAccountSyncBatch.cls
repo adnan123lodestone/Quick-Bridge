@@ -119,24 +119,31 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             Map<String, Boolean> qbIdToIsPersonMap = new Map<String, Boolean>();
             
             if (!accountsToUpsert.isEmpty()) {
-                Database.UpsertResult[] results = Database.upsert(accountsToUpsert, Account.QuickbookID__c, false);
+                Map<String, Account> dedupMap = new Map<String, Account>();
+                for (Account a : accountsToUpsert) {
+                    if (String.isNotBlank(a.QuickbookID__c)) {
+                        dedupMap.put(a.QuickbookID__c, a);
+                    }
+                }
+                List<Account> deduped = dedupMap.isEmpty() ? accountsToUpsert : dedupMap.values();
+                Database.UpsertResult[] results = Database.upsert(deduped, Account.QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults(
                     'QuickBooks',
                 'QBCustomerToAccountSyncBatch.execute.upsertAccounts',
                 'upsert',
-                accountsToUpsert,
+                deduped,
                 results,
                 null,
                 null
                     );
                 Integer successCount = 0;
-                
+
                 for (Integer i = 0; i < results.size(); i++) {
                     if (results[i].isSuccess()) {
                         successCount++;
-                        Account upsertedAccount = accountsToUpsert[i];
+                        Account upsertedAccount = deduped[i];
                         qbIdToAccountIdMap.put(upsertedAccount.QuickbookID__c, results[i].getId());
-                        
+
                         Boolean isPerson = isPersonAccountEnabled && upsertedAccount.RecordTypeId == personAccountRecordTypeId;
                         qbIdToIsPersonMap.put(upsertedAccount.QuickbookID__c, isPerson);
                     }

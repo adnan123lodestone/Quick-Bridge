@@ -204,7 +204,10 @@ public with sharing class FieldMappingController {
       Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
       for (Field_Mapping__mdt rec : existingMappings) {
         Metadata.CustomMetadata inactive = new Metadata.CustomMetadata();
-        inactive.fullName = nsPrefix + 'Field_Mapping__mdt.' + rec.DeveloperName;
+        inactive.fullName =
+          nsPrefix +
+          'Field_Mapping__mdt.' +
+          rec.DeveloperName;
         inactive.label = rec.DeveloperName;
         addCustomMetadataValue(inactive, 'Is_Active__c', false);
         mdContainer.addMetadata(inactive);
@@ -307,14 +310,31 @@ public with sharing class FieldMappingController {
       );
       validateDataTypes(integration, sfObject, qbObject, requestedMappings);
 
+      // Only consider rows for the same external/QBO object (Customer vs Vendor ...)
+      // when deciding what to deactivate, so saving Vendor mappings never disturbs
+      // Customer mappings. Legacy rows (blank Target_Object_API_Name__c) are still
+      // included so they get cleaned up / re-stamped on save.
+      Boolean scopeByObject = String.isNotBlank(qbObject);
       List<Field_Mapping__mdt> existingMappings = [
-        SELECT DeveloperName, External_Field__c, Is_Active__c
+        SELECT
+          DeveloperName,
+          External_Field__c,
+          Is_Active__c,
+          Target_Object_API_Name__c
         FROM Field_Mapping__mdt
         WHERE Integration__c = :integration AND SF_Object__c = :sfObject
       ];
 
       List<String> recordsToDeactivate = new List<String>();
       for (Field_Mapping__mdt existingRecord : existingMappings) {
+        // Skip rows that belong to a different QBO object so they are preserved.
+        if (
+          scopeByObject &&
+          String.isNotBlank(existingRecord.Target_Object_API_Name__c) &&
+          existingRecord.Target_Object_API_Name__c != qbObject
+        ) {
+          continue;
+        }
         if (
           existingRecord.Is_Active__c &&
           !requestedExternalFields.contains(existingRecord.External_Field__c)
@@ -341,7 +361,7 @@ public with sharing class FieldMappingController {
         customMetadata.fullName =
           nsPrefix +
           'Field_Mapping__mdt.' +
-          buildRecordName(integration, sfObject, row.externalField);
+          buildRecordName(integration, sfObject, qbObject, row.externalField);
         String label = sfObject + ' ' + row.sfField;
         customMetadata.label = label.length() > 40
           ? label.substring(0, 40)
@@ -360,6 +380,15 @@ public with sharing class FieldMappingController {
           'Sync_Direction__c',
           row.syncDirection
         );
+        // Persist which QBO object (Customer / Vendor / Item ...) this mapping
+        // belongs to so each object keeps an independent mapping set.
+        if (String.isNotBlank(qbObject)) {
+          addCustomMetadataValue(
+            customMetadata,
+            'Target_Object_API_Name__c',
+            qbObject
+          );
+        }
         addCustomMetadataValue(customMetadata, 'Is_Active__c', true);
 
         mdContainer.addMetadata(customMetadata);
@@ -467,15 +496,35 @@ public with sharing class FieldMappingController {
     );
   }
 
-  @AuraEnabled(cacheable=true)
+  // Backward-compatible overload (no QBO-object scoping) for Apex callers that
+  // don't distinguish a target object. Intentionally NOT @AuraEnabled so the LWC
+  // wire bridge resolves the 3-arg version unambiguously.
   public static List<Map<String, String>> getExistingMappings(
     String integration,
     String sfObject
   ) {
+    return getExistingMappings(integration, sfObject, null);
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static List<Map<String, String>> getExistingMappings(
+    String integration,
+    String sfObject,
+    String qbObject
+  ) {
     List<Map<String, String>> savedMappings = new List<Map<String, String>>();
     try {
+      // When a QBO object is supplied, scope to rows for that object (Customer vs
+      // Vendor ...). Legacy rows with a blank Target_Object_API_Name__c still apply
+      // so existing mappings remain visible until re-saved (which stamps them).
+      Boolean scopeByObject = String.isNotBlank(qbObject);
       List<Field_Mapping__mdt> records = [
-        SELECT DeveloperName, SF_Field__c, External_Field__c, Sync_Direction__c
+        SELECT
+          DeveloperName,
+          SF_Field__c,
+          External_Field__c,
+          Sync_Direction__c,
+          Target_Object_API_Name__c
         FROM Field_Mapping__mdt
         WHERE
           Integration__c = :integration
@@ -487,6 +536,14 @@ public with sharing class FieldMappingController {
         if (
           String.isBlank(record.SF_Field__c) ||
           String.isBlank(record.External_Field__c)
+        ) {
+          continue;
+        }
+        // Skip rows that belong to a different QBO object.
+        if (
+          scopeByObject &&
+          String.isNotBlank(record.Target_Object_API_Name__c) &&
+          record.Target_Object_API_Name__c != qbObject
         ) {
           continue;
         }
@@ -1208,17 +1265,77 @@ public with sharing class FieldMappingController {
         false
       );
     } else if (qbEntity == 'CreditMemoLine') {
-      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.SalesItemLineDetail.ItemRef.value', 'STRING', true);
-      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
-      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.SalesItemLineDetail.Qty', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.SalesItemLineDetail.UnitPrice', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Product/Service ID',
+        'Line.SalesItemLineDetail.ItemRef.value',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Amount',
+        'Line.Amount',
+        'NUMBER',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Quantity',
+        'Line.SalesItemLineDetail.Qty',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Unit Price',
+        'Line.SalesItemLineDetail.UnitPrice',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Description',
+        'Line.Description',
+        'STRING',
+        false
+      );
     } else if (qbEntity == 'PurchaseOrderLine') {
-      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.ItemBasedExpenseLineDetail.ItemRef.value', 'STRING', true);
-      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
-      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.ItemBasedExpenseLineDetail.Qty', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.ItemBasedExpenseLineDetail.UnitPrice', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Product/Service ID',
+        'Line.ItemBasedExpenseLineDetail.ItemRef.value',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Amount',
+        'Line.Amount',
+        'NUMBER',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Quantity',
+        'Line.ItemBasedExpenseLineDetail.Qty',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Unit Price',
+        'Line.ItemBasedExpenseLineDetail.UnitPrice',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Description',
+        'Line.Description',
+        'STRING',
+        false
+      );
     }
 
     return qbFields;
@@ -2735,13 +2852,30 @@ public with sharing class FieldMappingController {
     String sfObject,
     String extField
   ) {
+    return buildRecordName(integration, sfObject, null, extField);
+  }
+
+  // qbObject is folded into the unique name (and hash) so that the same external
+  // field mapped on different QBO objects (e.g. Account->Customer.DisplayName vs
+  // Account->Vendor.DisplayName) produces distinct metadata records instead of
+  // colliding on one.
+  private static String buildRecordName(
+    String integration,
+    String sfObject,
+    String qbObject,
+    String extField
+  ) {
     String cleanObjName = sfObject.replace('__c', '').replaceAll('__+', '_');
     String sanitizedExternalField = extField.replaceAll('[^a-zA-Z0-9]', '_')
       .replaceAll('__+', '_');
+    String objToken = String.isBlank(qbObject)
+      ? ''
+      : '_' + qbObject.replaceAll('[^a-zA-Z0-9]', '_').replaceAll('__+', '_');
     String baseName =
       integration +
       '_' +
       cleanObjName +
+      objToken +
       '_' +
       sanitizedExternalField;
     String hashSuffix =

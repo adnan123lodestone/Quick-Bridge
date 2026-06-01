@@ -123,12 +123,42 @@ public with sharing class QuickBridgeMappingAssistantController {
     String value;
     String type;
     Boolean required;
+    // Cached, computed once per field to avoid recomputing tokens/normalized form
+    // for every (external x salesforce) field pair during suggestion scoring.
+    Set<String> tokenSet;
+    String normalized;
+    String valueNormalized;
 
     FieldInfo(String label, String value, String type, Boolean required) {
       this.label = label;
       this.value = value;
       this.type = normalizeType(type);
       this.required = required == true;
+    }
+
+    Set<String> getTokens() {
+      if (tokenSet == null) {
+        tokenSet = tokens(value + ' ' + label);
+      }
+      return tokenSet;
+    }
+
+    // Normalized form derived from the same tokens (joined, no separators) so it
+    // reuses the cached token computation instead of running the regex again.
+    String getNormalized() {
+      if (normalized == null) {
+        normalized = String.join(new List<String>(getTokens()), '');
+      }
+      return normalized;
+    }
+
+    // Normalized form of the field value only (no label), matching the original
+    // normalizeForCompare(value) comparison. Cached per field.
+    String getValueNormalized() {
+      if (valueNormalized == null) {
+        valueNormalized = normalizeForCompare(value);
+      }
+      return valueNormalized;
     }
   }
 
@@ -543,19 +573,14 @@ public with sharing class QuickBridgeMappingAssistantController {
   }
 
   private static Decimal score(FieldInfo sfField, FieldInfo externalField) {
-    String sfNorm = normalizeForCompare(sfField.value + ' ' + sfField.label);
-    String extNorm = normalizeForCompare(
-      externalField.value + ' ' + externalField.label
-    );
-    Set<String> sfTokens = tokens(sfField.value + ' ' + sfField.label);
-    Set<String> extTokens = tokens(
-      externalField.value + ' ' + externalField.label
-    );
+    String sfNorm = sfField.getNormalized();
+    String extNorm = externalField.getNormalized();
+    Set<String> sfTokens = sfField.getTokens();
+    Set<String> extTokens = externalField.getTokens();
     Decimal scoreValue = 0;
     if (
       sfNorm == extNorm ||
-      normalizeForCompare(sfField.value) ==
-      normalizeForCompare(externalField.value)
+      sfField.getValueNormalized() == externalField.getValueNormalized()
     ) {
       scoreValue = 92;
     } else if (!sfTokens.isEmpty() && sfTokens.equals(extTokens)) {
@@ -740,12 +765,14 @@ public with sharing class QuickBridgeMappingAssistantController {
       } else if (connector == 'shopify') {
         existing = FieldMappingController.getExistingMappings(
           'shopify',
-          salesforceObject
+          salesforceObject,
+          null
         );
       } else if (connector == 'qbo' || connector == 'qbonline') {
         existing = FieldMappingController.getExistingMappings(
           'qbonline',
-          salesforceObject
+          salesforceObject,
+          externalObject
         );
       } else {
         existing = new List<Map<String, String>>();
@@ -951,19 +978,30 @@ public with sharing class QuickBridgeMappingAssistantController {
   private static Set<String> expandSynonyms(Set<String> source) {
     Set<String> result = new Set<String>();
     result.addAll(source);
-    for (Set<String> groupValues : synonymGroups()) {
-      Boolean hit = false;
-      for (String token : source) {
-        if (groupValues.contains(token)) {
-          hit = true;
-          break;
-        }
-      }
-      if (hit) {
+    Map<String, Set<String>> index = synonymIndex();
+    for (String token : source) {
+      Set<String> groupValues = index.get(token);
+      if (groupValues != null) {
         result.addAll(groupValues);
       }
     }
     return result;
+  }
+
+  // token -> the synonym group it belongs to, built once per transaction so synonym
+  // expansion is a few map lookups instead of scanning every group for every token.
+  private static Map<String, Set<String>> synonymIndexCache;
+
+  private static Map<String, Set<String>> synonymIndex() {
+    if (synonymIndexCache == null) {
+      synonymIndexCache = new Map<String, Set<String>>();
+      for (Set<String> groupValues : synonymGroups()) {
+        for (String token : groupValues) {
+          synonymIndexCache.put(token, groupValues);
+        }
+      }
+    }
+    return synonymIndexCache;
   }
 
   private static Boolean hasSynonymOverlap(
@@ -978,8 +1016,13 @@ public with sharing class QuickBridgeMappingAssistantController {
     return false;
   }
 
+  private static List<Set<String>> synonymGroupsCache;
+
   private static List<Set<String>> synonymGroups() {
-    return new List<Set<String>>{
+    if (synonymGroupsCache != null) {
+      return synonymGroupsCache;
+    }
+    synonymGroupsCache = new List<Set<String>>{
       new Set<String>{
         'postal',
         'zipcode',
@@ -1010,6 +1053,7 @@ public with sharing class QuickBridgeMappingAssistantController {
       new Set<String>{ 'status', 'state' },
       new Set<String>{ 'date', 'time', 'txn' }
     };
+    return synonymGroupsCache;
   }
 
   private static String normalizeType(String typeValue) {
