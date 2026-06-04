@@ -746,15 +746,50 @@ public with sharing class DHLCarrierAdapter implements ICarrierAdapter {
     String errorDetail = messages.isEmpty()
       ? 'HTTP ' + statusCode
       : String.join(messages, '; ');
+    // For authentication/authorization failures, the DHL response body rarely
+    // explains the cause, so surface an actionable message naming the active
+    // environment and pointing the admin at credentials / sandbox provisioning.
+    String authGuidance = authFailureGuidance(statusCode);
+    String fullMessage = String.isBlank(authGuidance)
+      ? defaultMessage + ' ' + errorDetail
+      : defaultMessage + ' ' + authGuidance + ' (' + errorDetail + ')';
     ErrorLogUtility.logCalloutFailure(
       'DHL',
       'DHLCarrierAdapter.requireSuccess',
-      defaultMessage + ' ' + errorDetail,
+      fullMessage,
       statusCode,
       null,
       null
     );
-    throw new DHLCalloutException(defaultMessage + ' ' + errorDetail);
+    throw new DHLCalloutException(fullMessage);
+  }
+
+  // Returns actionable guidance for auth failures, or '' for other status codes.
+  private String authFailureGuidance(Integer statusCode) {
+    if (statusCode == 401) {
+      return 'DHL authentication was rejected (HTTP 401). Verify the DHL API key/secret in the ' +
+        currentEnvironmentLabel() +
+        ' connector configuration, and confirm the MyDHL API ' +
+        currentEnvironmentLabel() +
+        ' credentials are still provisioned on the DHL developer portal.';
+    }
+    if (statusCode == 403) {
+      return 'DHL authorization failed (HTTP 403) — the credentials are valid but lack access to this operation or account in the ' +
+        currentEnvironmentLabel() +
+        ' environment.';
+    }
+    return '';
+  }
+
+  // Best-effort resolution of the active DHL environment for diagnostics; never
+  // throws (config errors are surfaced elsewhere).
+  private String currentEnvironmentLabel() {
+    try {
+      String env = DHLAuthService.getCredentialConfig().environment;
+      return String.isBlank(env) ? 'Sandbox' : env;
+    } catch (Exception ignored) {
+      return 'configured';
+    }
   }
 
   private Map<String, Object> normalizeAddressPayload(

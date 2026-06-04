@@ -1,4 +1,4 @@
-public without sharing class ConnectorConfigService {
+public with sharing class ConnectorConfigService {
   public class ConnectorConfig {
     @AuraEnabled
     public String connectorKey { get; set; }
@@ -29,10 +29,7 @@ public without sharing class ConnectorConfigService {
   }
 
   @AuraEnabled(cacheable=false)
-  public static ConnectorConfig getPublicConfig(
-    String connectorKey,
-    String sessionToken
-  ) {
+  public static ConnectorConfig getPublicConfig(String connectorKey, String sessionToken) {
     QuickBridgeAdminGuard.requireView();
     QuickBridgeAdminSessionService.requireValidSession(sessionToken);
     ConnectorConfig cfg = getConfig(connectorKey);
@@ -44,10 +41,7 @@ public without sharing class ConnectorConfigService {
     return getConfig(connectorKey, false);
   }
 
-  public static ConnectorConfig getConfig(
-    String connectorKey,
-    Boolean includeLegacyForMigration
-  ) {
+  public static ConnectorConfig getConfig(String connectorKey, Boolean includeLegacyForMigration) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
     );
@@ -62,10 +56,7 @@ public without sharing class ConnectorConfigService {
     config.label = descriptor.label;
     config.values = new Map<String, String>();
     hydrateFromNormalizedConfig(config, descriptor);
-    if (
-      includeLegacyForMigration == true &&
-      config.fromNormalizedConfig != true
-    ) {
+    if (includeLegacyForMigration == true && config.fromNormalizedConfig != true) {
       hydrateFromLegacyConfig(config, descriptor);
     }
     return config;
@@ -76,18 +67,10 @@ public without sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfigForMigration(String connectorKey) {
-    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
-      connectorKey
-    );
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(connectorKey);
     if (descriptor == null) {
-      throw new AuraHandledException(
-        'Unsupported QuickBridge connector: ' + connectorKey
-      );
+      throw new AuraHandledException('Unsupported QuickBridge connector: ' + connectorKey);
     }
-    ConnectorConfig config = new ConnectorConfig();
-    config.connectorKey = descriptor.connectorKey;
-    config.label = descriptor.label;
-    config.values = new Map<String, String>();
     return getConfig(connectorKey, true);
   }
 

@@ -1027,6 +1027,31 @@
                         ></c-ups-field-mapping-component>
                       </div>
                     </template>
+
+                    <template if:true={tileIs.dhl}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          DHL Mapping
+                        </h2>
+                        <c-dhl-field-mapping-component
+                          onmappingcontextchange={handleMappingContextChange}
+                        ></c-dhl-field-mapping-component>
+                      </div>
+                    </template>
                   </div>
                   <div class="mapping-assistant-panel">
                     <c-quickbridge-mapping-assistant

@@ -199,4 +199,22 @@
       </section>
     </template>
   </div>
+
+  <template if:true={showResetConfirm}>
+    <div class="reset-modal-backdrop" onclick={handleResetCancel}></div>
+    <div class="reset-modal">
+      <h3 class="reset-modal-title">Clear Mappings</h3>
+      <p class="reset-modal-body">
+        Clear all saved mappings for this object? This cannot be undone.
+      </p>
+      <div class="reset-modal-footer">
+        <button type="button" class="btn-secondary" onclick={handleResetCancel}>
+          Cancel
+        </button>
+        <button type="button" class="btn-danger" onclick={handleResetConfirm}>
+          Clear Mappings
+        </button>
+      </div>
+    </div>
+  </template>
 </template>

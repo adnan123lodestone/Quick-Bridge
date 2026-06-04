@@ -2,6 +2,14 @@ global with sharing class GenericScheduleDispatcher implements Schedulable {
   private static final Integer DEFAULT_LEASE_MINUTES = 10;
 
   global void execute(SchedulableContext context) {
+    Integer processingCount = [
+      SELECT COUNT() FROM AsyncApexJob
+      WHERE ApexClass.Name = 'GenericScheduleDispatcher'
+      AND Status = 'Processing'
+    ];
+    if (processingCount > 1) {
+      return;
+    }
     dispatchDue();
   }
 

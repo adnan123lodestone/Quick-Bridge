@@ -68,7 +68,7 @@
     </values>
     <values>
         <field>FedEx_End_Date__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:date">2027-05-14</value>
     </values>
     <values>
         <field>FedEx_Environment__c</field>
@@ -76,7 +76,11 @@
     </values>
     <values>
         <field>FedEx_Start_Date__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:date">2026-05-14</value>
+    </values>
+    <values>
+        <field>Map_Draft_Orders_as_Estimates__c</field>
+        <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Password__c</field>

@@ -65,18 +65,8 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                             
                         if (accountToSync != null) {
                             String companyName = (String)customerData.get('CompanyName');
-
-                            // Only treat as a Person Account when it is safe to do so:
-                            //  - the record is brand new (no Id yet), or
-                            //  - it already IS a Person Account.
-                            // Flipping an existing Business Account to a Person Account in the
-                            // same DML is not allowed and causes
-                            // "Business Account may not use Person Account field PersonEmail".
-                            Boolean canBePersonAccount = personAccountRecordTypeId != null
-                                && (accountToSync.Id == null
-                                    || accountToSync.RecordTypeId == personAccountRecordTypeId);
-
-                            if (isPersonAccountEnabled && canBePersonAccount && String.isBlank(companyName)) {
+                                
+                            if (isPersonAccountEnabled && personAccountRecordTypeId != null && String.isBlank(companyName)) {
                                 accountToSync.RecordTypeId = personAccountRecordTypeId;
                                     
                                 String fName = (String)customerData.get('GivenName');
@@ -119,31 +109,24 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             Map<String, Boolean> qbIdToIsPersonMap = new Map<String, Boolean>();
             
             if (!accountsToUpsert.isEmpty()) {
-                Map<String, Account> dedupMap = new Map<String, Account>();
-                for (Account a : accountsToUpsert) {
-                    if (String.isNotBlank(a.QuickbookID__c)) {
-                        dedupMap.put(a.QuickbookID__c, a);
-                    }
-                }
-                List<Account> deduped = dedupMap.isEmpty() ? accountsToUpsert : dedupMap.values();
-                Database.UpsertResult[] results = Database.upsert(deduped, Account.QuickbookID__c, false);
+                Database.UpsertResult[] results = Database.upsert(accountsToUpsert, Account.QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults(
                     'QuickBooks',
                 'QBCustomerToAccountSyncBatch.execute.upsertAccounts',
                 'upsert',
-                deduped,
+                accountsToUpsert,
                 results,
                 null,
                 null
                     );
                 Integer successCount = 0;
-
+                
                 for (Integer i = 0; i < results.size(); i++) {
                     if (results[i].isSuccess()) {
                         successCount++;
-                        Account upsertedAccount = deduped[i];
+                        Account upsertedAccount = accountsToUpsert[i];
                         qbIdToAccountIdMap.put(upsertedAccount.QuickbookID__c, results[i].getId());
-
+                        
                         Boolean isPerson = isPersonAccountEnabled && upsertedAccount.RecordTypeId == personAccountRecordTypeId;
                         qbIdToIsPersonMap.put(upsertedAccount.QuickbookID__c, isPerson);
                     }

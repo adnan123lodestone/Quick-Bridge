@@ -271,3 +271,58 @@ tr:last-child td {
     flex-direction: column;
   }
 }
+
+.reset-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 8000;
+}
+
+.reset-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8001;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  padding: 1.75rem 2rem 1.5rem;
+  width: 380px;
+  max-width: 90vw;
+}
+
+.reset-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 0.6rem;
+}
+
+.reset-modal-body {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.reset-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.btn-danger {
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-danger:hover {
+  background: #b91c1c;
+}

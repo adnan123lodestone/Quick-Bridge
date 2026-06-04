@@ -50,7 +50,8 @@ public with sharing class IntegrationEntityRegistry {
                 definition.externalEntity = row.External_Object__c;
                 result.add(definition);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'IntegrationEntityRegistry: failed to load definitions from Integration_Object_Map__mdt: ' + e.getMessage());
         }
         try {
             for (Integration_Entity_Definition__c row : [
@@ -64,7 +65,8 @@ public with sharing class IntegrationEntityRegistry {
                 definition.externalEntity = row.External_Entity__c;
                 result.add(definition);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'IntegrationEntityRegistry: failed to load definitions from Integration_Entity_Definition__c: ' + e.getMessage());
         }
         // Always add fallback definitions for entries not covered by DB records
         Set<String> coveredKeys = new Set<String>();

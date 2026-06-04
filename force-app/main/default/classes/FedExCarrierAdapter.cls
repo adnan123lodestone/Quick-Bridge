@@ -50,6 +50,43 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
         };
     }
 
+    public List<CarrierOperationsService.RateQuoteOption> normalizeRateQuotes(Map<String, Object> rawResponse) {
+        List<CarrierOperationsService.RateQuoteOption> options = new List<CarrierOperationsService.RateQuoteOption>();
+        Object rateDetailsObj = CarrierMappingService.getPath(rawResponse, 'output.rateReplyDetails');
+        if (!(rateDetailsObj instanceof List<Object>)) {
+            return options;
+        }
+        for (Object detailObj : (List<Object>) rateDetailsObj) {
+            if (!(detailObj instanceof Map<String, Object>)) { continue; }
+            Map<String, Object> detail = (Map<String, Object>) detailObj;
+            CarrierOperationsService.RateQuoteOption option = new CarrierOperationsService.RateQuoteOption();
+            option.serviceType = (String) detail.get('serviceType');
+            option.serviceName = (String) detail.get('serviceName');
+            Object commitObj = detail.get('commit');
+            if (commitObj instanceof Map<String, Object>) {
+                option.transitTime = (String) ((Map<String, Object>) commitObj).get('transitTime');
+            }
+            Object ratedDetailsObj = detail.get('ratedShipmentDetails');
+            if (ratedDetailsObj instanceof List<Object> && !((List<Object>) ratedDetailsObj).isEmpty()) {
+                Map<String, Object> firstRated = (Map<String, Object>) ((List<Object>) ratedDetailsObj)[0];
+                Object shipRateDetail = firstRated.get('shipmentRateDetail');
+                if (shipRateDetail instanceof Map<String, Object>) {
+                    Object amountObj = CarrierMappingService.getPath((Map<String, Object>) shipRateDetail, 'totalNetCharge.amount');
+                    if (amountObj != null) { option.totalNetCharge = Decimal.valueOf(String.valueOf(amountObj)); }
+                    option.currencyCode = (String) CarrierMappingService.getPath((Map<String, Object>) shipRateDetail, 'totalNetCharge.currency');
+                }
+                if (option.totalNetCharge == null) {
+                    Object chargeObj = firstRated.get('totalNetCharge');
+                    if (chargeObj != null) { option.totalNetCharge = Decimal.valueOf(String.valueOf(chargeObj)); }
+                    option.currencyCode = (String) firstRated.get('currency');
+                }
+            }
+            option.rawResponse = JSON.serialize(detail);
+            if (option.serviceType != null) { options.add(option); }
+        }
+        return options;
+    }
+
     public Map<String, Object> createShipment(Map<String, Object> payload, Boolean includeLabel) {
         Map<String, Object> requestBody = buildShipmentRequest(payload, includeLabel == true);
         HttpResponse response = send('POST', '/ship/v1/shipments', requestBody);

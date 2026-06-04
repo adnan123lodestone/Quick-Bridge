@@ -5,6 +5,7 @@ import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFi
 import getFedExFields from "@salesforce/apex/FieldMappingController.getFedExFields";
 import getExistingFedExMappings from "@salesforce/apex/FieldMappingController.getExistingFedExMappings";
 import saveFedExFieldMappings from "@salesforce/apex/FieldMappingController.saveFedExFieldMappings";
+import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
 
 const SHIPMENT_ONLY_ACTIONS = new Set(["voidShipment", "syncTrackingStatus"]);
 const SHIPMENT_OBJECT = "QuickBridgeTLG__Carrier_Shipment__c";
@@ -65,6 +66,7 @@ export default class FedexFieldMappingComponent extends LightningElement {
   @track mappingRows = [];
   @track rowCounter = 1;
   @track isLoading = true;
+  @track showResetConfirm = false;
 
   get directionOptions() {
     return [
@@ -386,7 +388,34 @@ export default class FedexFieldMappingComponent extends LightningElement {
   }
 
   handleReset() {
-    this.reloadMappings();
+    this.showResetConfirm = true;
+  }
+
+  handleResetCancel() {
+    this.showResetConfirm = false;
+  }
+
+  handleResetConfirm() {
+    this.showResetConfirm = false;
+    this.isLoading = true;
+    clearFieldMappings({
+      integration: "fedex",
+      sfObject: this.selectedSFObject
+    })
+      .then(() => {
+        this.showToast(
+          "Success",
+          "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.",
+          "success"
+        );
+        this.mappingRows = [];
+        this.rowCounter = 1;
+        this.isLoading = false;
+      })
+      .catch((error) => {
+        this.isLoading = false;
+        this.showToast("Error", error.body?.message || error.message, "error");
+      });
   }
 
   @api

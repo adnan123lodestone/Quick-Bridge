@@ -16,7 +16,15 @@
     </values>
     <values>
         <field>Is_Active__c</field>
-        <value xsi:type="xsd:boolean">true</value>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Mapping_Context__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Mapping_Step__c</field>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>SF_Field__c</field>
@@ -24,10 +32,34 @@
     </values>
     <values>
         <field>SF_Object__c</field>
-        <value xsi:type="xsd:string">Carrier_Shipment__c</value>
+        <value xsi:type="xsd:string">QuickBridgeTLG__Carrier_Shipment__c</value>
+    </values>
+    <values>
+        <field>Source_Customer_Lookup_Field__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Source_Customer_Target_Object__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Source_Email_Field_API_Name__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Source_Lookup_On_Target_Field__c</field>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Sync_Direction__c</field>
         <value xsi:type="xsd:string">FedEx to SF</value>
+    </values>
+    <values>
+        <field>Target_Field_API_Name__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Target_Object_API_Name__c</field>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

@@ -5,6 +5,7 @@ import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFi
 import getUPSFields from "@salesforce/apex/FieldMappingController.getUPSFields";
 import getExistingUPSMappings from "@salesforce/apex/FieldMappingController.getExistingUPSMappings";
 import saveUPSFieldMappings from "@salesforce/apex/FieldMappingController.saveUPSFieldMappings";
+import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
 
 const SHIPMENT_ONLY_ACTIONS = new Set(["voidShipment", "syncTrackingStatus"]);
 const SHIPMENT_OBJECT = "QuickBridgeTLG__Carrier_Shipment__c";
@@ -65,6 +66,7 @@ export default class UpsFieldMappingComponent extends LightningElement {
   @track mappingRows = [];
   @track rowCounter = 1;
   @track isLoading = true;
+  @track showResetConfirm = false;
 
   get directionOptions() {
     return [
@@ -384,7 +386,34 @@ export default class UpsFieldMappingComponent extends LightningElement {
   }
 
   handleReset() {
-    this.reloadMappings();
+    this.showResetConfirm = true;
+  }
+
+  handleResetCancel() {
+    this.showResetConfirm = false;
+  }
+
+  handleResetConfirm() {
+    this.showResetConfirm = false;
+    this.isLoading = true;
+    clearFieldMappings({
+      integration: "ups",
+      sfObject: this.selectedSFObject
+    })
+      .then(() => {
+        this.showToast(
+          "Success",
+          "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.",
+          "success"
+        );
+        this.mappingRows = [];
+        this.rowCounter = 1;
+        this.isLoading = false;
+      })
+      .catch((error) => {
+        this.isLoading = false;
+        this.showToast("Error", error.body?.message || error.message, "error");
+      });
   }
 
   @api

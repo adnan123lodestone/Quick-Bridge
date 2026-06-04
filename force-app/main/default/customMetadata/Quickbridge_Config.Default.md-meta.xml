@@ -79,6 +79,10 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>Map_Draft_Orders_as_Estimates__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
         <field>Password__c</field>
         <value xsi:type="xsd:string">1234</value>
     </values>

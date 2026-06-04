@@ -44,6 +44,36 @@ public with sharing class UPSCarrierAdapter implements ICarrierAdapter {
         };
     }
 
+    public List<CarrierOperationsService.RateQuoteOption> normalizeRateQuotes(Map<String, Object> rawResponse) {
+        List<CarrierOperationsService.RateQuoteOption> options = new List<CarrierOperationsService.RateQuoteOption>();
+        Object ratedShipmentObj = CarrierMappingService.getPath(rawResponse, 'RateResponse.RatedShipment');
+        if (!(ratedShipmentObj instanceof List<Object>)) {
+            return options;
+        }
+        for (Object shipObj : (List<Object>) ratedShipmentObj) {
+            if (!(shipObj instanceof Map<String, Object>)) { continue; }
+            Map<String, Object> shipment = (Map<String, Object>) shipObj;
+            CarrierOperationsService.RateQuoteOption option = new CarrierOperationsService.RateQuoteOption();
+            Object serviceObj = shipment.get('Service');
+            if (serviceObj instanceof Map<String, Object>) {
+                option.serviceType = (String) ((Map<String, Object>) serviceObj).get('Code');
+                option.serviceName = (String) ((Map<String, Object>) serviceObj).get('Description');
+            }
+            Object totalChargesObj = shipment.get('TotalCharges');
+            if (totalChargesObj instanceof Map<String, Object>) {
+                Map<String, Object> totalCharges = (Map<String, Object>) totalChargesObj;
+                Object monVal = totalCharges.get('MonetaryValue');
+                if (monVal != null) { option.totalNetCharge = Decimal.valueOf(String.valueOf(monVal)); }
+                option.currencyCode = (String) totalCharges.get('CurrencyCode');
+            }
+            Object transitObj = CarrierMappingService.getPath(shipment, 'TimeInTransit.ServiceSummary.EstimatedArrival.BusinessDaysInTransit');
+            if (transitObj != null) { option.transitTime = String.valueOf(transitObj); }
+            option.rawResponse = JSON.serialize(shipment);
+            if (option.serviceType != null) { options.add(option); }
+        }
+        return options;
+    }
+
     public Map<String, Object> createShipment(Map<String, Object> payload, Boolean includeLabel) {
         UPSAuthService.UPSCredentialConfig config = UPSAuthService.getCredentialConfig();
         Map<String, Object> shipmentBlock = buildShipmentBlock(payload, config, false);

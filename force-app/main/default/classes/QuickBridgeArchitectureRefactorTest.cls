@@ -8,41 +8,49 @@ private class QuickBridgeArchitectureRefactorTest {
       LegacyConnectorRegistryFallback.connectors(),
       'Legacy fallback should be centralized in its own compatibility service.'
     );
-    System.assertNotEquals(null, ConnectorRegistryService.byKey('qbo'));
+    System.assertNotEquals(null, ConnectorRegistryService.byKey('qbo'), 'QBO connector should be resolvable by key');
     System.assertEquals(
       'quickbooks',
-      ConnectorRegistryService.byKey('QuickBooks Online').productKey
+      ConnectorRegistryService.byKey('QuickBooks Online').productKey,
+      'QuickBooks Online should resolve to quickbooks productKey'
     );
     System.assertEquals(
       'StripePaymentAdapter',
-      ConnectorRegistryService.adapterClassFor('stripe', 'payment.checkout')
+      ConnectorRegistryService.adapterClassFor('stripe', 'payment.checkout'),
+      'Stripe payment checkout adapter should be StripePaymentAdapter'
     );
     System.assertEquals(
       'FedExCarrierAdapter',
-      ConnectorRegistryService.adapterClassFor('fedex', 'carrier.operation')
+      ConnectorRegistryService.adapterClassFor('fedex', 'carrier.operation'),
+      'FedEx carrier adapter should be FedExCarrierAdapter'
     );
     System.assertEquals(
       'UPSCarrierAdapter',
-      ConnectorRegistryService.adapterClassFor('ups', 'carrier.operation')
+      ConnectorRegistryService.adapterClassFor('ups', 'carrier.operation'),
+      'UPS carrier adapter should be UPSCarrierAdapter'
     );
     System.assertEquals(
       'DHLCarrierAdapter',
-      ConnectorRegistryService.adapterClassFor('dhl', 'carrier.operation')
+      ConnectorRegistryService.adapterClassFor('dhl', 'carrier.operation'),
+      'DHL carrier adapter should be DHLCarrierAdapter'
     );
     System.assertEquals(
       'QBAccountWorker',
       ConnectorRegistryService.adapterClassFor(
         'quickbooks',
         'work.AccountUpsert'
-      )
+      ),
+      'QuickBooks AccountUpsert adapter should be QBAccountWorker'
     );
     System.assertEquals(
       'ShopifyIntegrationWorker',
-      ConnectorRegistryService.adapterClassFor('shopify', 'work.CustomerUpsert')
+      ConnectorRegistryService.adapterClassFor('shopify', 'work.CustomerUpsert'),
+      'Shopify CustomerUpsert adapter should be ShopifyIntegrationWorker'
     );
     System.assert(
       ConnectorRegistryService.externalObjectsFor('shopify')
-        .contains('Customer')
+        .contains('Customer'),
+      'Shopify external objects should include Customer'
     );
 
     insert new Integration_Product__c(
@@ -69,9 +77,9 @@ private class QuickBridgeArchitectureRefactorTest {
     ConnectorRegistryService.ConnectorDescriptor mailPulse = ConnectorRegistryService.byKey(
       'email'
     );
-    System.assertNotEquals(null, mailPulse);
-    System.assertEquals('mailpulse', mailPulse.connectorKey);
-    System.assert(mailPulse.capabilities.contains('config.admin'));
+    System.assertNotEquals(null, mailPulse, 'MailPulse dynamic product should be resolvable by email alias');
+    System.assertEquals('mailpulse', mailPulse.connectorKey, 'MailPulse connectorKey should be mailpulse');
+    System.assert(mailPulse.capabilities.contains('config.admin'), 'MailPulse should have config.admin capability');
   }
 
   @IsTest
@@ -123,17 +131,19 @@ private class QuickBridgeArchitectureRefactorTest {
     ConnectorConfigService.ConnectorConfig config = ConnectorConfigService.getConfig(
       'configtest'
     );
-    System.assertEquals(true, config.fromNormalizedConfig);
-    System.assertEquals(true, config.active);
+    System.assertEquals(true, config.fromNormalizedConfig, 'Config should be resolved from normalized Connector_Instance__c');
+    System.assertEquals(true, config.active, 'Config should report active=true');
     System.assertEquals(
       'https://example.test',
-      ConnectorConfigService.getConfigValue('configtest', 'storeUrl')
+      ConnectorConfigService.getConfigValue('configtest', 'storeUrl'),
+      'storeUrl config value should match the inserted record'
     );
     System.assertEquals(
       'NamedCredential:Config_Test_NC',
-      config.values.get('clientSecret')
+      config.values.get('clientSecret'),
+      'Secret reference value should be preserved as-is'
     );
-    System.assertEquals(true, ConnectorConfigService.isActive('configtest'));
+    System.assertEquals(true, ConnectorConfigService.isActive('configtest'), 'configtest connector should be active');
 
     ConnectorConfigService.upsertNonSecretValue(
       'configtest',
@@ -155,32 +165,20 @@ private class QuickBridgeArchitectureRefactorTest {
       ]
       .Value__c
     );
-    ConnectorConfigService.upsertNonSecretValue(
-      'configtest',
-      'activeFlag',
-      'no'
-    );
-    System.assertEquals(false, ConnectorConfigService.isActive('configtest'));
-    ConnectorConfigService.upsertNonSecretValue(
-      'configtest',
-      'activeFlag',
-      'yes'
-    );
+    ConnectorConfigService.upsertNonSecretValue('configtest', 'activeFlag', 'no');
+    System.assertEquals(false, ConnectorConfigService.isActive('configtest'), 'Setting activeFlag to no should deactivate the connector');
+    ConnectorConfigService.upsertNonSecretValue('configtest', 'activeFlag', 'yes');
     ConnectorConfigService.upsertNonSecretValue(
       'configtest',
       'expiryOn',
       String.valueOf(Date.today().addDays(20))
     );
-    System.assertEquals(true, ConnectorConfigService.isActive('configtest'));
+    System.assertEquals(true, ConnectorConfigService.isActive('configtest'), 'Setting activeFlag back to yes should reactivate the connector');
     try {
-      ConnectorConfigService.upsertNonSecretValue(
-        'configtest',
-        'expiryOn',
-        'not-a-date'
-      );
+      ConnectorConfigService.upsertNonSecretValue('configtest', 'expiryOn', 'not-a-date');
       System.assert(false, 'Expected invalid date rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Invalid date format should throw an AuraHandledException');
     }
 
     try {
@@ -191,7 +189,7 @@ private class QuickBridgeArchitectureRefactorTest {
       );
       System.assert(false, 'Expected secret value rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Writing a secret config value should be rejected by the service');
     }
 
     insert new Integration_Product__c(
@@ -213,9 +211,9 @@ private class QuickBridgeArchitectureRefactorTest {
     ConnectorConfigService.ConnectorConfig missingConfig = ConnectorConfigService.getConfig(
       'noconfig'
     );
-    System.assertEquals(false, missingConfig.fromNormalizedConfig);
-    System.assertEquals(false, missingConfig.active);
-    System.assertEquals(false, ConnectorConfigService.isActive('noconfig'));
+    System.assertEquals(false, missingConfig.fromNormalizedConfig, 'Config for missing record should not be from normalized config');
+    System.assertEquals(false, missingConfig.active, 'Config for missing record should be inactive');
+    System.assertEquals(false, ConnectorConfigService.isActive('noconfig'), 'Connector with missing config record should be inactive');
 
     insert new Integration_Product__c(
       Name = 'New Config',
@@ -239,10 +237,11 @@ private class QuickBridgeArchitectureRefactorTest {
     ConnectorConfigService.ConnectorConfig createdConfig = ConnectorConfigService.getConfig(
       'newconfig'
     );
-    System.assertEquals(true, createdConfig.fromNormalizedConfig);
+    System.assertEquals(true, createdConfig.fromNormalizedConfig, 'Config created via upsertNonSecretValue should be normalized');
     System.assertEquals(
       'created',
-      ConnectorConfigService.getConfigValue('newconfig', 'Public_Field__c')
+      ConnectorConfigService.getConfigValue('newconfig', 'Public_Field__c'),
+      'Public_Field__c value should match the upserted value'
     );
     try {
       ConnectorConfigService.upsertNonSecretValue(
@@ -252,14 +251,14 @@ private class QuickBridgeArchitectureRefactorTest {
       );
       System.assert(false, 'Expected secret legacy field rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Writing a legacy secret field should be rejected by the service');
     }
 
     try {
       ConnectorConfigService.getConfig('missing-connector');
       System.assert(false, 'Expected unsupported connector rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Unsupported connector key should throw AuraHandledException from getConfig');
     }
   }
 
@@ -269,34 +268,33 @@ private class QuickBridgeArchitectureRefactorTest {
     ConnectorConfigService.ConnectorConfig stripeConfig = ConnectorConfigService.getConfig(
       'stripe'
     );
-    System.assertNotEquals(null, stripeConfig);
-    System.assertEquals(false, stripeConfig.fromNormalizedConfig);
-    System.assertEquals(true, stripeConfig.values.isEmpty());
+    System.assertNotEquals(null, stripeConfig, 'Stripe config should be resolvable');
+    System.assertEquals(false, stripeConfig.fromNormalizedConfig, 'Legacy config should not be from normalized config');
+    System.assertEquals(true, stripeConfig.values.isEmpty(), 'Legacy config should have empty values map');
     ConnectorConfigService.ConnectorConfig migrationStripeConfig = ConnectorConfigService.getConfigForMigration(
       'stripe'
     );
-    System.assertNotEquals(null, migrationStripeConfig.values);
+    System.assertNotEquals(null, migrationStripeConfig.values, 'Migration config values should not be null');
     try {
       ConnectorConfigService.getConfigForMigration('missing-connector');
-      System.assert(
-        false,
-        'Expected unsupported migration connector rejection.'
-      );
+      System.assert(false, 'Expected unsupported migration connector rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Unsupported migration connector should throw AuraHandledException');
     }
-    System.assertNotEquals(null, ConnectorConfigService.getConfig('paypal'));
+    System.assertNotEquals(null, ConnectorConfigService.getConfig('paypal'), 'PayPal config should be resolvable');
     System.assertNotEquals(
       null,
-      ConnectorConfigService.getConfig('authorizenet')
+      ConnectorConfigService.getConfig('authorizenet'),
+      'AuthorizeNet config should be resolvable'
     );
     System.assertNotEquals(
       null,
-      ConnectorConfigService.getConfig('quickbooks')
+      ConnectorConfigService.getConfig('quickbooks'),
+      'QuickBooks config should be resolvable'
     );
-    System.assertNotEquals(null, ConnectorConfigService.getConfig('shopify'));
-    System.assertNotEquals(null, ConnectorConfigService.getConfig('fedex'));
-    System.assertNotEquals(null, ConnectorConfigService.getConfig('ups'));
+    System.assertNotEquals(null, ConnectorConfigService.getConfig('shopify'), 'Shopify config should be resolvable');
+    System.assertNotEquals(null, ConnectorConfigService.getConfig('fedex'), 'FedEx config should be resolvable');
+    System.assertNotEquals(null, ConnectorConfigService.getConfig('ups'), 'UPS config should be resolvable');
     ConnectorConfigService.getConfigValue(
       'stripe',
       'Stripe_Publishable_Key__c'
@@ -310,17 +308,18 @@ private class QuickBridgeArchitectureRefactorTest {
     QuickbridgeConfigMigrationService.MigrationResult migration = QuickbridgeConfigMigrationService.migrateConnector(
       'stripe'
     );
-    System.assertEquals('stripe', migration.connectorKey);
+    System.assertEquals('stripe', migration.connectorKey, 'Migration result connectorKey should be stripe');
     System.assertEquals(true, migration.success, migration.message);
-    System.assertNotEquals(null, migration.connectorInstanceId);
+    System.assertNotEquals(null, migration.connectorInstanceId, 'Migration should create a connector instance ID');
 
     ConnectorConfigService.ConnectorConfig migratedConfig = ConnectorConfigService.getConfig(
       'stripe'
     );
-    System.assertEquals(true, migratedConfig.fromNormalizedConfig);
+    System.assertEquals(true, migratedConfig.fromNormalizedConfig, 'Post-migration config should be from normalized config');
     System.assertEquals(
       migratedConfig.values.get('Stripe_Publishable_Key__c'),
-      ConnectorConfigResolver.getValue('stripe', 'Stripe_Publishable_Key__c')
+      ConnectorConfigResolver.getValue('stripe', 'Stripe_Publishable_Key__c'),
+      'ConfigResolver should return same value as ConnectorConfigService after migration'
     );
 
     ConnectorConfigService.upsertNonSecretValue(
@@ -333,14 +332,15 @@ private class QuickBridgeArchitectureRefactorTest {
       ConnectorConfigResolver.requireValue(
         'stripe',
         'Stripe_Publishable_Key__c'
-      )
+      ),
+      'ConfigResolver should reflect the upserted normalized key value'
     );
 
     try {
       ConnectorConfigResolver.requireValue('stripe', 'doesNotExist');
       System.assert(false, 'Missing config should throw a clear exception.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Missing config key should throw AuraHandledException from requireValue');
     }
   }
 
@@ -370,11 +370,13 @@ private class QuickBridgeArchitectureRefactorTest {
       ConnectorConfigResolver.requireValue(
         'stripe',
         'Stripe_Publishable_Key__c'
-      )
+      ),
+      'RequireValue should return the admin-saved publishable key'
     );
     System.assertEquals(
       true,
-      ConnectorConfigResolver.getBoolean('stripe', 'Stripe_Active__c')
+      ConnectorConfigResolver.getBoolean('stripe', 'Stripe_Active__c'),
+      'Stripe should be active after admin save'
     );
     System.assertEquals(
       1,
@@ -384,7 +386,8 @@ private class QuickBridgeArchitectureRefactorTest {
         WHERE
           Connector_Key__c = 'stripe'
           AND Field_Key__c = 'Stripe_Publishable_Key__c'
-      ]
+      ],
+      'Exactly one Connector_Config_Value__c row should exist for Stripe publishable key'
     );
   }
 
@@ -398,14 +401,14 @@ private class QuickBridgeArchitectureRefactorTest {
         QuickBridgeAdminGuard.requireManage();
         System.assert(false, 'Expected permission failure.');
       } catch (AuraHandledException expected) {
-        System.assertNotEquals(null, expected);
+        System.assertNotEquals(null, expected, 'requireManage should throw AuraHandledException when permission is not granted');
       }
     }
     QuickBridgeAdminGuard.bypassForTests = true;
 
-    System.assertEquals(true, QuickBridgeAdminGuard.hasManage());
-    System.assertEquals(true, QuickBridgeAdminGuard.hasView());
-    System.assertEquals(true, QuickBridgeAdminGuard.hasRunSync());
+    System.assertEquals(true, QuickBridgeAdminGuard.hasManage(), 'Admin guard hasManage should return true in test context');
+    System.assertEquals(true, QuickBridgeAdminGuard.hasView(), 'Admin guard hasView should return true in test context');
+    System.assertEquals(true, QuickBridgeAdminGuard.hasRunSync(), 'Admin guard hasRunSync should return true in test context');
     QuickBridgeAdminGuard.requireView();
     QuickBridgeAdminGuard.requireRunSync();
     QuickBridgeAdminGuard.audit(
@@ -421,18 +424,20 @@ private class QuickBridgeArchitectureRefactorTest {
         SELECT COUNT()
         FROM QuickBridge_Admin_Audit__c
         WHERE Action__c = 'TEST_ACTION'
-      ]
+      ],
+      'Audit record should be created for TEST_ACTION'
     );
   }
 
   @IsTest
   static void paymentRouterResolvesCurrentProviderAdapters() {
     ConnectorRegistryService.clearCache();
-    System.assertNotEquals(null, PaymentProviderRouter.adapterFor('stripe'));
-    System.assertNotEquals(null, PaymentProviderRouter.adapterFor('paypal'));
+    System.assertNotEquals(null, PaymentProviderRouter.adapterFor('stripe'), 'Stripe adapter should be resolvable');
+    System.assertNotEquals(null, PaymentProviderRouter.adapterFor('paypal'), 'PayPal adapter should be resolvable');
     System.assertNotEquals(
       null,
-      PaymentProviderRouter.adapterFor('authorizenet')
+      PaymentProviderRouter.adapterFor('authorizenet'),
+      'AuthorizeNet adapter should be resolvable'
     );
 
     Set<String> activeGateways = new Set<String>{
@@ -446,55 +451,55 @@ private class QuickBridgeArchitectureRefactorTest {
       .describe(ConnectorRegistryService.byKey('paypal'), activeGateways);
     PaymentCheckoutController.ProviderDescriptor authNetDescriptor = new AuthorizeNetPaymentAdapter()
       .describe(ConnectorRegistryService.byKey('authorizenet'), activeGateways);
-    System.assertEquals('stripe', stripeDescriptor.connectorKey);
-    System.assertEquals('stripeElements', stripeDescriptor.actionType);
-    System.assert(stripeDescriptor.requiredInputFields.contains('cardName'));
-    System.assert(stripeDescriptor.capabilities.contains('payment.checkout'));
-    System.assertEquals(30, stripeDescriptor.displayOrder);
-    System.assertEquals('paypalButtons', paypalDescriptor.actionType);
-    System.assertEquals('acceptJs', authNetDescriptor.actionType);
+    System.assertEquals('stripe', stripeDescriptor.connectorKey, 'Stripe descriptor connectorKey should be stripe');
+    System.assertEquals('stripeElements', stripeDescriptor.actionType, 'Stripe descriptor actionType should be stripeElements');
+    System.assert(stripeDescriptor.requiredInputFields.contains('cardName'), 'Stripe descriptor should require cardName input');
+    System.assert(stripeDescriptor.capabilities.contains('payment.checkout'), 'Stripe descriptor should have payment.checkout capability');
+    System.assertEquals(30, stripeDescriptor.displayOrder, 'Stripe descriptor display order should be 30');
+    System.assertEquals('paypalButtons', paypalDescriptor.actionType, 'PayPal descriptor actionType should be paypalButtons');
+    System.assertEquals('acceptJs', authNetDescriptor.actionType, 'AuthorizeNet descriptor actionType should be acceptJs');
 
     List<PaymentCheckoutController.ProviderDescriptor> providers = PaymentCheckoutController.getCheckoutProviders();
-    System.assertNotEquals(null, providers);
+    System.assertNotEquals(null, providers, 'getCheckoutProviders should return a non-null list');
 
     PaymentCheckoutController.PaymentRequest stripeRequest = new PaymentCheckoutController.PaymentRequest();
     stripeRequest.providerKey = 'stripe';
     PaymentCheckoutController.PaymentResponse stripeInit = PaymentCheckoutController.initializePayment(
       stripeRequest
     );
-    System.assertEquals(true, stripeInit.success);
+    System.assertEquals(true, stripeInit.success, 'Stripe payment init should succeed in test context');
     PaymentCheckoutController.PaymentResponse stripeExecute = PaymentCheckoutController.executePayment(
       stripeRequest
     );
-    System.assertEquals(false, stripeExecute.success);
+    System.assertEquals(false, stripeExecute.success, 'Stripe payment execute should fail without credentials');
 
     PaymentCheckoutController.PaymentRequest authNetRequest = new PaymentCheckoutController.PaymentRequest();
     authNetRequest.providerKey = 'authorizenet';
     PaymentCheckoutController.PaymentResponse authNetInit = PaymentCheckoutController.initializePayment(
       authNetRequest
     );
-    System.assertEquals(true, authNetInit.success);
+    System.assertEquals(true, authNetInit.success, 'AuthorizeNet payment init should succeed in test context');
     PaymentCheckoutController.PaymentResponse authNetExecute = PaymentCheckoutController.executePayment(
       authNetRequest
     );
-    System.assertEquals(false, authNetExecute.success);
+    System.assertEquals(false, authNetExecute.success, 'AuthorizeNet payment execute should fail without credentials');
 
     PaymentCheckoutController.PaymentRequest paypalRequest = new PaymentCheckoutController.PaymentRequest();
     paypalRequest.providerKey = 'paypal';
     PaymentCheckoutController.PaymentResponse paypalInit = PaymentCheckoutController.initializePayment(
       paypalRequest
     );
-    System.assertEquals(false, paypalInit.success);
+    System.assertEquals(false, paypalInit.success, 'PayPal payment init should fail without credentials');
     PaymentCheckoutController.PaymentResponse paypalExecute = PaymentCheckoutController.executePayment(
       paypalRequest
     );
-    System.assertEquals(false, paypalExecute.success);
+    System.assertEquals(false, paypalExecute.success, 'PayPal payment execute should fail without credentials');
 
     try {
       PaymentProviderRouter.route('not-a-provider');
       System.assert(false, 'Expected unsupported payment provider.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Routing to unsupported payment provider should throw AuraHandledException');
     }
   }
 
@@ -563,21 +568,12 @@ private class QuickBridgeArchitectureRefactorTest {
       'Incremental Sync',
       GenericSchedulerController.getSyncSettingsSummary('shopify').get('type')
     );
-    System.assertEquals(
-      0,
-      GenericSchedulerController.getRecentRuns(null).size()
-    );
+    System.assertEquals(0, GenericSchedulerController.getRecentRuns(null).size());
     try {
-      GenericSchedulerController.scheduleJob(
-        'qbo',
-        'abc',
-        'Hours',
-        'Account',
-        'Out'
-      );
+      GenericSchedulerController.scheduleJob('qbo', 'abc', 'Hours', 'Account', 'Out');
       System.assert(false, 'Expected invalid QuickBooks schedule value.');
     } catch (Exception expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Invalid QuickBooks schedule direction should throw an exception');
     }
     try {
       GenericSchedulerController.scheduleJob(
@@ -589,15 +585,12 @@ private class QuickBridgeArchitectureRefactorTest {
       );
       System.assert(false, 'Expected invalid Shopify schedule value.');
     } catch (Exception expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Invalid Shopify schedule value should throw an exception');
     }
     GenericSchedulerController.togglePauseStatus('qbo', true);
     System.assertEquals(true, GenericSchedulerController.getPauseStatus('qbo'));
     GenericSchedulerController.togglePauseStatus('qbo', false);
-    System.assertEquals(
-      false,
-      GenericSchedulerController.getPauseStatus('qbo')
-    );
+    System.assertEquals(false, GenericSchedulerController.getPauseStatus('qbo'));
 
     QuickBooksScheduledOperationAdapter.skipExecutionForTests = true;
     ShopifyScheduledOperationAdapter.skipExecutionForTests = true;
@@ -731,7 +724,9 @@ private class QuickBridgeArchitectureRefactorTest {
     System.assert(
       CarrierAdapterFactory.supportedCarrierKeys().contains('fedex')
     );
-    System.assert(CarrierAdapterFactory.supportedCarrierKeys().contains('dhl'));
+    System.assert(
+      CarrierAdapterFactory.supportedCarrierKeys().contains('dhl')
+    );
     System.assert(
       CarrierAdapterFactory.supportedCarrierLabels().contains('FedEx')
     );
@@ -743,14 +738,14 @@ private class QuickBridgeArchitectureRefactorTest {
       CarrierAdapterFactory.getAdapter(null);
       System.assert(false, 'Expected blank carrier rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Null carrier key should throw AuraHandledException from adapter factory');
     }
 
     try {
       CarrierAdapterFactory.getAdapter('not-a-carrier');
       System.assert(false, 'Expected unsupported carrier rejection.');
     } catch (AuraHandledException expected) {
-      System.assertNotEquals(null, expected);
+      System.assertNotEquals(null, expected, 'Unsupported carrier key should throw AuraHandledException from adapter factory');
     }
   }
 

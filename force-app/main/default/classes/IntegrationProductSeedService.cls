@@ -15,7 +15,11 @@ public with sharing class IntegrationProductSeedService {
     @AuraEnabled
     public static String reseedSystemManagedProducts() {
         QuickBridgeAdminGuard.requireManage();
-        seedDefaultProducts();
+        try {
+            seedDefaultProducts();
+        } catch (Exception e) {
+            throw new AuraHandledException('Reseed failed: ' + e.getMessage());
+        }
         return 'Success: QuickBridge system-managed integration products reseeded.';
     }
 
@@ -58,7 +62,8 @@ public with sharing class IntegrationProductSeedService {
                     row.Has_Carrier__c == true
                 ));
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'IntegrationProductSeedService: failed to load metadata defaults: ' + e.getMessage());
         }
         return products;
     }

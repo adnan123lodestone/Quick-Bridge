@@ -2,21 +2,88 @@
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
     <label>DHL</label>
     <protected>false</protected>
-    <values><field>Product_Key__c</field><value xsi:type="xsd:string">dhl</value></values>
-    <values><field>Connector_Key__c</field><value xsi:type="xsd:string">dhl</value></values>
-    <values><field>Product_Label__c</field><value xsi:type="xsd:string">DHL</value></values>
-    <values><field>Aliases__c</field><value xsi:type="xsd:string">dhl,dhl express</value></values>
-    <values><field>Category__c</field><value xsi:type="xsd:string">Carrier</value></values>
-    <values><field>Display_Order__c</field><value xsi:type="xsd:double">80</value></values>
-    <values><field>Config_Record_Name__c</field><value xsi:type="xsd:string">DHL</value></values>
-    <values><field>Active_Field__c</field><value xsi:type="xsd:string">DHL_Active__c</value></values>
-    <values><field>Expiry_Field__c</field><value xsi:type="xsd:string">DHL_End_Date__c</value></values>
-    <values><field>Editable_Fields__c</field><value xsi:type="xsd:string">DHL_Api_Key__c,DHL_Api_Secret__c,DHL_Account_Number__c,DHL_Environment__c,DHL_Default_Product_Code__c,DHL_Active__c,DHL_Start_Date__c,DHL_End_Date__c</value></values>
-    <values><field>Enabled__c</field><value xsi:type="xsd:boolean">true</value></values>
-    <values><field>Catalog_Active__c</field><value xsi:type="xsd:boolean">true</value></values>
-    <values><field>Status__c</field><value xsi:type="xsd:string">Available</value></values>
-    <values><field>Has_Config__c</field><value xsi:type="xsd:boolean">true</value></values>
-    <values><field>Has_Reporting__c</field><value xsi:type="xsd:boolean">true</value></values>
-    <values><field>Has_Mapping__c</field><value xsi:type="xsd:boolean">true</value></values>
-    <values><field>Has_Carrier__c</field><value xsi:type="xsd:boolean">true</value></values>
+    <values>
+        <field>Active_Field__c</field>
+        <value xsi:type="xsd:string">DHL_Active__c</value>
+    </values>
+    <values>
+        <field>Aliases__c</field>
+        <value xsi:type="xsd:string">dhl,dhl express</value>
+    </values>
+    <values>
+        <field>Catalog_Active__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Category__c</field>
+        <value xsi:type="xsd:string">Carrier</value>
+    </values>
+    <values>
+        <field>Config_Record_Name__c</field>
+        <value xsi:type="xsd:string">DHL</value>
+    </values>
+    <values>
+        <field>Connector_Key__c</field>
+        <value xsi:type="xsd:string">dhl</value>
+    </values>
+    <values>
+        <field>Display_Order__c</field>
+        <value xsi:type="xsd:double">80.0</value>
+    </values>
+    <values>
+        <field>Editable_Fields__c</field>
+        <value xsi:type="xsd:string">DHL_Api_Key__c,DHL_Api_Secret__c,DHL_Account_Number__c,DHL_Environment__c,DHL_Default_Product_Code__c,DHL_Active__c,DHL_Start_Date__c,DHL_End_Date__c</value>
+    </values>
+    <values>
+        <field>Enabled__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Expiry_Field__c</field>
+        <value xsi:type="xsd:string">DHL_End_Date__c</value>
+    </values>
+    <values>
+        <field>Has_Carrier__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Has_Checkout__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Has_Config__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Has_Mapping__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Has_Payment__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Has_Reporting__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Has_Scheduler__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
+        <field>Logo_URL__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Product_Key__c</field>
+        <value xsi:type="xsd:string">dhl</value>
+    </values>
+    <values>
+        <field>Product_Label__c</field>
+        <value xsi:type="xsd:string">DHL</value>
+    </values>
+    <values>
+        <field>Status__c</field>
+        <value xsi:type="xsd:string">Available</value>
+    </values>
 </CustomMetadata>

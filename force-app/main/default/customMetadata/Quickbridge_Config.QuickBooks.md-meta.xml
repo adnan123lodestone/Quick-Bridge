@@ -79,6 +79,10 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>Map_Draft_Orders_as_Estimates__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+    <values>
         <field>Password__c</field>
         <value xsi:type="xsd:string">1234</value>
     </values>
@@ -104,7 +108,7 @@
     </values>
     <values>
         <field>QuickBooks_End_Date__c</field>
-        <value xsi:type="xsd:date">2026-05-14</value>
+        <value xsi:type="xsd:date">2026-06-05</value>
     </values>
     <values>
         <field>QuickBooks_Is_Active__c</field>
@@ -116,7 +120,7 @@
     </values>
     <values>
         <field>QuickBooks_Start_Date__c</field>
-        <value xsi:type="xsd:date">2026-05-14</value>
+        <value xsi:type="xsd:date">2026-05-22</value>
     </values>
     <values>
         <field>QuickBooks_Verifier_Token__c</field>

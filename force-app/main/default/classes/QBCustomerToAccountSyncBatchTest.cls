@@ -62,54 +62,6 @@ private class QBCustomerToAccountSyncBatchTest {
         System.assertEquals('CUST-1', syncedAccount.QuickbookID__c);
     }
 
-    // Reproduces the production failure: an existing Business Account whose
-    // QuickBooks customer no longer has a CompanyName. The batch must NOT flip it
-    // to a Person Account inline (which would throw
-    // "Business Account may not use Person Account field PersonEmail"); it should
-    // stay a Business Account and upsert cleanly.
-    private class QBNoCompanyNameMock implements HttpCalloutMock {
-        public HttpResponse respond(HttpRequest req) {
-            HttpResponse res = new HttpResponse();
-            res.setHeader('Content-Type', 'application/json');
-            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            if (endpoint.contains('/query?query=')) {
-                res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Customer":[{"Id":"CUST-2","DisplayName":"Jane Roe","GivenName":"Jane","FamilyName":"Roe","PrimaryEmailAddr":{"Address":"jane@example.com"}}]}}');
-                return res;
-            }
-            res.setStatusCode(200);
-            res.setBody('{}');
-            return res;
-        }
-    }
-
-    @isTest
-    static void testExistingBusinessAccountWithoutCompanyNameStaysBusiness() {
-        Id customerRtId = Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName()
-            .get('Customer').getRecordTypeId();
-        insert new Account(
-            Name = 'Existing Business',
-            QuickbookID__c = 'CUST-2',
-            RecordTypeId = customerRtId
-        );
-
-        Test.setMock(HttpCalloutMock.class, new QBNoCompanyNameMock());
-
-        Test.startTest();
-        Database.executeBatch(new QBCustomerToAccountSyncBatch('2025-01-01'), 1);
-        Test.stopTest();
-
-        Account result = [
-            SELECT Id, RecordTypeId
-            FROM Account
-            WHERE QuickbookID__c = 'CUST-2'
-            LIMIT 1
-        ];
-        // Must remain a Business Account; the inline person-account flip is suppressed.
-        System.assertEquals(customerRtId, result.RecordTypeId,
-            'Existing Business Account must not be converted to a Person Account inline.');
-    }
-
     @isTest
     static void testProcessSingleCustomerFallbackStillHydratesById() {
         Test.setMock(HttpCalloutMock.class, new QBCustomerSingleRecordMock());

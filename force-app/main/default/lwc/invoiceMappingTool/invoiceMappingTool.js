@@ -14,6 +14,25 @@ import saveGatewayMappingConfig from "@salesforce/apex/PaymentInvoiceMappingCont
 const DEFAULT_SOURCE_OBJECT = "Order";
 const DEFAULT_INVOICE_OBJECT = "Invoice__c";
 const DEFAULT_TRANSACTION_OBJECT = "Portal_Payment_Transaction__c";
+const NUMBER_TYPES = new Set([
+  "CURRENCY",
+  "DOUBLE",
+  "INTEGER",
+  "LONG",
+  "PERCENT",
+  "DECIMAL"
+]);
+const TEXT_TYPES = new Set([
+  "STRING",
+  "TEXTAREA",
+  "LONGTEXTAREA",
+  "HTML",
+  "URL",
+  "EMAIL",
+  "PHONE",
+  "PICKLIST",
+  "ENCRYPTEDSTRING"
+]);
 const SOURCE_REQUIRED_ROWS = [
   {
     sourceField: "",
@@ -131,6 +150,18 @@ const STRIPE_TRANSACTION_REQUIRED_ROWS = [
     sourceField: "stripeLiveMode",
     targetField: "Stripe_Live_Mode__c",
     sourceLabel: "Stripe Live Mode"
+  },
+  {
+    sourceField: "stripeStatus",
+    targetField: "",
+    sourceLabel: "Stripe Status",
+    isOptional: true
+  },
+  {
+    sourceField: "stripeCustomerId",
+    targetField: "",
+    sourceLabel: "Stripe Customer ID",
+    isOptional: true
   }
 ];
 const ANET_TRANSACTION_REQUIRED_ROWS = [
@@ -196,25 +227,33 @@ const ANET_TRANSACTION_REQUIRED_ROWS = [
   }
 ];
 const STRIPE_INVOICE_RECORD_SOURCE_OPTIONS = [
-  { label: "Amount", value: "amount" },
-  { label: "Stripe Hosted Invoice URL", value: "hostedInvoiceUrl" },
-  { label: "Reference Number", value: "referenceNumber" },
-  { label: "Status", value: "status" },
-  { label: "Invoice Date", value: "invoiceDate" },
-  { label: "Due Date", value: "dueDate" },
-  { label: "Customer Email", value: "customerEmail" },
-  { label: "Stripe Invoice Id", value: "stripeInvoiceId" },
-  { label: "Payment QR Code (HTML)", value: "paymentQrCode" }
+  { label: "Amount", value: "amount", type: "Currency" },
+  {
+    label: "Stripe Hosted Invoice URL",
+    value: "hostedInvoiceUrl",
+    type: "Url"
+  },
+  { label: "Reference Number", value: "referenceNumber", type: "String" },
+  { label: "Status", value: "status", type: "String" },
+  { label: "Invoice Date", value: "invoiceDate", type: "Date" },
+  { label: "Due Date", value: "dueDate", type: "Date" },
+  { label: "Customer Email", value: "customerEmail", type: "Email" },
+  { label: "Stripe Invoice Id", value: "stripeInvoiceId", type: "String" },
+  { label: "Payment QR Code (HTML)", value: "paymentQrCode", type: "String" }
 ];
 const ANET_INVOICE_RECORD_SOURCE_OPTIONS = [
-  { label: "Amount", value: "amount" },
-  { label: "Reference Number (Transaction ID)", value: "referenceNumber" },
-  { label: "Status", value: "status" },
-  { label: "Invoice Date", value: "invoiceDate" },
-  { label: "Auth Code", value: "authCode" },
-  { label: "Response Code", value: "responseCode" },
-  { label: "Customer Email", value: "customerEmail" },
-  { label: "Payment QR Code (HTML)", value: "paymentQrCode" }
+  { label: "Amount", value: "amount", type: "Currency" },
+  {
+    label: "Reference Number (Transaction ID)",
+    value: "referenceNumber",
+    type: "String"
+  },
+  { label: "Status", value: "status", type: "String" },
+  { label: "Invoice Date", value: "invoiceDate", type: "Date" },
+  { label: "Auth Code", value: "authCode", type: "String" },
+  { label: "Response Code", value: "responseCode", type: "String" },
+  { label: "Customer Email", value: "customerEmail", type: "Email" },
+  { label: "Payment QR Code (HTML)", value: "paymentQrCode", type: "String" }
 ];
 const PAYPAL_INVOICE_REQUIRED_ROWS = [
   { sourceField: "amount", targetField: "Amount__c", sourceLabel: "Amount" },
@@ -311,19 +350,36 @@ const PAYPAL_TRANSACTION_REQUIRED_ROWS = [
   }
 ];
 const PAYPAL_INVOICE_RECORD_SOURCE_OPTIONS = [
-  { label: "Amount", value: "amount" },
-  { label: "Reference Number (Capture ID)", value: "referenceNumber" },
-  { label: "Status", value: "status" },
-  { label: "Invoice Date", value: "invoiceDate" },
-  { label: "PayPal Order Id", value: "paypalOrderId" },
-  { label: "Customer Email", value: "customerEmail" },
-  { label: "Payment QR Code (HTML)", value: "paymentQrCode" }
+  { label: "Amount", value: "amount", type: "Currency" },
+  {
+    label: "Reference Number (Capture ID)",
+    value: "referenceNumber",
+    type: "String"
+  },
+  { label: "Status", value: "status", type: "String" },
+  { label: "Invoice Date", value: "invoiceDate", type: "Date" },
+  { label: "PayPal Order Id", value: "paypalOrderId", type: "String" },
+  { label: "Customer Email", value: "customerEmail", type: "Email" },
+  { label: "Payment QR Code (HTML)", value: "paymentQrCode", type: "String" }
 ];
 
 export default class InvoiceMappingTool extends LightningElement {
   @api gateway = "stripe";
 
-  @track config = this.emptyConfig();
+  @track config = {
+    gateway: "stripe",
+    sourceObject: DEFAULT_SOURCE_OBJECT,
+    sourceCustomerLookupField: "",
+    sourceCustomerTargetObject: "",
+    sourceEmailField: "",
+    invoiceObject: DEFAULT_INVOICE_OBJECT,
+    invoiceSourceLookupField: "",
+    transactionObject: DEFAULT_TRANSACTION_OBJECT,
+    transactionSourceLookupField: "",
+    sourceMappings: [],
+    invoiceMappings: [],
+    transactionMappings: []
+  };
   @track sourceObjectOptions = [];
   @track targetObjectOptions = [];
   @track invoiceObjectOptions = [];
@@ -459,16 +515,28 @@ export default class InvoiceMappingTool extends LightningElement {
   get invoiceRowsWithOptions() {
     return (this.invoiceRows || []).map((row) => ({
       ...row,
-      filteredTargetOptions: this.invoiceFieldOptions,
-      isPinned: row.isRequired || row.isOptional
+      filteredTargetOptions: this.filterCompatibleOptions(
+        this.invoiceFieldOptions,
+        this.findOptionType(
+          this.invoiceRecordSourceFieldOptions,
+          row.sourceField
+        )
+      ),
+      isPinned: row.isRequired
     }));
   }
 
   get transactionRowsWithOptions() {
     return (this.transactionRows || []).map((row) => ({
       ...row,
-      filteredTargetOptions: this.transactionFieldOptions,
-      isPinned: row.isRequired || row.isOptional
+      filteredTargetOptions: this.filterCompatibleOptions(
+        this.transactionFieldOptions,
+        this.findOptionType(
+          this.gatewayTransactionFieldOptions,
+          row.sourceField
+        )
+      ),
+      isPinned: row.isRequired
     }));
   }
 
@@ -1003,7 +1071,12 @@ export default class InvoiceMappingTool extends LightningElement {
       this.showSourceLockToast();
       return;
     }
-    this.invoiceRows = this.updateRow(this.invoiceRows, event);
+    this.invoiceRows = this.updateRow(
+      this.invoiceRows,
+      event,
+      this.invoiceRecordSourceFieldOptions,
+      this.invoiceFieldOptions
+    );
     this.notifyMappingContextChange();
   }
 
@@ -1012,7 +1085,12 @@ export default class InvoiceMappingTool extends LightningElement {
       this.showSourceLockToast();
       return;
     }
-    this.transactionRows = this.updateRow(this.transactionRows, event);
+    this.transactionRows = this.updateRow(
+      this.transactionRows,
+      event,
+      this.gatewayTransactionFieldOptions,
+      this.transactionFieldOptions
+    );
     this.notifyMappingContextChange();
   }
 
@@ -1080,7 +1158,7 @@ export default class InvoiceMappingTool extends LightningElement {
     return String(Date.now()) + "-" + String(Math.random()).slice(2);
   }
 
-  updateRow(rows, event) {
+  updateRow(rows, event, sourceOptions = [], targetOptions = []) {
     const id = event.currentTarget.dataset.id;
     const field = event.currentTarget.dataset.field;
     const value = event.detail.value;
@@ -1088,13 +1166,26 @@ export default class InvoiceMappingTool extends LightningElement {
       if (row.id !== id) return row;
       if (field === "sourceField" && row.lockSource) return row;
       if (field === "targetField" && row.lockTarget) return row;
-      return { ...row, [field]: value };
+      const updatedRow = { ...row, [field]: value };
+      if (
+        field === "sourceField" &&
+        updatedRow.targetField &&
+        !this.isTargetCompatible(
+          value,
+          updatedRow.targetField,
+          sourceOptions,
+          targetOptions
+        )
+      ) {
+        updatedRow.targetField = "";
+      }
+      return updatedRow;
     });
   }
 
   removeRow(rows, id, sectionName) {
     const rowToRemove = rows.find((candidate) => candidate.id === id);
-    if (rowToRemove?.isRequired || rowToRemove?.isOptional) return rows;
+    if (rowToRemove?.isRequired) return rows;
     const filtered = rows.filter((candidate) => candidate.id !== id);
     return filtered.length ? filtered : [this.newRow(false, sectionName)];
   }
@@ -1155,6 +1246,47 @@ export default class InvoiceMappingTool extends LightningElement {
       targets.add(row.targetField);
     }
     return "";
+  }
+
+  findOptionType(options, value) {
+    return (options || []).find((option) => option.value === value)?.type || "";
+  }
+
+  filterCompatibleOptions(options, sourceType) {
+    if (!sourceType) return options || [];
+    return (options || []).filter((option) =>
+      this.areTypesCompatible(sourceType, option.type)
+    );
+  }
+
+  isTargetCompatible(sourceField, targetField, sourceOptions, targetOptions) {
+    const sourceType = this.findOptionType(sourceOptions, sourceField);
+    const targetType = this.findOptionType(targetOptions, targetField);
+    if (!sourceType || !targetType) return true;
+    return this.areTypesCompatible(sourceType, targetType);
+  }
+
+  areTypesCompatible(sourceType, targetType) {
+    const normalizedSource = this.normalizeFieldType(sourceType);
+    const normalizedTarget = this.normalizeFieldType(targetType);
+    if (!normalizedSource || !normalizedTarget) return true;
+    if (NUMBER_TYPES.has(normalizedSource)) {
+      return NUMBER_TYPES.has(normalizedTarget);
+    }
+    if (TEXT_TYPES.has(normalizedSource)) {
+      return TEXT_TYPES.has(normalizedTarget);
+    }
+    if (normalizedSource === "BOOLEAN") {
+      return normalizedTarget === "BOOLEAN";
+    }
+    if (normalizedSource === "DATE" || normalizedSource === "DATETIME") {
+      return normalizedTarget === normalizedSource;
+    }
+    return normalizedSource === normalizedTarget;
+  }
+
+  normalizeFieldType(type) {
+    return (type || "").replace(/\s+/g, "").toUpperCase();
   }
 
   isDefaultSourceObject(objectApiName) {

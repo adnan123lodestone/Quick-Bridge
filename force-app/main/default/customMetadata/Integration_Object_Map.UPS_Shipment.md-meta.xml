@@ -1,27 +1,29 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<CustomMetadata
-  xmlns="http://soap.sforce.com/2006/04/metadata"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
->
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
     <label>UPS Shipment</label>
     <protected>false</protected>
-    <values><field>Connector_Key__c</field><value
-      xsi:type="xsd:string"
-    >ups</value></values>
-    <values><field>External_Object__c</field><value
-      xsi:type="xsd:string"
-    >Shipment</value></values>
-    <values><field>Salesforce_Object__c</field><value
-      xsi:type="xsd:string"
-    >Carrier_Shipment__c</value></values>
-    <values><field>Direction__c</field><value
-      xsi:type="xsd:string"
-    >ActionOnly</value></values>
-    <values><field>Operation_Key__c</field><value
-      xsi:type="xsd:string"
-    >carrier.operation</value></values>
-    <values><field>Active__c</field><value
-      xsi:type="xsd:boolean"
-    >true</value></values>
+    <values>
+        <field>Active__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Connector_Key__c</field>
+        <value xsi:type="xsd:string">ups</value>
+    </values>
+    <values>
+        <field>Direction__c</field>
+        <value xsi:type="xsd:string">ActionOnly</value>
+    </values>
+    <values>
+        <field>External_Object__c</field>
+        <value xsi:type="xsd:string">Shipment</value>
+    </values>
+    <values>
+        <field>Operation_Key__c</field>
+        <value xsi:type="xsd:string">carrier.operation</value>
+    </values>
+    <values>
+        <field>Salesforce_Object__c</field>
+        <value xsi:type="xsd:string">Carrier_Shipment__c</value>
+    </values>
 </CustomMetadata>

@@ -3,11 +3,19 @@
     <label>Default</label>
     <protected>false</protected>
     <values>
+        <field>Minor_Version__c</field>
+        <value xsi:type="xsd:string">65</value>
+    </values>
+    <values>
+        <field>Named_Credential__c</field>
+        <value xsi:type="xsd:string">QuickBookSandbox</value>
+    </values>
+    <values>
         <field>QuickBooks_Is_Active__c</field>
-        <value xsi:type="xsd:boolean">false</value>
+        <value xsi:type="xsd:boolean">true</value>
     </values>
     <values>
         <field>Realm_ID__c</field>
-        <value xsi:type="xsd:string"></value>
+        <value xsi:type="xsd:string">9341456917896565</value>
     </values>
 </CustomMetadata>

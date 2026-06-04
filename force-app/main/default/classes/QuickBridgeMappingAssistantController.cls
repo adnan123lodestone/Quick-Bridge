@@ -685,6 +685,15 @@ public with sharing class QuickBridgeMappingAssistantController {
         ) {
           fields.add(fromExternalMap(row));
         }
+      } else if (connector == 'dhl') {
+        for (
+          Map<String, Object> row : FieldMappingController.getDHLFields(
+            externalObject,
+            null
+          )
+        ) {
+          fields.add(fromExternalMap(row));
+        }
       } else if (isPaymentConnector(connector)) {
         fields.addAll(paymentFields(connector));
       }
@@ -759,6 +768,11 @@ public with sharing class QuickBridgeMappingAssistantController {
         );
       } else if (connector == 'ups') {
         existing = FieldMappingController.getExistingUPSMappings(
+          externalObject,
+          salesforceObject
+        );
+      } else if (connector == 'dhl') {
+        existing = FieldMappingController.getExistingDHLMappings(
           externalObject,
           salesforceObject
         );
@@ -874,6 +888,7 @@ public with sharing class QuickBridgeMappingAssistantController {
       connector == 'shopify' ||
       connector == 'fedex' ||
       connector == 'ups' ||
+      connector == 'dhl' ||
       isPaymentConnector(connector);
   }
 
@@ -895,6 +910,9 @@ public with sharing class QuickBridgeMappingAssistantController {
     }
     if (connectorKey == 'ups') {
       return 'SF to UPS';
+    }
+    if (connectorKey == 'dhl') {
+      return 'SF to DHL';
     }
     if (connectorKey == 'shopify') {
       return 'Two-Way';
@@ -967,6 +985,7 @@ public with sharing class QuickBridgeMappingAssistantController {
         part != 'sf' &&
         part != 'fedex' &&
         part != 'ups' &&
+        part != 'dhl' &&
         part != 'shopify'
       ) {
         result.add(part);

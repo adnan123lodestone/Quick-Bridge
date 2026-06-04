@@ -948,12 +948,31 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     const provider = event.currentTarget.dataset.provider;
     this.isSaving = true;
     try {
-      let fieldValues = this.metadataFormValues[provider] || {};
+      const editedFieldValues = this.metadataFormValues[provider] || {};
+      let fieldValues = this.isFedExProvider(provider)
+        ? {
+            ...this.getCurrentMetadataFieldValues(provider),
+            ...editedFieldValues
+          }
+        : { ...editedFieldValues };
       Object.keys(fieldValues).forEach((key) => {
         if (key.includes("Active")) {
           delete fieldValues[key];
         }
       });
+
+      const fedExValidationMessage = this.validateFedExCredentialFields(
+        provider,
+        fieldValues
+      );
+      if (fedExValidationMessage) {
+        this.showToast(
+          "Missing FedEx Credentials",
+          fedExValidationMessage,
+          "error"
+        );
+        return;
+      }
 
       const result = await saveConnectorConfig({
         connectorKey: provider,
@@ -1008,6 +1027,66 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     } finally {
       this.isSaving = false;
     }
+  }
+
+  isFedExProvider(provider) {
+    return (provider || "").toLowerCase() === "fedex";
+  }
+
+  getCurrentMetadataFieldValues(provider) {
+    const config = this.paymentMetadataConfigs.find(
+      (c) => c.provider === provider
+    );
+    const values = {};
+    if (!config || !config.editableFieldsData) {
+      return values;
+    }
+
+    config.editableFieldsData.forEach((field) => {
+      values[field.name] = field.currentValue;
+    });
+    return values;
+  }
+
+  validateFedExCredentialFields(provider, fieldValues) {
+    if (!this.isFedExProvider(provider)) {
+      return "";
+    }
+
+    const missingFields = [];
+    if (this.isBlankValue(fieldValues.FedEx_Client_Id__c)) {
+      missingFields.push("FedEx Client Id");
+    }
+    if (
+      this.isBlankValue(fieldValues.FedEx_Client_Secret__c) &&
+      this.isBlankValue(fieldValues.clientSecretRef)
+    ) {
+      missingFields.push("Client Secret Reference");
+    }
+    if (this.isBlankValue(fieldValues.FedEx_Account_Number__c)) {
+      missingFields.push("FedEx Account Number");
+    }
+
+    if (!missingFields.length) {
+      return "";
+    }
+    return `Enter ${this.formatFieldList(missingFields)} before saving.`;
+  }
+
+  isBlankValue(value) {
+    return value === undefined || value === null || String(value).trim() === "";
+  }
+
+  formatFieldList(fields) {
+    if (fields.length <= 1) {
+      return fields[0] || "";
+    }
+    if (fields.length === 2) {
+      return `${fields[0]} and ${fields[1]}`;
+    }
+    return `${fields.slice(0, -1).join(", ")}, and ${
+      fields[fields.length - 1]
+    }`;
   }
 
   async handleMetadataDelete(event) {
@@ -1142,7 +1221,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       qbonline: "c-field-mapping-component",
       shopify: "c-shopify-field-mapping-component",
       fedex: "c-fedex-field-mapping-component",
-      ups: "c-ups-field-mapping-component"
+      ups: "c-ups-field-mapping-component",
+      dhl: "c-dhl-field-mapping-component"
     };
     const selector = selectorByConnector[connectorKey];
     const target = selector ? this.template.querySelector(selector) : null;

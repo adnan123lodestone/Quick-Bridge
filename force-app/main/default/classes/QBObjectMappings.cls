@@ -93,31 +93,16 @@ public class QBObjectMappings {
         return fallback;
     }
     private static Map<String, String> getDynamicMapping(String objectName, String syncDirection) {
-        return getDynamicMapping(objectName, syncDirection, null);
-    }
-
-    // targetObject scopes to a specific QBO object (e.g. 'Customer' vs 'Vendor') so
-    // that two QBO objects sharing the same Salesforce object keep independent
-    // mappings. Legacy rows with a blank Target_Object_API_Name__c still apply.
-    private static Map<String, String> getDynamicMapping(String objectName, String syncDirection, String targetObject) {
         Map<String, String> mapping = new Map<String, String>();
-
+        
         try {
             List<Field_Mapping__mdt> metadataList = [
-                SELECT SF_Field__c, External_Field__c, Target_Object_API_Name__c
-                FROM Field_Mapping__mdt
+                SELECT SF_Field__c, External_Field__c 
+                FROM Field_Mapping__mdt 
                 WHERE Integration__c = 'qbonline' AND SF_Object__c = :objectName AND Is_Active__c = true AND Sync_Direction__c IN ('Two-Way', :syncDirection)
             ];
-
-            Boolean scopeByObject = String.isNotBlank(targetObject);
+            
             for(Field_Mapping__mdt record : metadataList) {
-                // Skip rows that belong to a different QBO object; keep legacy
-                // (blank target object) rows so existing deployments are unaffected.
-                if (scopeByObject
-                    && String.isNotBlank(record.Target_Object_API_Name__c)
-                    && record.Target_Object_API_Name__c != targetObject) {
-                    continue;
-                }
                 if(String.isNotBlank(record.SF_Field__c) && String.isNotBlank(record.External_Field__c)) {
                     mapping.put(record.SF_Field__c, record.External_Field__c);
                 }
@@ -125,7 +110,7 @@ public class QBObjectMappings {
         } catch (Exception e) {
             System.debug('Mapping fetch error: ' + e.getMessage());
         }
-
+        
         return mapping;
     }
     
@@ -147,39 +132,25 @@ public class QBObjectMappings {
     
     // 1. Account -> Customer
     public static Map<String, String> getAccountToCustomerMapping() {
-        Map<String, String> dynamicMap = getDynamicMapping('Account', 'SF to QBO', 'Customer');
+        Map<String, String> dynamicMap = getDynamicMapping('Account', 'SF to QBO');
         if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
-
+        
         // Fallback
         return new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK);
     }
-
+    
     // Reverse Mapping for Customer -> Account (Inbound Sync)
     public static Map<String, String> getCustomerToAccountMapping() {
-        Map<String, String> inboundFields = getDynamicMapping('Account', 'QBO to SF', 'Customer');
+        Map<String, String> inboundFields = getDynamicMapping('Account', 'QBO to SF');
         if (inboundFields == null || inboundFields.isEmpty()) {
             return reverseMapping(new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK));
         }
         return reverseMapping(inboundFields);
     }
-
-    // Account -> Vendor (Outbound Sync)
-    public static Map<String, String> getAccountToVendorMapping() {
-        Map<String, String> dynamicMap = getDynamicMapping('Account', 'SF to QBO', 'Vendor');
-        if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
-
-        // Fallback to the shared Account->Customer field set when no Vendor-specific
-        // mappings exist.
-        return new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK);
-    }
-
+    
     // Reverse Mapping for Vendor -> Account (Inbound Sync)
     public static Map<String, String> getVendorToAccountMapping() {
-        Map<String, String> inboundFields = getDynamicMapping('Account', 'QBO to SF', 'Vendor');
-        if (inboundFields == null || inboundFields.isEmpty()) {
-            return reverseMapping(new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK));
-        }
-        return reverseMapping(inboundFields);
+        return getCustomerToAccountMapping();
     }
     
     // 2. Product2 -> Item
