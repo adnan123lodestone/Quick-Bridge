@@ -61,7 +61,6 @@ public with sharing class IntegrationWorkDispatcher implements Queueable {
             SELECT Id, Name, Lock_Key__c, Status__c, Work_Item__c, Lease_Expires_At__c, Processor_Token__c
             FROM Integration_Work_Lock__c
             WHERE Lock_Key__c IN :selectedLockKeys
-            LIMIT :selectedLockKeys.size()
             FOR UPDATE
         ]) {
             locksByKey.put(lockRow.Lock_Key__c, lockRow);

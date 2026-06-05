@@ -155,10 +155,13 @@ public with sharing class PaymentMetadataService {
                     }
                 }
 
-                // Populate all non-secret config values under both normalized and legacy field names
+                // Populate all non-secret config values under both normalized and legacy field names.
+                // Registry-listed fields are included even if their name looks like a secret —
+                // the admin explicitly sanctioned them by adding them to editableFields.
                 if (cfg.values != null) {
                     for (String fieldKey : cfg.values.keySet()) {
-                        if (!isSecretConfigField(fieldKey)) {
+                        Boolean registrySanctioned = ConnectorConfigService.isFieldInRegistryPublic(descriptor, fieldKey);
+                        if (!isSecretConfigField(fieldKey) || registrySanctioned) {
                             String val = cfg.values.get(fieldKey);
                             config.fields.put(fieldKey, val);
                             String legacyName = normalizedToLegacy.get(fieldKey);
@@ -216,7 +219,12 @@ public with sharing class PaymentMetadataService {
             response.message = 'Configuration saved for ' + (descriptor.label != null ? descriptor.label : connectorKey);
         } catch (AuraHandledException ahe) {
             response.success = false;
-            response.message = ahe.getMessage();
+            // AuraHandledException.getMessage() returns "Script thrown exception" when thrown
+            // from a sub-method (Salesforce platform limitation). Fall back to a useful message.
+            String aheMsg = ahe.getMessage();
+            response.message = (String.isBlank(aheMsg) || aheMsg == 'Script thrown exception')
+                ? 'Configuration could not be saved. A field value was rejected.'
+                : aheMsg;
         } catch (Exception e) {
             response.success = false;
             response.message = 'Error saving configuration: ' + e.getMessage();

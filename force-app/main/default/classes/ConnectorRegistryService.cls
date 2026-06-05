@@ -377,7 +377,10 @@ public with sharing class ConnectorRegistryService {
                 field.label = fieldName.replace('__c', '').replace('_', ' ');
                 field.dataType = 'Legacy';
                 field.required = false;
-                field.secret = isSecretField(fieldName);
+                // editableFields are explicitly declared as UI-editable by the registry admin.
+                // Do not auto-mark them secret by name — secret status requires an explicit
+                // Connector_Config_Field__mdt row with Secret__c = true.
+                field.secret = false;
                 field.legacyFieldApiName = fieldName;
                 field.sortOrder = orderValue++;
                 descriptor.configFields.add(field);

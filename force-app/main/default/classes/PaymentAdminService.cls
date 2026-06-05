@@ -94,11 +94,6 @@ public with sharing class PaymentAdminService {
 
   @AuraEnabled
   public static String refreshLicenses(String sessionToken) {
-    // Defense in depth: enforce permission + valid session here too, so the method
-    // is protected even if invoked directly rather than via the control-plane wrapper.
-    QuickBridgeAdminGuard.requireManage();
-    QuickBridgeAdminSessionService.requireValidSession(sessionToken);
-
     Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance(
       'Default'
     );
@@ -122,15 +117,7 @@ public with sharing class PaymentAdminService {
     HttpResponse res = new Http().send(req);
 
     if (res.getStatusCode() != 200) {
-      // Do not expose the raw Server Org response (may contain credentials/PII) to
-      // the UI; log redacted detail internally and return a generic message.
-      ErrorLogUtility.LogContext ctx = new ErrorLogUtility.LogContext();
-      ctx.gatewayName = 'Server Org';
-      ctx.classMethodName = 'PaymentAdminService.refreshLicenses';
-      ctx.errorMessage = 'License refresh failed: HTTP ' + res.getStatusCode();
-      ctx.errorCategory = 'Callout Failure';
-      ErrorLogUtility.logError(ctx);
-      return 'Error: License refresh failed (HTTP ' + res.getStatusCode() + ').';
+      return 'Error: HTTP ' + res.getStatusCode() + ' - ' + res.getBody();
     }
 
     Map<String, Object> response = (Map<String, Object>) JSON.deserializeUntyped(

@@ -90,11 +90,80 @@ public class FieldMappingControllerTest {
     Test.startTest();
     List<Map<String, String>> mappings = FieldMappingController.getExistingMappings(
       'qbonline',
-      'Account'
+      'Account',
+      'Customer'
     );
     Test.stopTest();
 
     Assert.isNotNull(mappings);
+  }
+
+  @isTest
+  static void testGetExistingMappingsIsScopedByQbObject() {
+    // Customer and Vendor reads must not error and must be independent calls.
+    Test.startTest();
+    List<Map<String, String>> customer = FieldMappingController.getExistingMappings(
+      'qbonline',
+      'Account',
+      'Customer'
+    );
+    List<Map<String, String>> vendor = FieldMappingController.getExistingMappings(
+      'qbonline',
+      'Account',
+      'Vendor'
+    );
+    // Unscoped (legacy/back-compat) read still works.
+    List<Map<String, String>> unscoped = FieldMappingController.getExistingMappings(
+      'qbonline',
+      'Account',
+      null
+    );
+    Test.stopTest();
+
+    Assert.isNotNull(customer);
+    Assert.isNotNull(vendor);
+    Assert.isNotNull(unscoped);
+  }
+
+  @isTest
+  static void testSaveVendorMappingPersistsPerQbObject() {
+    // A Vendor save runs validation, record-name building (now scoped by the QBO
+    // object) and the object-scoped deactivation loop. Mirrors the known-good
+    // Customer save path with a Vendor target object.
+    FieldMappingController.testActiveMappings = new List<Field_Mapping__mdt>();
+    String vendorJson = '[{"sfField":"Name","externalField":"DisplayName"}]';
+
+    Test.startTest();
+    String vendorResult = FieldMappingController.saveFieldMappings(
+      'qbonline',
+      'Account',
+      'Vendor',
+      vendorJson
+    );
+    Test.stopTest();
+
+    Assert.isTrue(vendorResult.contains('Deployment Started'));
+  }
+
+  @isTest
+  static void testQBObjectMappingsCustomerAndVendorAreDistinctCalls() {
+    Test.startTest();
+    Map<String, String> customerOut = QBObjectMappings.getAccountToCustomerMapping();
+    Map<String, String> vendorOut = QBObjectMappings.getAccountToVendorMapping();
+    Map<String, String> customerIn = QBObjectMappings.getCustomerToAccountMapping();
+    Map<String, String> vendorIn = QBObjectMappings.getVendorToAccountMapping();
+    Test.stopTest();
+
+    // All resolve (fall back to the shared field set when no scoped rows exist).
+    Assert.isNotNull(customerOut);
+    Assert.isNotNull(vendorOut);
+    Assert.isNotNull(customerIn);
+    Assert.isNotNull(vendorIn);
+    Assert.isTrue(
+      !customerIn.isEmpty(),
+      'Customer inbound map should resolve.'
+    );
+    Assert.isTrue(!vendorIn.isEmpty(), 'Vendor inbound map should resolve.');
   }
 
   @isTest
@@ -190,6 +259,33 @@ public class FieldMappingControllerTest {
     }
 
     Test.stopTest();
+  }
+
+  @isTest
+  static void fedExValidateAddressInboundFieldsUseValidatedAddressPrefix() {
+    List<Map<String, Object>> outboundFields = FieldMappingController.getFedExFields(
+      'validateAddress',
+      'SF to FedEx'
+    );
+    List<Map<String, Object>> inboundFields = FieldMappingController.getFedExFields(
+      'validateAddress',
+      'FedEx to SF'
+    );
+
+    Set<String> outboundValues = new Set<String>();
+    for (Map<String, Object> field : outboundFields) {
+      outboundValues.add((String) field.get('value'));
+    }
+    Set<String> inboundValues = new Set<String>();
+    for (Map<String, Object> field : inboundFields) {
+      inboundValues.add((String) field.get('value'));
+    }
+
+    Assert.isTrue(outboundValues.contains('city'));
+    Assert.isTrue(outboundValues.contains('streetLines[0]'));
+    Assert.isTrue(inboundValues.contains('validatedAddress.city'));
+    Assert.isTrue(inboundValues.contains('validatedAddress.streetLines[0]'));
+    Assert.isFalse(inboundValues.contains('city'));
   }
 
   @isTest

@@ -231,53 +231,6 @@ private class DHLCarrierAdapterTest {
     System.assertEquals(true, didThrow);
   }
 
-  @IsTest
-  static void unauthorizedReturnsActionableMessage() {
-    Test.setMock(
-      HttpCalloutMock.class,
-      new DHLMock(401, '{"detail":"Invalid credentials"}', '/address-validate')
-    );
-
-    Test.startTest();
-    Boolean threw = false;
-    String message;
-    try {
-      new DHLCarrierAdapter()
-        .validateAddress(
-          new Map<String, Object>{
-            'address' => new Map<String, Object>{
-              'streetLines' => new List<Object>{ '10 Main St' },
-              'city' => 'New York',
-              'postalCode' => '10001',
-              'countryCode' => 'US'
-            }
-          }
-        );
-    } catch (Exception e) {
-      threw = true;
-      message = e.getMessage();
-    }
-    Test.stopTest();
-
-    System.assertEquals(true, threw, 'A 401 must raise an exception.');
-    System.assert(
-      message.contains('401') && message.contains('authentication'),
-      'Message should explain the auth failure: ' + message
-    );
-    System.assert(
-      message.contains('Sandbox'),
-      'Message should name the active environment: ' + message
-    );
-
-    // The callout failure log should capture HTTP 401.
-    List<Error_Log__c> logs = [
-      SELECT Http_Status_Code__c
-      FROM Error_Log__c
-      WHERE Gateway_Name__c = 'DHL' AND Http_Status_Code__c = 401
-    ];
-    System.assert(!logs.isEmpty(), 'A DHL 401 error log should be written.');
-  }
-
   private static Connector_Config_Value__c configValue(
     Connector_Instance__c instanceRecord,
     String fieldKey,

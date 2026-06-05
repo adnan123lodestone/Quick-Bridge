@@ -3,6 +3,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     private List<String> customerIds;
     private String lastSyncDate;
     private Id defaultAccountRecordTypeId;
+    private Id personAccountRecordTypeId;
     
     public QBCustomerToAccountSyncBatch() {
         Datetime yesterday = Datetime.now().addDays(-1);
@@ -35,7 +36,12 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     }
     
     public void execute(Database.BatchableContext bc, List<String> scope) {
-        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
+        try {
+            IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
+        } catch (Exception e) {
+            ErrorLogUtility.logException('QuickBooks', 'QBCustomerToAccountSyncBatch.execute', e, null, null);
+            return;
+        }
         QBTriggerHandler.isAccountProcessing = true;
         
         try {
@@ -47,8 +53,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             if (Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().containsKey('Customer')) {
                 defaultAccountRecordTypeId = Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get('Customer').getRecordTypeId();
             }
-            Id personAccountRecordTypeId = null;
-            if (isPersonAccountEnabled) {
+            if (isPersonAccountEnabled && personAccountRecordTypeId == null) {
                 List<RecordType> personRTs = [SELECT Id FROM RecordType WHERE SobjectType = 'Account' AND IsPersonType = true AND IsActive = true LIMIT 1];
                 if (!personRTs.isEmpty()) {
                     personAccountRecordTypeId = personRTs[0].Id;
@@ -65,8 +70,18 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                             
                         if (accountToSync != null) {
                             String companyName = (String)customerData.get('CompanyName');
-                                
-                            if (isPersonAccountEnabled && personAccountRecordTypeId != null && String.isBlank(companyName)) {
+
+                            // Only treat as a Person Account when it is safe to do so:
+                            //  - the record is brand new (no Id yet), or
+                            //  - it already IS a Person Account.
+                            // Flipping an existing Business Account to a Person Account in the
+                            // same DML is not allowed and causes
+                            // "Business Account may not use Person Account field PersonEmail".
+                            Boolean canBePersonAccount = personAccountRecordTypeId != null
+                                && (accountToSync.Id == null
+                                    || accountToSync.RecordTypeId == personAccountRecordTypeId);
+
+                            if (isPersonAccountEnabled && canBePersonAccount && String.isBlank(companyName)) {
                                 accountToSync.RecordTypeId = personAccountRecordTypeId;
                                     
                                 String fName = (String)customerData.get('GivenName');
@@ -109,24 +124,31 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             Map<String, Boolean> qbIdToIsPersonMap = new Map<String, Boolean>();
             
             if (!accountsToUpsert.isEmpty()) {
-                Database.UpsertResult[] results = Database.upsert(accountsToUpsert, Account.QuickbookID__c, false);
+                Map<String, Account> dedupMap = new Map<String, Account>();
+                for (Account a : accountsToUpsert) {
+                    if (String.isNotBlank(a.QuickbookID__c)) {
+                        dedupMap.put(a.QuickbookID__c, a);
+                    }
+                }
+                List<Account> deduped = dedupMap.isEmpty() ? accountsToUpsert : dedupMap.values();
+                Database.UpsertResult[] results = Database.upsert(deduped, Account.QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults(
                     'QuickBooks',
                 'QBCustomerToAccountSyncBatch.execute.upsertAccounts',
                 'upsert',
-                accountsToUpsert,
+                deduped,
                 results,
                 null,
                 null
                     );
                 Integer successCount = 0;
-                
+
                 for (Integer i = 0; i < results.size(); i++) {
                     if (results[i].isSuccess()) {
                         successCount++;
-                        Account upsertedAccount = accountsToUpsert[i];
+                        Account upsertedAccount = deduped[i];
                         qbIdToAccountIdMap.put(upsertedAccount.QuickbookID__c, results[i].getId());
-                        
+
                         Boolean isPerson = isPersonAccountEnabled && upsertedAccount.RecordTypeId == personAccountRecordTypeId;
                         qbIdToIsPersonMap.put(upsertedAccount.QuickbookID__c, isPerson);
                     }
@@ -295,19 +317,43 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) {
             return;
         }
-        
+
         Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
-        if (!fields.containsKey(fieldName)) {
+        String keyLower = fieldName.toLowerCase();
+        Schema.SObjectField fieldToken = fields.get(keyLower);
+        if (fieldToken == null) {
+            fieldToken = fields.get('quickbridgetlg__' + keyLower);
+        }
+        if (fieldToken == null) {
             return;
         }
-        
-        Schema.DescribeFieldResult fieldDescribe = fields.get(fieldName).getDescribe();
+
+        Schema.DescribeFieldResult fieldDescribe = fieldToken.getDescribe();
         if (!fieldDescribe.isCreateable() && !fieldDescribe.isUpdateable()) {
             return;
         }
-        
+
+        // Skip person-account-only fields when this record is a business account.
+        // Salesforce rejects DML with "Business Account may not use Person Account field X"
+        // if any person-type field is set on a non-person account record type.
+        // We detect this by checking whether the field's API name starts with 'Person'
+        // (e.g. PersonEmail, PersonBirthdate) or is one of the shared name fields that
+        // are only writable via person accounts (FirstName, LastName).
+        if (personAccountRecordTypeId != null) {
+            String resolvedName = fieldDescribe.getName();
+            Boolean isPersonOnlyField = resolvedName.startsWith('Person')
+                || resolvedName == 'FirstName'
+                || resolvedName == 'LastName';
+            if (isPersonOnlyField) {
+                Id rtId = (Id) record.get('RecordTypeId');
+                if (rtId == null || rtId != personAccountRecordTypeId) {
+                    return;
+                }
+            }
+        }
+
         Schema.DisplayType displayType = fieldDescribe.getType();
-        record.put(fieldName, coerceValue(value, displayType));
+        record.put(fieldDescribe.getName(), coerceValue(value, displayType));
     }
     
     private Object coerceValue(Object value, Schema.DisplayType displayType) {

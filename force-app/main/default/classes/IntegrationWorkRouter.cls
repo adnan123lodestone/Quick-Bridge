@@ -18,13 +18,7 @@ public with sharing class IntegrationWorkRouter {
             className = LegacyConnectorRegistryFallback.workHandlerClassFor(connectorKey, operationKey);
         }
         if (String.isBlank(className)) {
-            ErrorLogUtility.logException(
-                'QuickBridge',
-                'IntegrationWorkRouter.handlerClassFor',
-                new IntegrationWorkRouteException('No handler registered for: ' + integrationKey + '.' + operationKey),
-                null,
-                null
-            );
+            className = LegacyConnectorRegistryFallback.workHandlerClassFor(integrationKey, operationKey);
         }
         return className;
     }

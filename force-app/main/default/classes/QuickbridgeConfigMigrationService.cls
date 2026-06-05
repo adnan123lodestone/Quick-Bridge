@@ -51,9 +51,8 @@ public with sharing class QuickbridgeConfigMigrationService {
     result.connectorKey = descriptor.connectorKey;
     result.valuesMigrated = 0;
     try {
-      ConnectorConfigService.ConnectorConfig config = ConnectorConfigService.getConfig(
-        descriptor.connectorKey,
-        true
+      ConnectorConfigService.ConnectorConfig config = ConnectorConfigService.getConfigForMigration(
+        descriptor.connectorKey
       );
       Connector_Instance__c instanceRecord = upsertInstance(descriptor, config);
       result.connectorInstanceId = instanceRecord.Id;

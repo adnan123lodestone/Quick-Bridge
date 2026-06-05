@@ -1,19 +1,12 @@
 public with sharing class StripePaymentService {
 
-    private static final String STRIPE_API_ENDPOINT = 'callout:Stripe_API/v1/payment_intents';
-    private static final String STRIPE_CUSTOMERS_ENDPOINT = 'callout:Stripe_API/v1/customers';
-    private static final String STRIPE_INVOICE_ITEMS_ENDPOINT = 'callout:Stripe_API/v1/invoiceitems';
-    private static final String STRIPE_INVOICES_ENDPOINT = 'callout:Stripe_API/v1/invoices';
-    private static final String STRIPE_PAYMENT_METHODS_ENDPOINT = 'callout:Stripe_API/v1/payment_methods';
+    private static final String STRIPE_API_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/payment_intents';
+    private static final String STRIPE_CUSTOMERS_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/customers';
+    private static final String STRIPE_INVOICE_ITEMS_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/invoiceitems';
+    private static final String STRIPE_INVOICES_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/invoices';
+    private static final String STRIPE_PAYMENT_METHODS_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/payment_methods';
     private static final String STRIPE_SECRET_KEY_MERGE_FIELD = '{!$Credential.Stripe_Credentials.SecretKey}';
     private static final String STRIPE_JS_URL = 'https://js.stripe.com/v3/';
-    // private static final String STRIPE_API_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/payment_intents';
-    // private static final String STRIPE_CUSTOMERS_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/customers';
-    // private static final String STRIPE_INVOICE_ITEMS_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/invoiceitems';
-    // private static final String STRIPE_INVOICES_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/invoices';
-    // private static final String STRIPE_PAYMENT_METHODS_ENDPOINT = 'callout:QuickBridgeTLG__Stripe_API/v1/payment_methods';
-    // private static final String STRIPE_SECRET_KEY_MERGE_FIELD = '{!$Credential.QuickBridgeTLG__Stripe_Credentials.SecretKey}';
-    // private static final String STRIPE_JS_URL = 'https://js.stripe.com/v3/';
 
     public class ClientConfigResponse {
         @AuraEnabled public Boolean active { get; set; }
@@ -62,6 +55,7 @@ public with sharing class StripePaymentService {
         private Id accountId;
         private String accountName;
         private String stripeCustomerId;
+        private String email;
     }
 
     public class InvoiceAccountContext {
@@ -89,16 +83,16 @@ public with sharing class StripePaymentService {
     public static ClientConfigResponse getClientConfig() {
         ClientConfigResponse response = new ClientConfigResponse();
         try {
-            Quickbridge_Config__mdt config = getConfig();
+            StripeConfigService.Config config = getConfig();
 
             String availabilityMessage = getAvailabilityMessage(config);
             response.active = availabilityMessage == null;
-            response.publishableKey = config.Stripe_Publishable_Key__c;
-            response.useSandbox = config.Stripe_Use_Sandbox__c;
+            response.publishableKey = config.publishableKey;
+            response.useSandbox = config.useSandbox;
             response.stripeJsUrl = STRIPE_JS_URL;
 
             List<String> missingItems = new List<String>();
-            if (String.isBlank(config.Stripe_Publishable_Key__c)) {
+            if (String.isBlank(config.publishableKey)) {
                 missingItems.add('Publishable Key');
             }
 
@@ -123,24 +117,21 @@ public with sharing class StripePaymentService {
     public static PaymentResponse processPayment(PaymentRequest request) {
         PaymentResponse response = new PaymentResponse();
         try {
-            Savepoint pendingWorkSavepoint = Database.setSavepoint();
             validateRequest(request);
 
-            Quickbridge_Config__mdt config = getConfig();
+            StripeConfigService.Config config = getConfig();
             String availabilityMessage = getAvailabilityMessage(config);
             if (availabilityMessage != null) {
-                throw new AuraHandledException(availabilityMessage);
+                throwAura(availabilityMessage);
             }
-            if (String.isBlank(config.Stripe_Publishable_Key__c)) {
-                throw new AuraHandledException('Stripe client configuration is incomplete.');
+            if (String.isBlank(config.publishableKey)) {
+                throwAura('Stripe client configuration is incomplete.');
             }
 
             IntegrationUsageService.assertCanConsumeTask('Stripe', 1);
 
             OrderAccountContext orderAccountContext = getOrderAccountContext(request.orderId);
             String authorizationHeader = 'Bearer ' + STRIPE_SECRET_KEY_MERGE_FIELD;
-            Database.rollback(pendingWorkSavepoint);
-            Database.releaseSavepoint(pendingWorkSavepoint);
 
             StripeCustomerResolution customerResolution = resolveStripeCustomer(orderAccountContext, request, authorizationHeader);
             attachPaymentMethodToCustomer(customerResolution == null ? null : customerResolution.customerId, request.paymentMethodId, authorizationHeader);
@@ -260,16 +251,16 @@ public with sharing class StripePaymentService {
                     Savepoint pendingWorkSavepoint = Database.setSavepoint();
 
                     if (!isInternalUserContext()) {
-                        throw new AuraHandledException('This invoice action is only available to authenticated internal users.');
+                        throwAura('This invoice action is only available to authenticated internal users.');
                     }
                     if (invoiceId == null) {
-                        throw new AuraHandledException('Invoice Id is required.');
+                        throwAura('Invoice Id is required.');
                     }
 
-                    Quickbridge_Config__mdt config = getConfig();
+                    StripeConfigService.Config config = getConfig();
                     String availabilityMessage = getAvailabilityMessage(config);
                     if (availabilityMessage != null) {
-                        throw new AuraHandledException(availabilityMessage);
+                        throwAura(availabilityMessage);
                     }
 
                     InvoiceAccountContext invoiceContext = getInvoiceAccountContext(invoiceId);
@@ -288,12 +279,17 @@ public with sharing class StripePaymentService {
                     orderAccountContext.accountId = invoiceContext.accountId;
                     orderAccountContext.accountName = invoiceContext.accountName;
                     orderAccountContext.stripeCustomerId = invoiceContext.stripeCustomerId;
+                    orderAccountContext.email = invoiceContext.invoiceEmail;
 
                     StripeCustomerResolution customerResolution = resolveStripeCustomer(
                         orderAccountContext,
                     customerRequest,
                     authorizationHeader
                         );
+
+                    if (!String.isBlank(invoiceContext.invoiceEmail) && !customerResolution.shouldPersist) {
+                        updateStripeCustomerEmail(customerResolution.customerId, invoiceContext.invoiceEmail, authorizationHeader);
+                    }
 
                     HttpResponse stripeInvoiceResponse = sendStripePost(
                         STRIPE_INVOICES_ENDPOINT,
@@ -302,7 +298,7 @@ public with sharing class StripePaymentService {
                         );
                     String stripeInvoiceBody = sanitizeJsonBody(stripeInvoiceResponse.getBody());
                     if (String.isBlank(stripeInvoiceBody) || (!stripeInvoiceBody.startsWith('{') && !stripeInvoiceBody.startsWith('['))) {
-                                throw new AuraHandledException('Stripe returned an invalid response when creating the invoice.');
+                                throwAura('Stripe returned an invalid response when creating the invoice.');
                             }
 
                             Map<String, Object> createdInvoice = (Map<String, Object>) JSON.deserializeUntyped(stripeInvoiceBody);
@@ -311,12 +307,12 @@ public with sharing class StripePaymentService {
                                 if (String.isBlank(message)) {
                                     message = 'Stripe invoice creation failed with HTTP ' + stripeInvoiceResponse.getStatusCode() + '.';
                                 }
-                                throw new AuraHandledException(message);
+                                throwAura(message);
                             }
 
                             String stripeInvoiceId = createdInvoice.containsKey('id') ? String.valueOf(createdInvoice.get('id')) : null;
                             if (String.isBlank(stripeInvoiceId)) {
-                                throw new AuraHandledException('Stripe invoice creation returned no invoice id.');
+                                throwAura('Stripe invoice creation returned no invoice id.');
                             }
 
                             HttpResponse invoiceItemResponse = sendStripePost(
@@ -337,7 +333,7 @@ public with sharing class StripePaymentService {
                                 );
                             String finalizeBody = sanitizeJsonBody(finalizeResponse.getBody());
                             if (String.isBlank(finalizeBody) || (!finalizeBody.startsWith('{') && !finalizeBody.startsWith('['))) {
-                                        throw new AuraHandledException('Stripe returned an invalid response when finalizing the invoice.');
+                                        throwAura('Stripe returned an invalid response when finalizing the invoice.');
                                     }
 
                                     Map<String, Object> finalizedInvoice = (Map<String, Object>) JSON.deserializeUntyped(finalizeBody);
@@ -346,14 +342,14 @@ public with sharing class StripePaymentService {
                                         if (String.isBlank(message)) {
                                             message = 'Stripe invoice finalization failed with HTTP ' + finalizeResponse.getStatusCode() + '.';
                                         }
-                                        throw new AuraHandledException(message);
+                                        throwAura(message);
                                     }
 
                                     String hostedInvoiceUrl = finalizedInvoice.containsKey('hosted_invoice_url')
                                         ? String.valueOf(finalizedInvoice.get('hosted_invoice_url'))
                                         : null;
                                     if (String.isBlank(hostedInvoiceUrl)) {
-                                        throw new AuraHandledException('Stripe invoice was created but no hosted invoice URL was returned.');
+                                        throwAura('Stripe invoice was created but no hosted invoice URL was returned.');
                                     }
 
                                     persistStripeCustomerId(customerResolution);
@@ -374,31 +370,21 @@ public with sharing class StripePaymentService {
                                 return response;
                             }
 
-                            private static Quickbridge_Config__mdt getConfig() {
-                                Quickbridge_Config__mdt config;
-                                try {
-                                    config = Quickbridge_Config__mdt.getInstance('Stripe');
-                                } catch(Exception e) {
-                                    config = null;
-                                }
+                            private static StripeConfigService.Config getConfig() {
+                                return StripeConfigService.getConfig();
+                            }
 
-                                if (Test.isRunningTest()) {
-                                    Quickbridge_Config__mdt testConfig = new Quickbridge_Config__mdt();
-                                    testConfig.Stripe_Active__c = true;
-                                    testConfig.Stripe_Publishable_Key__c = 'pk_test_123';
-                                    testConfig.Stripe_Use_Sandbox__c = true;
-                                    return testConfig;
-                                }
-
-                                if (config == null) throw new AuraHandledException('Stripe configuration record was not found.');
-                                return config;
+                            private static void throwAura(String message) {
+                                AuraHandledException e = new AuraHandledException(message);
+                                e.setMessage(message);
+                                throw e;
                             }
 
                             private static void validateRequest(PaymentRequest request) {
-                                if (request == null) throw new AuraHandledException('Missing payment request.');
-                                if (!isInternalUserContext()) throw new AuraHandledException('This payment action is only available to authenticated internal users.');
-                                if (request.amount == null || request.amount <= 0) throw new AuraHandledException('Payment amount must be greater than zero.');
-                                if (String.isBlank(request.paymentMethodId)) throw new AuraHandledException('Stripe payment method is missing.');
+                                if (request == null) throwAura('Missing payment request.');
+                                if (!isInternalUserContext()) throwAura('This payment action is only available to authenticated internal users.');
+                                if (request.amount == null || request.amount <= 0) throwAura('Payment amount must be greater than zero.');
+                                if (String.isBlank(request.paymentMethodId)) throwAura('Stripe payment method is missing.');
                                 if (String.isBlank(request.currencyCode)) {
                                     request.currencyCode = 'usd';
                                 } else {
@@ -413,8 +399,10 @@ public with sharing class StripePaymentService {
                             private static OrderAccountContext getOrderAccountContext(String orderId) {
                                 if (String.isBlank(orderId)) return null;
 
-                                Order orderRecord = [SELECT Id, AccountId, Account.Name, Account.Stripe_Customer_Id__c FROM Order WHERE Id = :orderId LIMIT 1];
+                                List<Order> orders = [SELECT Id, AccountId, Account.Name, Account.Stripe_Customer_Id__c FROM Order WHERE Id = :orderId LIMIT 1];
+                                if (orders.isEmpty()) return null;
 
+                                Order orderRecord = orders[0];
                                 OrderAccountContext context = new OrderAccountContext();
                                 context.orderId = orderRecord.Id;
                                 context.accountId = orderRecord.AccountId;
@@ -425,10 +413,8 @@ public with sharing class StripePaymentService {
 
                             public static InvoiceAccountContext getInvoiceAccountContext(Id invoiceId) {
                                 Map<String, Schema.SObjectField> invoiceFields = Schema.SObjectType.Invoice__c.fields.getMap();
-                                List<String> selectFields = new List<String>{
-                                    'Id', 'Name', 'Related_Account__c', 'Related_Account__r.Name', 'Related_Account__r.Stripe_Customer_Id__c'
-                                };
 
+                                String accountField = resolveField(invoiceFields, 'Related_Account__c');
                                 String amountField = resolveField(invoiceFields, 'Amount__c');
                                 String amountDueField = resolveField(invoiceFields, 'Amount_Due_c__c');
                                 String totalCostField = resolveField(invoiceFields, 'Total_cost__c');
@@ -439,6 +425,12 @@ public with sharing class StripePaymentService {
                                 String refNumberField = resolveField(invoiceFields, 'Reference_number__c');
                                 String stripeLinkField = resolveField(invoiceFields, 'Stripe_Invoice_Link__c');
 
+                                List<String> selectFields = new List<String>{ 'Id', 'Name' };
+                                if (accountField != null) {
+                                    selectFields.add(accountField);
+                                    selectFields.add(accountField.removeEnd('__c') + '__r.Name');
+                                    selectFields.add(accountField.removeEnd('__c') + '__r.Stripe_Customer_Id__c');
+                                }
                                 if (amountField != null) selectFields.add(amountField);
                                 if (amountDueField != null) selectFields.add(amountDueField);
                                 if (totalCostField != null) selectFields.add(totalCostField);
@@ -454,7 +446,8 @@ public with sharing class StripePaymentService {
                                     ' FROM Invoice__c WHERE Id = :invoiceId LIMIT 1'
                                     );
 
-                                SObject accountRecord = invoiceRecord.getSObject('Related_Account__r');
+                                String accountRelField = accountField != null ? accountField.removeEnd('__c') + '__r' : null;
+                                SObject accountRecord = accountRelField != null ? invoiceRecord.getSObject(accountRelField) : null;
                                 InvoiceAccountContext context = new InvoiceAccountContext();
                                 context.invoiceId = (Id) invoiceRecord.get('Id');
                                 context.invoiceNumber = (String) invoiceRecord.get('Name');
@@ -465,7 +458,7 @@ public with sharing class StripePaymentService {
                                 context.invoiceEmail = emailField != null ? (String) invoiceRecord.get(emailField) : null;
 
                                 context.amount = getInvoiceAmount(invoiceRecord, amountField, amountDueField, totalCostField);
-                                context.accountId = (Id) invoiceRecord.get('Related_Account__c');
+                                context.accountId = accountField != null ? (Id) invoiceRecord.get(accountField) : null;
                                 context.accountName = accountRecord == null ? null : (String) accountRecord.get('Name');
                                 context.stripeCustomerId = accountRecord == null ? null : (String) accountRecord.get('Stripe_Customer_Id__c');
                                 context.supportsHostedInvoiceUrlField = stripeLinkField != null;
@@ -488,10 +481,10 @@ public with sharing class StripePaymentService {
                             }
 
                             private static void validateInvoiceContext(InvoiceAccountContext invoiceContext) {
-                                if (invoiceContext == null) throw new AuraHandledException('Invoice details could not be loaded.');
-                                if (invoiceContext.accountId == null) throw new AuraHandledException('The invoice must be linked to an account before it can be sent.');
-                                if (String.isBlank(invoiceContext.invoiceEmail)) throw new AuraHandledException('The invoice does not have an email address.');
-                                if (invoiceContext.amount == null || invoiceContext.amount <= 0) throw new AuraHandledException('The invoice amount must be greater than zero.');
+                                if (invoiceContext == null) throwAura('Invoice details could not be loaded.');
+                                if (invoiceContext.accountId == null) throwAura('The invoice must be linked to an account before it can be sent.');
+                                if (String.isBlank(invoiceContext.invoiceEmail)) throwAura('The invoice does not have an email address.');
+                                if (invoiceContext.amount == null || invoiceContext.amount <= 0) throwAura('The invoice amount must be greater than zero.');
                             }
 
                             private static StripeCustomerResolution resolveStripeCustomer(OrderAccountContext orderAccountContext, PaymentRequest request, String authorizationHeader) {
@@ -509,17 +502,17 @@ public with sharing class StripePaymentService {
                                 HttpResponse customerResponse = sendStripePost(STRIPE_CUSTOMERS_ENDPOINT, buildCustomerBody(orderAccountContext, request), authorizationHeader);
                                 String responseBody = sanitizeJsonBody(customerResponse.getBody());
                                 if (String.isBlank(responseBody) || (!responseBody.startsWith('{') && !responseBody.startsWith('['))) {
-                                            throw new AuraHandledException('Stripe returned an invalid response when creating the customer.');
+                                            throwAura('Stripe returned an invalid response when creating the customer.');
                                         }
 
                                         Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
                                         if (customerResponse.getStatusCode() < 200 || customerResponse.getStatusCode() >= 300 || parsed.containsKey('error')) {
                                             String message = extractStripeError(parsed);
-                                            throw new AuraHandledException(String.isBlank(message) ? 'Stripe customer creation failed with HTTP ' + customerResponse.getStatusCode() + '.' : message);
+                                            throwAura(String.isBlank(message) ? 'Stripe customer creation failed with HTTP ' + customerResponse.getStatusCode() + '.' : message);
                                         }
 
                                         resolution.customerId = parsed.containsKey('id') ? String.valueOf(parsed.get('id')) : null;
-                                        if (String.isBlank(resolution.customerId)) throw new AuraHandledException('Stripe customer creation returned no customer id.');
+                                        if (String.isBlank(resolution.customerId)) throwAura('Stripe customer creation returned no customer id.');
 
                                         resolution.shouldPersist = true;
                                         return resolution;
@@ -606,12 +599,12 @@ public with sharing class StripePaymentService {
 
                                     private static void validateStripeMutationResponse(HttpResponse response, String invalidBodyMessage, String httpErrorPrefix) {
                                         String responseBody = sanitizeJsonBody(response == null ? null : response.getBody());
-                                        if (String.isBlank(responseBody) || (!responseBody.startsWith('{') && !responseBody.startsWith('['))) throw new AuraHandledException(invalidBodyMessage);
+                                        if (String.isBlank(responseBody) || (!responseBody.startsWith('{') && !responseBody.startsWith('['))) throwAura(invalidBodyMessage);
 
                                         Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(responseBody);
                                         if (response.getStatusCode() < 200 || response.getStatusCode() >= 300 || parsed.containsKey('error')) {
                                             String message = extractStripeError(parsed);
-                                            throw new AuraHandledException(String.isBlank(message) ? httpErrorPrefix + response.getStatusCode() + '.' : message);
+                                            throwAura(String.isBlank(message) ? httpErrorPrefix + response.getStatusCode() + '.' : message);
                                         }
                                     }
 
@@ -625,19 +618,30 @@ public with sharing class StripePaymentService {
                                         addFormParam(params, 'customer', stripeCustomerId);
                                         addFormParam(params, 'setup_future_usage', String.isBlank(stripeCustomerId) ? null : 'off_session');
                                         addFormParam(params, 'description', 'Inventorymagic payment');
-                                        if (!String.isBlank(request.fullName)) { addFormParam(params, 'shipping[name]', request.fullName); addFormParam(params, 'metadata[full_name]', request.fullName); }
+                                        if (!String.isBlank(request.fullName)) { addFormParam(params, 'metadata[full_name]', request.fullName); }
                                         if (!String.isBlank(request.orderId)) { addFormParam(params, 'metadata[order_id]', request.orderId); addFormParam(params, 'metadata[reference_number]', request.orderId); }
-                                        if (!String.isBlank(request.address)) addFormParam(params, 'shipping[address][line1]', request.address);
-                                        if (!String.isBlank(request.city)) addFormParam(params, 'shipping[address][city]', request.city);
-                                        if (!String.isBlank(request.state)) addFormParam(params, 'shipping[address][state]', request.state);
-                                        if (!String.isBlank(request.zip)) addFormParam(params, 'shipping[address][postal_code]', request.zip);
-                                        if (!String.isBlank(request.country)) addFormParam(params, 'shipping[address][country]', request.country);
+                                        Boolean hasAddress = !String.isBlank(request.address) || !String.isBlank(request.city) || !String.isBlank(request.state) || !String.isBlank(request.zip) || !String.isBlank(request.country);
+                                        if (hasAddress) {
+                                            if (!String.isBlank(request.fullName)) addFormParam(params, 'shipping[name]', request.fullName);
+                                            if (!String.isBlank(request.address)) addFormParam(params, 'shipping[address][line1]', request.address);
+                                            if (!String.isBlank(request.city)) addFormParam(params, 'shipping[address][city]', request.city);
+                                            if (!String.isBlank(request.state)) addFormParam(params, 'shipping[address][state]', request.state);
+                                            if (!String.isBlank(request.zip)) addFormParam(params, 'shipping[address][postal_code]', request.zip);
+                                            if (!String.isBlank(request.country)) addFormParam(params, 'shipping[address][country]', request.country);
+                                        }
                                         return String.join(params, '&');
+                                    }
+
+                                    private static void updateStripeCustomerEmail(String customerId, String email, String authorizationHeader) {
+                                        List<String> params = new List<String>();
+                                        addFormParam(params, 'email', email);
+                                        sendStripePost(STRIPE_CUSTOMERS_ENDPOINT + '/' + customerId, String.join(params, '&'), authorizationHeader);
                                     }
 
                                     private static String buildCustomerBody(OrderAccountContext orderAccountContext, PaymentRequest request) {
                                         List<String> params = new List<String>();
                                         addFormParam(params, 'name', !String.isBlank(orderAccountContext.accountName) ? orderAccountContext.accountName : request.fullName);
+                                        addFormParam(params, 'email', orderAccountContext.email);
                                         addFormParam(params, 'metadata[account_id]', orderAccountContext.accountId == null ? null : String.valueOf(orderAccountContext.accountId));
                                         addFormParam(params, 'metadata[order_id]', orderAccountContext.orderId == null ? null : String.valueOf(orderAccountContext.orderId));
                                         return String.join(params, '&');
@@ -718,16 +722,12 @@ public with sharing class StripePaymentService {
                                         return body.trim().replaceFirst('^\\uFEFF', '');
                                     }
 
-                                    private static Boolean isConfigActive(Boolean activeFlag) {
-                                        return activeFlag == null ? true : activeFlag;
-                                    }
-
-                                    private static String getAvailabilityMessage(Quickbridge_Config__mdt config) {
+                                    private static String getAvailabilityMessage(StripeConfigService.Config config) {
                                         if (config == null) return 'Stripe configuration record was not found.';
-                                        if (!isConfigActive(config.Stripe_Active__c)) return 'Stripe is currently inactive.';
+                                        if (config.active != true) return 'Stripe is currently inactive.';
                                         Date today = Date.today();
-                                        if (config.Stripe_Start_Date__c != null && config.Stripe_Start_Date__c > today) return 'Stripe is not active yet.';
-                                        if (config.Stripe_End_Date__c != null && config.Stripe_End_Date__c < today) return 'Stripe contract has expired.';
+                                        if (config.startDate != null && config.startDate > today) return 'Stripe is not active yet.';
+                                        if (config.endDate != null && config.endDate < today) return 'Stripe contract has expired.';
                                         return null;
                                     }
 

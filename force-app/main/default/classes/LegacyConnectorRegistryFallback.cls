@@ -1,10 +1,3 @@
-/**
- * @deprecated Hardcoded connector registry kept for backward compatibility only.
- * All new connectors must be registered via Integration_Connector__mdt and
- * Integration_Connector_Capability__mdt custom metadata records.
- * This class will be removed once all existing connector references have migrated
- * to the metadata-driven ConnectorRegistryService.
- */
 public with sharing class LegacyConnectorRegistryFallback {
     public static List<ConnectorRegistryService.ConnectorDescriptor> connectors() {
         return new List<ConnectorRegistryService.ConnectorDescriptor>{

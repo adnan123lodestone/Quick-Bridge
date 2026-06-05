@@ -157,6 +157,33 @@ public with sharing class FieldMappingController {
   }
 
   @AuraEnabled(cacheable=true)
+  public static List<Map<String, Object>> getDHLFields(
+    String actionName,
+    String direction
+  ) {
+    return convertQBFieldDefinitions(
+      getDHLFieldDefinitions(actionName, direction)
+    );
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static List<Map<String, String>> getExistingDHLMappings(
+    String actionName,
+    String sfObject
+  ) {
+    return getCarrierMappings('dhl', actionName, sfObject);
+  }
+
+  @AuraEnabled
+  public static String saveDHLFieldMappings(
+    String actionName,
+    String sfObject,
+    String mappingsJson
+  ) {
+    return saveCarrierFieldMappings('dhl', actionName, sfObject, mappingsJson);
+  }
+
+  @AuraEnabled(cacheable=true)
   public static List<Map<String, Object>> getQuickBooksFields(
     String sfObject,
     String qbObject
@@ -204,7 +231,10 @@ public with sharing class FieldMappingController {
       Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
       for (Field_Mapping__mdt rec : existingMappings) {
         Metadata.CustomMetadata inactive = new Metadata.CustomMetadata();
-        inactive.fullName = nsPrefix + 'Field_Mapping__mdt.' + rec.DeveloperName;
+        inactive.fullName =
+          nsPrefix +
+          'Field_Mapping__mdt.' +
+          rec.DeveloperName;
         inactive.label = rec.DeveloperName;
         addCustomMetadataValue(inactive, 'Is_Active__c', false);
         mdContainer.addMetadata(inactive);
@@ -307,14 +337,31 @@ public with sharing class FieldMappingController {
       );
       validateDataTypes(integration, sfObject, qbObject, requestedMappings);
 
+      // Only consider rows for the same external/QBO object (Customer vs Vendor ...)
+      // when deciding what to deactivate, so saving Vendor mappings never disturbs
+      // Customer mappings. Legacy rows (blank Target_Object_API_Name__c) are still
+      // included so they get cleaned up / re-stamped on save.
+      Boolean scopeByObject = String.isNotBlank(qbObject);
       List<Field_Mapping__mdt> existingMappings = [
-        SELECT DeveloperName, External_Field__c, Is_Active__c
+        SELECT
+          DeveloperName,
+          External_Field__c,
+          Is_Active__c,
+          Target_Object_API_Name__c
         FROM Field_Mapping__mdt
         WHERE Integration__c = :integration AND SF_Object__c = :sfObject
       ];
 
       List<String> recordsToDeactivate = new List<String>();
       for (Field_Mapping__mdt existingRecord : existingMappings) {
+        // Skip rows that belong to a different QBO object so they are preserved.
+        if (
+          scopeByObject &&
+          String.isNotBlank(existingRecord.Target_Object_API_Name__c) &&
+          existingRecord.Target_Object_API_Name__c != qbObject
+        ) {
+          continue;
+        }
         if (
           existingRecord.Is_Active__c &&
           !requestedExternalFields.contains(existingRecord.External_Field__c)
@@ -341,7 +388,7 @@ public with sharing class FieldMappingController {
         customMetadata.fullName =
           nsPrefix +
           'Field_Mapping__mdt.' +
-          buildRecordName(integration, sfObject, row.externalField);
+          buildRecordName(integration, sfObject, qbObject, row.externalField);
         String label = sfObject + ' ' + row.sfField;
         customMetadata.label = label.length() > 40
           ? label.substring(0, 40)
@@ -360,6 +407,15 @@ public with sharing class FieldMappingController {
           'Sync_Direction__c',
           row.syncDirection
         );
+        // Persist which QBO object (Customer / Vendor / Item ...) this mapping
+        // belongs to so each object keeps an independent mapping set.
+        if (String.isNotBlank(qbObject)) {
+          addCustomMetadataValue(
+            customMetadata,
+            'Target_Object_API_Name__c',
+            qbObject
+          );
+        }
         addCustomMetadataValue(customMetadata, 'Is_Active__c', true);
 
         mdContainer.addMetadata(customMetadata);
@@ -467,15 +523,35 @@ public with sharing class FieldMappingController {
     );
   }
 
-  @AuraEnabled(cacheable=true)
+  // Backward-compatible overload (no QBO-object scoping) for Apex callers that
+  // don't distinguish a target object. Intentionally NOT @AuraEnabled so the LWC
+  // wire bridge resolves the 3-arg version unambiguously.
   public static List<Map<String, String>> getExistingMappings(
     String integration,
     String sfObject
   ) {
+    return getExistingMappings(integration, sfObject, null);
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static List<Map<String, String>> getExistingMappings(
+    String integration,
+    String sfObject,
+    String qbObject
+  ) {
     List<Map<String, String>> savedMappings = new List<Map<String, String>>();
     try {
+      // When a QBO object is supplied, scope to rows for that object (Customer vs
+      // Vendor ...). Legacy rows with a blank Target_Object_API_Name__c still apply
+      // so existing mappings remain visible until re-saved (which stamps them).
+      Boolean scopeByObject = String.isNotBlank(qbObject);
       List<Field_Mapping__mdt> records = [
-        SELECT DeveloperName, SF_Field__c, External_Field__c, Sync_Direction__c
+        SELECT
+          DeveloperName,
+          SF_Field__c,
+          External_Field__c,
+          Sync_Direction__c,
+          Target_Object_API_Name__c
         FROM Field_Mapping__mdt
         WHERE
           Integration__c = :integration
@@ -487,6 +563,14 @@ public with sharing class FieldMappingController {
         if (
           String.isBlank(record.SF_Field__c) ||
           String.isBlank(record.External_Field__c)
+        ) {
+          continue;
+        }
+        // Skip rows that belong to a different QBO object.
+        if (
+          scopeByObject &&
+          String.isNotBlank(record.Target_Object_API_Name__c) &&
+          record.Target_Object_API_Name__c != qbObject
         ) {
           continue;
         }
@@ -1208,17 +1292,77 @@ public with sharing class FieldMappingController {
         false
       );
     } else if (qbEntity == 'CreditMemoLine') {
-      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.SalesItemLineDetail.ItemRef.value', 'STRING', true);
-      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
-      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.SalesItemLineDetail.Qty', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.SalesItemLineDetail.UnitPrice', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Product/Service ID',
+        'Line.SalesItemLineDetail.ItemRef.value',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Amount',
+        'Line.Amount',
+        'NUMBER',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Quantity',
+        'Line.SalesItemLineDetail.Qty',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Unit Price',
+        'Line.SalesItemLineDetail.UnitPrice',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Description',
+        'Line.Description',
+        'STRING',
+        false
+      );
     } else if (qbEntity == 'PurchaseOrderLine') {
-      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.ItemBasedExpenseLineDetail.ItemRef.value', 'STRING', true);
-      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
-      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.ItemBasedExpenseLineDetail.Qty', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.ItemBasedExpenseLineDetail.UnitPrice', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Product/Service ID',
+        'Line.ItemBasedExpenseLineDetail.ItemRef.value',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Amount',
+        'Line.Amount',
+        'NUMBER',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Quantity',
+        'Line.ItemBasedExpenseLineDetail.Qty',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Unit Price',
+        'Line.ItemBasedExpenseLineDetail.UnitPrice',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Description',
+        'Line.Description',
+        'STRING',
+        false
+      );
     }
 
     return qbFields;
@@ -1644,11 +1788,17 @@ public with sharing class FieldMappingController {
           integration,
           canonicalDirection
         );
+        extField = normalizeCarrierExternalField(
+          integration,
+          actionName,
+          canonicalDirection,
+          extField
+        );
         if (String.isBlank(sfField) || String.isBlank(extField)) {
           continue;
         }
         if (requestedExternalFields.contains(extField)) {
-          String carrierLabel = integration == 'fedex' ? 'FedEx' : 'UPS';
+          String carrierLabel = carrierLabel(integration);
           throw new AuraHandledException(
             'Each ' + carrierLabel + ' field can only be mapped once.'
           );
@@ -1663,9 +1813,11 @@ public with sharing class FieldMappingController {
         requestedDirection = 'SF to Carrier';
       }
 
-      Map<String, QBFieldDefinition> fieldDefs = integration == 'fedex'
-        ? getFedExFieldDefinitions(actionName, null)
-        : getUPSFieldDefinitions(actionName, null);
+      Map<String, QBFieldDefinition> fieldDefs = getCarrierFieldDefinitions(
+        integration,
+        actionName,
+        null
+      );
 
       Set<String> mappedFields = new Set<String>();
       for (MappingRow row : requestedMappings) {
@@ -1677,7 +1829,7 @@ public with sharing class FieldMappingController {
           fieldDef.required &&
           !mappedFields.contains(fieldDef.value)
         ) {
-          String carrierLabel = integration == 'fedex' ? 'FedEx' : 'UPS';
+          String carrierLabel = carrierLabel(integration);
           throw new AuraHandledException(
             'Map every required ' + carrierLabel + ' field before saving.'
           );
@@ -1768,7 +1920,7 @@ public with sharing class FieldMappingController {
       throw e;
     } catch (Exception e) {
       ErrorLogUtility.logException(
-        integration == 'fedex' ? 'FedEx' : 'UPS',
+        carrierLabel(integration),
         'FieldMappingController.saveCarrierFieldMappings',
         e,
         null,
@@ -1874,7 +2026,8 @@ public with sharing class FieldMappingController {
       normalized == 'carrier to sf' ||
       normalized == 'carrier to salesforce' ||
       normalized == 'fedex to sf' ||
-      normalized == 'ups to sf'
+      normalized == 'ups to sf' ||
+      normalized == 'dhl to sf'
     ) {
       return 'Carrier to SF';
     }
@@ -1892,7 +2045,82 @@ public with sharing class FieldMappingController {
     if (integration == 'ups') {
       return canonical == 'Carrier to SF' ? 'UPS to SF' : 'SF to UPS';
     }
+    if (integration == 'dhl') {
+      return canonical == 'Carrier to SF' ? 'DHL to SF' : 'SF to DHL';
+    }
     return canonical;
+  }
+
+  private static String carrierLabel(String integration) {
+    if (integration == 'fedex') {
+      return 'FedEx';
+    }
+    if (integration == 'ups') {
+      return 'UPS';
+    }
+    if (integration == 'dhl') {
+      return 'DHL';
+    }
+    return 'Carrier';
+  }
+
+  private static Map<String, QBFieldDefinition> getCarrierFieldDefinitions(
+    String integration,
+    String actionName,
+    String direction
+  ) {
+    if (integration == 'fedex') {
+      return getFedExFieldDefinitions(actionName, direction);
+    }
+    if (integration == 'ups') {
+      return getUPSFieldDefinitions(actionName, direction);
+    }
+    if (integration == 'dhl') {
+      return getDHLFieldDefinitions(actionName, direction);
+    }
+    return new Map<String, QBFieldDefinition>();
+  }
+
+  private static String normalizeCarrierExternalField(
+    String integration,
+    String actionName,
+    String canonicalDirection,
+    String externalField
+  ) {
+    if (String.isBlank(externalField)) {
+      return externalField;
+    }
+    if (
+      (integration != 'fedex' && integration != 'dhl') ||
+      actionName != 'validateAddress' ||
+      canonicalDirection != 'Carrier to SF'
+    ) {
+      return externalField;
+    }
+    if (externalField.startsWith('validatedAddress[') && externalField.endsWith(']')) {
+      externalField =
+        'validatedAddress.' +
+        externalField.substring(
+          'validatedAddress['.length(),
+          externalField.length() - 1
+        );
+    }
+    if (externalField.startsWith('validatedAddress.')) {
+      return externalField;
+    }
+
+    Set<String> validateAddressResponseFields = new Set<String>{
+      'streetLines[0]',
+      'streetLines[1]',
+      'city',
+      'stateOrProvinceCode',
+      'postalCode',
+      'countryCode',
+      'classification'
+    };
+    return validateAddressResponseFields.contains(externalField)
+      ? 'validatedAddress.' + externalField
+      : externalField;
   }
 
   private static Map<String, QBFieldDefinition> getFedExFieldDefinitions(
@@ -1903,46 +2131,56 @@ public with sharing class FieldMappingController {
     String act = String.isBlank(actionName) ? '' : actionName;
 
     if (act == 'validateAddress') {
+      Boolean inbound = toCanonicalCarrierDirection(direction) == 'Carrier to SF';
+      String responsePrefix = inbound ? 'validatedAddress.' : '';
       addQBFieldDefinition(
         fields,
-        'FedEx - streetLines[0]',
-        'streetLines[0]',
-        'STRING',
-        true
-      );
-      addQBFieldDefinition(fields, 'FedEx - city', 'city', 'STRING', true);
-      addQBFieldDefinition(
-        fields,
-        'FedEx - stateOrProvinceCode',
-        'stateOrProvinceCode',
+        inbound ? 'FedEx - validatedAddress.streetLines[0]' : 'FedEx - streetLines[0]',
+        responsePrefix + 'streetLines[0]',
         'STRING',
         true
       );
       addQBFieldDefinition(
         fields,
-        'FedEx - postalCode',
-        'postalCode',
+        inbound ? 'FedEx - validatedAddress.city' : 'FedEx - city',
+        responsePrefix + 'city',
         'STRING',
         true
       );
       addQBFieldDefinition(
         fields,
-        'FedEx - countryCode',
-        'countryCode',
+        inbound
+          ? 'FedEx - validatedAddress.stateOrProvinceCode'
+          : 'FedEx - stateOrProvinceCode',
+        responsePrefix + 'stateOrProvinceCode',
         'STRING',
         true
       );
       addQBFieldDefinition(
         fields,
-        'FedEx - streetLines[1]',
-        'streetLines[1]',
+        inbound ? 'FedEx - validatedAddress.postalCode' : 'FedEx - postalCode',
+        responsePrefix + 'postalCode',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        inbound ? 'FedEx - validatedAddress.countryCode' : 'FedEx - countryCode',
+        responsePrefix + 'countryCode',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        inbound ? 'FedEx - validatedAddress.streetLines[1]' : 'FedEx - streetLines[1]',
+        responsePrefix + 'streetLines[1]',
         'STRING',
         false
       );
       addQBFieldDefinition(
         fields,
-        'FedEx - classification',
-        'classification',
+        inbound ? 'FedEx - validatedAddress.classification' : 'FedEx - classification',
+        responsePrefix + 'classification',
         'STRING',
         false
       );
@@ -2730,18 +2968,51 @@ public with sharing class FieldMappingController {
     return fields;
   }
 
+  private static Map<String, QBFieldDefinition> getDHLFieldDefinitions(
+    String actionName,
+    String direction
+  ) {
+    Map<String, QBFieldDefinition> fields = getFedExFieldDefinitions(
+      actionName,
+      direction
+    );
+    for (QBFieldDefinition field : fields.values()) {
+      if (String.isNotBlank(field.label)) {
+        field.label = field.label.replace('FedEx - ', 'DHL - ');
+      }
+    }
+    return fields;
+  }
+
   private static String buildRecordName(
     String integration,
     String sfObject,
     String extField
   ) {
+    return buildRecordName(integration, sfObject, null, extField);
+  }
+
+  // qbObject is folded into the unique name (and hash) so that the same external
+  // field mapped on different QBO objects (e.g. Account->Customer.DisplayName vs
+  // Account->Vendor.DisplayName) produces distinct metadata records instead of
+  // colliding on one.
+  private static String buildRecordName(
+    String integration,
+    String sfObject,
+    String qbObject,
+    String extField
+  ) {
     String cleanObjName = sfObject.replace('__c', '').replaceAll('__+', '_');
     String sanitizedExternalField = extField.replaceAll('[^a-zA-Z0-9]', '_')
       .replaceAll('__+', '_');
+    String objToken = String.isBlank(qbObject)
+      ? ''
+      : '_' + qbObject.replaceAll('[^a-zA-Z0-9]', '_').replaceAll('__+', '_');
     String baseName =
       integration +
       '_' +
       cleanObjName +
+      objToken +
       '_' +
       sanitizedExternalField;
     String hashSuffix =

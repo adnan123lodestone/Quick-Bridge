@@ -1,16 +1,3 @@
-/**
- * @description Routes scheduled integration jobs to the appropriate ScheduledOperationAdapter.
- *
- * REGISTRATION CONTRACT — how to add a new scheduled integration:
- *   1. Deploy one Integration_Connector_Capability__mdt record with:
- *        - Connector_Key__c  = the connector's unique key (e.g. 'klaviyo')
- *        - Capability_Key__c = 'scheduler.operation'
- *        - Adapter_Class__c  = the unqualified class name of your ScheduledOperationAdapter implementation
- *        - Enabled__c        = true
- *   2. Ensure the adapter class is listed in ConnectorAdapterAllowlist.ALLOWED OR is covered by
- *      the metadata-driven secondary check in ConnectorAdapterAllowlist.assertAllowed().
- *   3. No changes to this router or GenericScheduleDispatcher are required.
- */
 public with sharing class ScheduledOperationRouter {
     public static ScheduledOperationAdapter adapterFor(String connectorKey, String operationKey) {
         ConnectorRegistryService.ConnectorDescriptor connector = ConnectorRegistryService.byKey(connectorKey);

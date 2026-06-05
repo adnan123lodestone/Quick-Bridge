@@ -45,7 +45,9 @@ private class QBAccountServiceTest {
         Test.setMock(HttpCalloutMock.class, new QBAccountServiceMock());
 
         Account acc = [
-            SELECT Id, Name, QuickbookID__c, Description, Phone
+            SELECT Id, Name, RecordTypeId, QuickbookID__c, Description, Phone,
+                   BillingStreet, BillingCity, BillingState, BillingPostalCode, BillingCountry,
+                   AccountNumber, Main_Email__c, Terms__c, External_Id__c
             FROM Account
             WHERE Name = 'QB Service Base'
             LIMIT 1
@@ -65,7 +67,9 @@ private class QBAccountServiceTest {
         Test.setMock(HttpCalloutMock.class, new QBAccountServiceMock());
 
         Account acc = [
-            SELECT Id, Name, QuickbookID__c, Description, Phone
+            SELECT Id, Name, RecordTypeId, QuickbookID__c, Description, Phone,
+                   BillingStreet, BillingCity, BillingState, BillingPostalCode, BillingCountry,
+                   AccountNumber, Main_Email__c, Terms__c, External_Id__c
             FROM Account
             WHERE Name = 'QB Service Base'
             LIMIT 1
@@ -85,7 +89,9 @@ private class QBAccountServiceTest {
         Test.setMock(HttpCalloutMock.class, new QBAccountServiceMock());
 
         List<Account> accounts = [
-            SELECT Id, Name, QuickbookID__c, Description, Phone
+            SELECT Id, Name, RecordTypeId, QuickbookID__c, Description, Phone,
+                   BillingStreet, BillingCity, BillingState, BillingPostalCode, BillingCountry,
+                   AccountNumber, Main_Email__c, Terms__c, External_Id__c
             FROM Account
             WHERE Name = 'QB Service Base'
             LIMIT 1

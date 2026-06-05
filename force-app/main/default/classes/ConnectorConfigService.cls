@@ -1,4 +1,4 @@
-public with sharing class ConnectorConfigService {
+public without sharing class ConnectorConfigService {
   public class ConnectorConfig {
     @AuraEnabled
     public String connectorKey { get; set; }
@@ -29,7 +29,10 @@ public with sharing class ConnectorConfigService {
   }
 
   @AuraEnabled(cacheable=false)
-  public static ConnectorConfig getPublicConfig(String connectorKey, String sessionToken) {
+  public static ConnectorConfig getPublicConfig(
+    String connectorKey,
+    String sessionToken
+  ) {
     QuickBridgeAdminGuard.requireView();
     QuickBridgeAdminSessionService.requireValidSession(sessionToken);
     ConnectorConfig cfg = getConfig(connectorKey);
@@ -41,7 +44,10 @@ public with sharing class ConnectorConfigService {
     return getConfig(connectorKey, false);
   }
 
-  public static ConnectorConfig getConfig(String connectorKey, Boolean includeLegacyForMigration) {
+  public static ConnectorConfig getConfig(
+    String connectorKey,
+    Boolean includeLegacyForMigration
+  ) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
     );
@@ -56,7 +62,10 @@ public with sharing class ConnectorConfigService {
     config.label = descriptor.label;
     config.values = new Map<String, String>();
     hydrateFromNormalizedConfig(config, descriptor);
-    if (includeLegacyForMigration == true && config.fromNormalizedConfig != true) {
+    if (
+      includeLegacyForMigration == true &&
+      config.fromNormalizedConfig != true
+    ) {
       hydrateFromLegacyConfig(config, descriptor);
     }
     return config;
@@ -67,10 +76,18 @@ public with sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfigForMigration(String connectorKey) {
-    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(connectorKey);
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
+      connectorKey
+    );
     if (descriptor == null) {
-      throw new AuraHandledException('Unsupported QuickBridge connector: ' + connectorKey);
+      throw new AuraHandledException(
+        'Unsupported QuickBridge connector: ' + connectorKey
+      );
     }
+    ConnectorConfig config = new ConnectorConfig();
+    config.connectorKey = descriptor.connectorKey;
+    config.label = descriptor.label;
+    config.values = new Map<String, String>();
     return getConfig(connectorKey, true);
   }
 
@@ -155,20 +172,28 @@ public with sharing class ConnectorConfigService {
       );
     }
     ConnectorRegistryService.ConfigFieldDescriptor fieldDescriptor;
+    String normalizedFieldKey = ConnectorRegistryService.normalize(fieldKey);
     for (
       ConnectorRegistryService.ConfigFieldDescriptor field : ConnectorRegistryService.configFieldsFor(
         descriptor.connectorKey
       )
     ) {
-      if (field.fieldKey == fieldKey) {
+      // Match on fieldKey or legacyFieldApiName — mdt entries use fieldKey (e.g. 'clientSecretRef')
+      // while editableFields entries use the legacy API name (e.g. 'FedEx_Client_Secret__c').
+      if (
+        ConnectorRegistryService.normalize(field.fieldKey) == normalizedFieldKey ||
+        ConnectorRegistryService.normalize(field.legacyFieldApiName) == normalizedFieldKey
+      ) {
         fieldDescriptor = field;
         break;
       }
     }
-    if (
-      (fieldDescriptor != null && fieldDescriptor.secret == true) ||
-      isSecretField(fieldKey)
-    ) {
+    // Fields explicitly registered in the connector's configFields are sanctioned for saving.
+    // Only block secret-named fields that have no registry entry at all (submitted outside
+    // the normal UI flow). Registry-listed fields with secret=true are stored as plain values
+    // when the admin has explicitly added them to editableFields.
+    Boolean fieldInRegistry = fieldDescriptor != null;
+    if (!fieldInRegistry && isSecretField(fieldKey)) {
       throw new AuraHandledException(
         'Secret values must be stored in Named Credentials or External Credentials.'
       );
@@ -281,11 +306,17 @@ public with sharing class ConnectorConfigService {
         Connector_Instance__c = :instanceRecord.Id
         OR Connector_Key__c = :descriptor.connectorKey
     ]) {
+      // Include the value if: it's a Named/External Credential reference, OR
+      // the field name doesn't look like a secret, OR it's explicitly registered
+      // in the connector's configFields (sanctioned by the registry admin).
+      String rowFieldKey = valueRow.Field_Key__c;
+      Boolean isRegistered = isFieldInRegistry(descriptor, rowFieldKey);
       if (
         valueRow.Is_Secret_Reference__c == true ||
-        !isSecretField(valueRow.Field_Key__c)
+        !isSecretField(rowFieldKey) ||
+        isRegistered
       ) {
-        config.values.put(valueRow.Field_Key__c, valueRow.Value__c);
+        config.values.put(rowFieldKey, valueRow.Value__c);
       }
     }
   }
@@ -451,5 +482,32 @@ public with sharing class ConnectorConfigService {
       normalized.contains('password') ||
       normalized.contains('privatekey') ||
       normalized.contains('clientsecret');
+  }
+
+  // Public alias so PaymentMetadataService can reuse this check on the read path.
+  public static Boolean isFieldInRegistryPublic(
+    ConnectorRegistryService.ConnectorDescriptor descriptor,
+    String fieldName
+  ) {
+    return isFieldInRegistry(descriptor, fieldName);
+  }
+
+  // Returns true if fieldName matches any configField entry by fieldKey or legacyFieldApiName.
+  // Registry-listed fields are sanctioned for plain-value storage regardless of their name.
+  private static Boolean isFieldInRegistry(
+    ConnectorRegistryService.ConnectorDescriptor descriptor,
+    String fieldName
+  ) {
+    if (descriptor == null || String.isBlank(fieldName)) return false;
+    String normalized = ConnectorRegistryService.normalize(fieldName);
+    for (ConnectorRegistryService.ConfigFieldDescriptor field : ConnectorRegistryService.configFieldsFor(descriptor.connectorKey)) {
+      if (
+        ConnectorRegistryService.normalize(field.fieldKey) == normalized ||
+        ConnectorRegistryService.normalize(field.legacyFieldApiName) == normalized
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 }

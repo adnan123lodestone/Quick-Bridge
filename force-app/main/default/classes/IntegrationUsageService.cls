@@ -1,4 +1,6 @@
 public without sharing class IntegrationUsageService {
+  public class UsageLimitException extends Exception {}
+
   private static final Integer EXPIRING_SOON_DAYS = 7;
   private static final List<String> PRODUCT_KEYS = registryProductKeys();
   private static final Map<String, ProductInfo> PRODUCT_INFO_BY_KEY = registryProductInfo();
@@ -79,7 +81,7 @@ public without sharing class IntegrationUsageService {
     }
 
     if (currentCount + (units == null ? 1 : units) > taskLimit) {
-      throw new AuraHandledException(
+      throw new UsageLimitException(
         'Task limit reached for ' +
           productLabel +
           '. Please upgrade or renew your plan.'

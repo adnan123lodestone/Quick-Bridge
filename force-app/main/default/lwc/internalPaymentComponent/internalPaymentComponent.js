@@ -1,7 +1,7 @@
 import { LightningElement, api } from "lwc";
-import getCheckoutProviders from "@salesforce/apex/PaymentCheckoutController.getCheckoutProviders";
-import initializePayment from "@salesforce/apex/PaymentCheckoutController.initializePayment";
-import executePayment from "@salesforce/apex/PaymentCheckoutController.executePayment";
+import getCheckoutProviders from "@salesforce/apex/PaymentCheckoutGateway.getCheckoutProviders";
+import initializePaymentJson from "@salesforce/apex/PaymentCheckoutGateway.initializePaymentJson";
+import executePaymentJson from "@salesforce/apex/PaymentCheckoutGateway.executePaymentJson";
 import CardPayment_lables from "@salesforce/label/c.CardPayment_lables";
 
 let acceptJsPromise;
@@ -578,6 +578,30 @@ export default class PaymentComponent extends LightningElement {
     return !Number.isNaN(amount) && amount > 0;
   }
 
+  async initializePayment(request) {
+    const responseJson = await initializePaymentJson({
+      requestJson: JSON.stringify(request || {})
+    });
+    return this.parsePaymentResponse(responseJson);
+  }
+
+  async executePayment(request) {
+    const responseJson = await executePaymentJson({
+      requestJson: JSON.stringify(request || {})
+    });
+    return this.parsePaymentResponse(responseJson);
+  }
+
+  parsePaymentResponse(responseJson) {
+    if (!responseJson) return {};
+    if (typeof responseJson === "object") return responseJson;
+    try {
+      return JSON.parse(responseJson);
+    } catch {
+      throw new Error("Payment gateway returned an invalid response.");
+    }
+  }
+
   async handleAuthorizeNetSubmit(resolvedAmount) {
     const paymentDetails = this.collectPaymentDetails(resolvedAmount);
     if (this.errorReturnObj) {
@@ -589,21 +613,19 @@ export default class PaymentComponent extends LightningElement {
     const opaqueData = await this.tokenizePaymentData(config, paymentDetails);
     this.clearSensitiveFields();
 
-    const response = await executePayment({
-      request: {
-        providerKey: this.selectedProvider,
-        amount: Number(resolvedAmount),
-        orderId: this.orderId || null,
-        dataDescriptor: opaqueData.dataDescriptor,
-        dataValue: opaqueData.dataValue,
-        fullName: paymentDetails.cardName,
-        address: paymentDetails.cardAddressOne,
-        city: paymentDetails.cardCity,
-        state: paymentDetails.cardState,
-        zip: paymentDetails.cardZipCode,
-        country: paymentDetails.cardCountry,
-        transactionType: "authCaptureTransaction"
-      }
+    const response = await this.executePayment({
+      providerKey: this.selectedProvider,
+      amount: Number(resolvedAmount),
+      orderId: this.orderId || null,
+      dataDescriptor: opaqueData.dataDescriptor,
+      dataValue: opaqueData.dataValue,
+      fullName: paymentDetails.cardName,
+      address: paymentDetails.cardAddressOne,
+      city: paymentDetails.cardCity,
+      state: paymentDetails.cardState,
+      zip: paymentDetails.cardZipCode,
+      country: paymentDetails.cardCountry,
+      transactionType: "authCaptureTransaction"
     });
 
     if (!response?.success || !response?.transId) {
@@ -637,19 +659,24 @@ export default class PaymentComponent extends LightningElement {
     }
 
     this.logStripeStep("Creating Stripe PaymentMethod");
+    const billingAddress = {};
+    if (paymentDetails.cardAddressOne)
+      billingAddress.line1 = paymentDetails.cardAddressOne;
+    if (paymentDetails.cardCity) billingAddress.city = paymentDetails.cardCity;
+    if (paymentDetails.cardState)
+      billingAddress.state = paymentDetails.cardState;
+    if (paymentDetails.cardZipCode)
+      billingAddress.postal_code = paymentDetails.cardZipCode;
+    if (paymentDetails.cardCountry)
+      billingAddress.country = paymentDetails.cardCountry;
+    const billingDetails = {};
+    if (paymentDetails.cardName) billingDetails.name = paymentDetails.cardName;
+    if (Object.keys(billingAddress).length > 0)
+      billingDetails.address = billingAddress;
     const stripeResponse = await this.stripeInstance.createPaymentMethod({
       type: "card",
       card: this.stripeCardElement,
-      billing_details: {
-        name: paymentDetails.cardName,
-        address: {
-          line1: paymentDetails.cardAddressOne,
-          city: paymentDetails.cardCity,
-          state: paymentDetails.cardState,
-          postal_code: paymentDetails.cardZipCode,
-          country: paymentDetails.cardCountry
-        }
-      }
+      billing_details: billingDetails
     });
 
     if (stripeResponse?.error) {
@@ -666,20 +693,18 @@ export default class PaymentComponent extends LightningElement {
     );
     this.logStripeStep("Calling Apex StripePaymentService.processPayment");
 
-    const response = await executePayment({
-      request: {
-        providerKey: this.selectedProvider,
-        amount: Number(resolvedAmount),
-        orderId: this.orderId || null,
-        paymentMethodId: stripeResponse?.paymentMethod?.id,
-        fullName: paymentDetails.cardName,
-        address: paymentDetails.cardAddressOne,
-        city: paymentDetails.cardCity,
-        state: paymentDetails.cardState,
-        zip: paymentDetails.cardZipCode,
-        country: paymentDetails.cardCountry,
-        currencyCode: "usd"
-      }
+    const response = await this.executePayment({
+      providerKey: this.selectedProvider,
+      amount: Number(resolvedAmount),
+      orderId: this.orderId || null,
+      paymentMethodId: stripeResponse?.paymentMethod?.id,
+      fullName: paymentDetails.cardName,
+      address: paymentDetails.cardAddressOne,
+      city: paymentDetails.cardCity,
+      state: paymentDetails.cardState,
+      zip: paymentDetails.cardZipCode,
+      country: paymentDetails.cardCountry,
+      currencyCode: "usd"
     });
 
     this.logStripeStep(
@@ -697,12 +722,10 @@ export default class PaymentComponent extends LightningElement {
   }
 
   async handleHostedSubmit(resolvedAmount) {
-    const response = await initializePayment({
-      request: {
-        providerKey: this.selectedProvider,
-        amount: Number(resolvedAmount),
-        orderId: this.orderId || null
-      }
+    const response = await this.initializePayment({
+      providerKey: this.selectedProvider,
+      amount: Number(resolvedAmount),
+      orderId: this.orderId || null
     });
     if (!response?.success) {
       this.dispatchError(
@@ -1289,19 +1312,17 @@ export default class PaymentComponent extends LightningElement {
         const resolvedAmount = this.resolveAmount(this.amount);
         this.isSubmitting = true;
 
-        const response = await initializePayment({
-          request: {
-            providerKey: this.selectedProvider,
-            amount: Number(resolvedAmount),
-            orderId: this.orderId || null,
-            fullName: this.paymentForm.cardName,
-            address: this.paymentForm.cardAddressOne,
-            city: this.paymentForm.cardCity,
-            state: this.paymentForm.cardState,
-            zip: this.paymentForm.cardZipCode,
-            country: this.paymentForm.cardCountry,
-            currencyCode: "USD"
-          }
+        const response = await this.initializePayment({
+          providerKey: this.selectedProvider,
+          amount: Number(resolvedAmount),
+          orderId: this.orderId || null,
+          fullName: this.paymentForm.cardName,
+          address: this.paymentForm.cardAddressOne,
+          city: this.paymentForm.cardCity,
+          state: this.paymentForm.cardState,
+          zip: this.paymentForm.cardZipCode,
+          country: this.paymentForm.cardCountry,
+          currencyCode: "USD"
         });
 
         if (!response?.success || !response?.paypalOrderId)
@@ -1310,12 +1331,10 @@ export default class PaymentComponent extends LightningElement {
       },
       onApprove: async (data) => {
         try {
-          const response = await executePayment({
-            request: {
-              providerKey: this.selectedProvider,
-              paypalOrderId: data?.orderID,
-              orderId: this.orderId || null
-            }
+          const response = await this.executePayment({
+            providerKey: this.selectedProvider,
+            paypalOrderId: data?.orderID,
+            orderId: this.orderId || null
           });
           if (!response?.success || !response?.transId) {
             this.dispatchError(response?.message || "PayPal capture failed.");

@@ -770,57 +770,21 @@ global without sharing class PaymentWebhookRestResource {
     }
 
     private static String getStripeWebhookSigningSecret() {
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('Stripe');
-        } catch (Exception e) {}
-
-        // if (Test.isRunningTest()) {
-        //     return config == null || String.isBlank(config.Stripe_Webhook_Signing_Secret__c)
-        //         ? TEST_STRIPE_WEBHOOK_SIGNING_SECRET
-        //         : config.Stripe_Webhook_Signing_Secret__c;
-        // }
-        
-        if (Test.isRunningTest()) {
-            return TEST_STRIPE_WEBHOOK_SIGNING_SECRET; 
-        }
-        return config == null ? null : config.Stripe_Webhook_Signing_Secret__c;
+        return StripeConfigService.getWebhookSigningSecret();
     }
 
     private static String getAuthorizeNetWebhookSigningKey() {
-        Quickbridge_Config__mdt config;
-        try {
-            config = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
-        } catch (Exception e) {}
-
-        if (Test.isRunningTest()) {
-            return TEST_AUTHORIZE_NET_WEBHOOK_SIGNING_KEY;
-        }
-
-        return config == null ? null : config.AuthorizeNet_Webhook_Signing_Key__c;
+        return AuthorizeNetConfigService.getWebhookSigningKey();
     }
 
     private static String getPayPalWebhookId() {
-        if (Test.isRunningTest()) {
-            return TEST_PAYPAL_WEBHOOK_ID;
-        }
-
-        PayPal_Config__mdt config;
-        try {
-            config = PayPal_Config__mdt.getInstance('Default');
-        } catch (Exception e) {}
-
-        return config == null ? null : config.WebhookId__c;
+        return PayPalConfigService.getWebhookId();
     }
 
     private static String getPayPalBaseEndpoint() {
-        PayPal_Config__mdt config;
-        try {
-            config = PayPal_Config__mdt.getInstance('Default');
-        } catch (Exception e) {}
-
-        Boolean useSandbox = config != null && config.UseSandbox__c;
-        return useSandbox ? PAYPAL_SANDBOX_API_ENDPOINT : PAYPAL_PRODUCTION_API_ENDPOINT;
+        return PayPalConfigService.getUseSandbox()
+            ? PAYPAL_SANDBOX_API_ENDPOINT
+            : PAYPAL_PRODUCTION_API_ENDPOINT;
     }
 
     private static String fetchPayPalAccessToken(String baseEndpoint) {
