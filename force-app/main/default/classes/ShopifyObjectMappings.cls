@@ -135,4 +135,15 @@ public class ShopifyObjectMappings {
         if (!dynamic.isEmpty()) return dynamic;
         return new Map<String, String>(LINE_ITEM_FALLBACK);
     }
+
+    // OrderItem → Shopify Line Item (outbound): SF field → Shopify field
+    public static Map<String, String> getOrderItemToLineItemMapping() {
+        Map<String, String> dynamic = getDynamicMapping('OrderItem', 'SF to Shopify');
+        if (!dynamic.isEmpty()) return reverseMapping(dynamic);
+        // Only quantity and price are directly mappable; title and sku are handled separately
+        return new Map<String, String>{
+            'Quantity'   => 'quantity',
+            'UnitPrice'  => 'price'
+        };
+    }
 }

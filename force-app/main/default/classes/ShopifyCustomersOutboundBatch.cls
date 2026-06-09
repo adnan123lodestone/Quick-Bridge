@@ -4,22 +4,43 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
     private Boolean isInitialSync;
     private Integer successCount = 0;
     private Integer errorCount = 0;
+    private Map<String, String> fieldMap;
+    private String shopifyIdField;
+
+    private Set<Id> rateLimitedIds = new Set<Id>();
+    private Integer retryAfterSeconds = 60;
+    private Boolean hitRateLimit = false;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
 
     global ShopifyCustomersOutboundBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
+        this.fieldMap = ShopifyObjectMappings.getAccountToCustomerMapping();
+        this.shopifyIdField = resolveFieldName(Schema.SObjectType.Account.fields.getMap(), 'shopify_id__c');
     }
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
-        return Database.getQueryLocator([
-            SELECT Id, PersonEmail, FirstName, LastName, Phone, Shopify_ID__c,
-                   Tax_Exempt__c, Shopify_Tags__c,
-                   BillingStreet, BillingCity, BillingState, BillingPostalCode, BillingCountry
-            FROM Account
-            WHERE Id IN :recordIds
-        ]);
+        Map<String, Schema.SObjectField> accountFields = Schema.SObjectType.Account.fields.getMap();
+        // Bare standard field keys — these resolve directly regardless of namespace
+        Set<String> fieldSet = new Set<String>{
+            'id', 'personemail', 'firstname', 'lastname', 'phone',
+            'billingstreet', 'billingcity', 'billingstate', 'billingpostalcode', 'billingcountry'
+        };
+        for (String sfField : fieldMap.keySet()) {
+            if (accountFields.containsKey(sfField.toLowerCase())) {
+                fieldSet.add(sfField.toLowerCase());
+            }
+        }
+        // Resolve bare keys to canonical API names
+        Set<String> selected = new Set<String>{ shopifyIdField };
+        for (String key : fieldSet) {
+            Schema.SObjectField f = accountFields.get(key);
+            if (f != null) selected.add(f.getDescribe().getName());
+        }
+        String soql = 'SELECT ' + String.join(new List<String>(selected), ', ') +
+                      ' FROM Account WHERE Id IN :recordIds';
+        return Database.getQueryLocator(soql);
     }
 
     global void execute(Database.BatchableContext bc, List<sObject> scope) {
@@ -29,17 +50,24 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
         }
 
         IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
-
-        Map<String, String> fieldMap = ShopifyObjectMappings.getAccountToCustomerMapping();
         List<Account> toUpdate = new List<Account>();
 
+        Boolean rateLimited = false;
         for (sObject sobj : scope) {
             Account acc = (Account) sobj;
+            if (rateLimited) {
+                rateLimitedIds.add(acc.Id);
+                continue;
+            }
             try {
                 Map<String, Object> payload = buildCustomerPayload(acc, fieldMap);
-                String responseId = upsertToShopify(acc.Shopify_ID__c, payload);
-                if (String.isNotBlank(responseId)) {
-                    acc.Shopify_ID__c = responseId;
+                String responseId = upsertToShopify((String) acc.get(shopifyIdField), payload);
+                if (responseId == '__rate_limited__') {
+                    rateLimited = true;
+                    hitRateLimit = true;
+                    rateLimitedIds.add(acc.Id);
+                } else if (String.isNotBlank(responseId)) {
+                    acc.put(shopifyIdField, responseId);
                     toUpdate.add(acc);
                     successCount++;
                 }
@@ -73,6 +101,14 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
         System.debug('ShopifyCustomersOutboundBatch complete. Success: ' + successCount + ' | Errors: ' + errorCount);
         IntegrationUsageService.recordSuccessfulRecordSync('Shopify', successCount);
         IntegrationUsageService.incrementEndpointUsage('Shopify', successCount + errorCount);
+        if (hitRateLimit && !rateLimitedIds.isEmpty()) {
+            Integer delayMinutes = (Integer) Math.max(1, Math.ceil(retryAfterSeconds / 60.0));
+            System.scheduleBatch(
+                new ShopifyCustomersOutboundBatch(rateLimitedIds, isInitialSync),
+                'ShopifyCustomersOutboundBatch_RateLimit_Retry_' + Datetime.now().getTime(),
+                delayMinutes
+            );
+        }
     }
 
     private Map<String, Object> buildCustomerPayload(Account acc, Map<String, String> fieldMap) {
@@ -97,15 +133,29 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
         return new Map<String, Object>{ 'customer' => customer };
     }
 
+    // Returns the canonical API name (with namespace if present) for a field looked up by bare local name.
+    private static String resolveFieldName(Map<String, Schema.SObjectField> fieldMap, String localName) {
+        Schema.SObjectField f = fieldMap.get(localName);
+        if (f == null) {
+            for (String key : fieldMap.keySet()) {
+                if (key.endsWith(localName) && !key.equals(localName)) {
+                    f = fieldMap.get(key);
+                    break;
+                }
+            }
+        }
+        return f?.getDescribe().getName();
+    }
+
     private String upsertToShopify(String existingShopifyId, Map<String, Object> payload) {
         String endpoint;
         String method;
 
         if (String.isNotBlank(existingShopifyId)) {
-            endpoint = 'callout:QuickBridgeTLG__Shopify_API/customers/' + existingShopifyId + '.json';
+            endpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/customers/' + existingShopifyId + '.json';
             method = 'PUT';
         } else {
-            endpoint = 'callout:QuickBridgeTLG__Shopify_API/customers.json';
+            endpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/customers.json';
             method = 'POST';
         }
 
@@ -123,6 +173,14 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
             return customer != null && customer.get('id') != null
                 ? String.valueOf(customer.get('id'))
                 : null;
+        }
+
+        if (res.getStatusCode() == 429) {
+            String retryAfterHeader = res.getHeader('Retry-After');
+            if (String.isNotBlank(retryAfterHeader)) {
+                try { retryAfterSeconds = Integer.valueOf(retryAfterHeader.trim()); } catch (Exception e) {}
+            }
+            return '__rate_limited__';
         }
 
         ErrorLogUtility.logCalloutFailure(

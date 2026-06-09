@@ -241,6 +241,12 @@ fieldset {
 }
 
 .btn-primary:hover { background-color: #1d4ed8; }
+.btn-primary:disabled,
+.btn-primary[disabled] {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.65;
+}
 
 .btn-secondary {
     background-color: #f1f5f9;
@@ -394,8 +400,14 @@ fieldset {
     transition: background 0.2s;
 }
 
-.btn-primary:hover { 
-    background-color: #1a6fd6; 
+.btn-primary:hover {
+    background-color: #1a6fd6;
+}
+.btn-primary:disabled,
+.btn-primary[disabled] {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.65;
 }
 
 .btn-secondary {

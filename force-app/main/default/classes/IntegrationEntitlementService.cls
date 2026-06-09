@@ -107,6 +107,15 @@ public with sharing class IntegrationEntitlementService {
     return refreshCheckoutEntitlement(username, password, true);
   }
 
+  @AuraEnabled
+  public static void setFailPolicyOpen() {
+    Integration_Entitlement__c rec = loadCache(CHECKOUT_CACHE_KEY);
+    if (rec != null && rec.Fail_Policy__c != 'Fail Open') {
+      rec.Fail_Policy__c = 'Fail Open';
+      update rec;
+    }
+  }
+
   public static void requestCheckoutRefresh() {
     if (System.isBatch() || System.isFuture() || System.isQueueable()) {
       return;
@@ -205,7 +214,7 @@ public with sharing class IntegrationEntitlementService {
   }
 
   private static String defaultFailPolicy() {
-    return 'Fail Closed';
+    return 'Fail Open';
   }
 
   private static Boolean isSuccess(String responseBody) {

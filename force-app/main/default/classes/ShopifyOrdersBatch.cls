@@ -34,7 +34,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             Integer daysAgo = calloutControl.Days__c != null ? Integer.valueOf(calloutControl.Days__c) : 0;
             
             if (String.isBlank(this.endpoint)) {
-                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/orders.json?status=any';
+                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/orders.json?status=any';
                 if (daysAgo > 0) {
                     finalEndpoint += '&updated_at_min=' + getPastDateTimeFormatted(daysAgo);
                 }
@@ -91,22 +91,31 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             Map<String, Account> existingByEmail     = new Map<String, Account>();
             Map<String, Account> existingByShopifyId = new Map<String, Account>();
             Map<String, String>  locationIdMap       = new Map<String, String>();
-            
+
+            Map<String, String> customerFieldMap = ShopifyObjectMappings.getCustomerToAccountMapping();
+            Set<String> acctFields = new Set<String>{'Id', 'PersonEmail', 'Shopify_ID__c', 'RecordTypeId'};
+            acctFields.addAll(customerFieldMap.values());
+            String acctFieldList = String.join(new List<String>(acctFields), ', ');
+
             if (!locationIdSet.isEmpty()) {
                 for (Schema.Location loc : [SELECT Id, Name, Shopify_ID__c FROM Location WHERE Shopify_ID__c IN :locationIdSet]) {
                     if (loc.Shopify_ID__c != null) locationIdMap.put(loc.Shopify_ID__c, loc.Id);
                 }
             }
-            
+
             if (!emailSet.isEmpty()) {
-                for (Account acc : [SELECT Id, PersonEmail, Shopify_ID__c FROM Account WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet]) {
-                    if (acc.PersonEmail != null) existingByEmail.put(acc.PersonEmail.toLowerCase(), acc);
+                for (Account acc : Database.query(
+                    'SELECT ' + acctFieldList + ' FROM Account WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet'
+                )) {
+                    if (acc.get('PersonEmail') != null) existingByEmail.put(((String) acc.get('PersonEmail')).toLowerCase(), acc);
                 }
             }
-            
+
             if (!shopifyIdSet.isEmpty()) {
-                for (Account acc : [SELECT Id, PersonEmail, Shopify_ID__c FROM Account WHERE RecordTypeId = :personAccountRTId AND Shopify_ID__c IN :shopifyIdSet]) {
-                    if (acc.Shopify_ID__c != null) existingByShopifyId.put(acc.Shopify_ID__c, acc);
+                for (Account acc : Database.query(
+                    'SELECT ' + acctFieldList + ' FROM Account WHERE RecordTypeId = :personAccountRTId AND Shopify_ID__c IN :shopifyIdSet'
+                )) {
+                    if (acc.get('Shopify_ID__c') != null) existingByShopifyId.put((String) acc.get('Shopify_ID__c'), acc);
                 }
             }
             
@@ -157,19 +166,27 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             Map<String, String> lineItemFieldMap = ShopifyObjectMappings.getLineItemMapping();
             
             List<Order> ordersToUpsert    = new List<Order>();
-            Map<String, Id> emailToAccountId = new Map<String, Id>();
+            Map<String, Id> emailToAccountId    = new Map<String, Id>();
+            Map<String, Id> shopifyIdToAccountId = new Map<String, Id>();
             for (Account acc : accountsToUpsert) {
                 if (String.isNotBlank(acc.PersonEmail)) {
                     emailToAccountId.put(acc.PersonEmail.toLowerCase(), acc.Id);
                 }
+                if (String.isNotBlank((String) acc.get('Shopify_ID__c'))) {
+                    shopifyIdToAccountId.put((String) acc.get('Shopify_ID__c'), acc.Id);
+                }
             }
-            
+
             for (Object obj : orders) {
                 Map<String, Object> orderMap = (Map<String, Object>) obj;
                 Map<String, Object> customer = (Map<String, Object>) orderMap.get('customer');
                 if (customer == null) continue;
-                String email     = (String) customer.get('email');
-                Id     accountId = email != null ? emailToAccountId.get(email.toLowerCase()) : null;
+                String email      = (String) customer.get('email');
+                String shopifyId  = customer.get('id') != null ? String.valueOf(customer.get('id')) : null;
+                Id accountId = email != null ? emailToAccountId.get(email.toLowerCase()) : null;
+                if (accountId == null && String.isNotBlank(shopifyId)) {
+                    accountId = shopifyIdToAccountId.get(shopifyId);
+                }
                 if (accountId == null) continue;
                 
                 Order ord = new Order();
@@ -454,7 +471,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
     
     public static void syncOrderFromShopify(String orderId) {
         HttpRequest req = new HttpRequest();
-        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/orders/' + orderId + '.json');
+        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/orders/' + orderId + '.json');
         req.setMethod('GET');
         HttpResponse res = new Http().send(req);
         if (res.getStatusCode() == 200) {
@@ -469,14 +486,19 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
 
     private static Order buildOrderFromShopifyOrder(Map<String, Object> orderData) {
         Map<String, Object> customer = (Map<String, Object>) orderData.get('customer');
-        String email = (String) customer.get('email');
+        String shopifyCustomerId = customer != null && customer.get('id') != null ? String.valueOf(customer.get('id')) : null;
+        String email = customer != null ? (String) customer.get('email') : null;
         Id accountId = null;
-        if (String.isNotBlank(email)) {
+        if (String.isNotBlank(shopifyCustomerId)) {
+            List<Account> acc = [SELECT Id FROM Account WHERE Shopify_ID__c = :shopifyCustomerId LIMIT 1];
+            if (!acc.isEmpty()) accountId = acc[0].Id;
+        }
+        if (accountId == null && String.isNotBlank(email)) {
             List<Account> acc = [SELECT Id FROM Account WHERE PersonEmail = :email LIMIT 1];
             if (!acc.isEmpty()) accountId = acc[0].Id;
         }
         if (accountId == null) {
-            throw new CalloutException('No matching Salesforce Account found for email: ' + email);
+            throw new CalloutException('No matching Salesforce Account found for Shopify customer id: ' + shopifyCustomerId + ' / email: ' + email);
         }
 
         Order ord = new Order();

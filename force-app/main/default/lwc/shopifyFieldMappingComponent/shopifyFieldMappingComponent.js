@@ -217,7 +217,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
         ? this.sfFieldOptions.filter((option) =>
             this.isTypeMatch(option.type, shopifyType)
           )
-        : this.sfFieldOptions;
+        : [];
       const currentSfFieldValid =
         row.sfField &&
         availableSfOptions.some((option) => option.value === row.sfField);
@@ -478,7 +478,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   isTypeMatch(sfType, shopifyType) {
-    if (!shopifyType || !sfType) return true; // permissive for Shopify — types aren't strictly enforced
+    if (!shopifyType || !sfType) return false;
     return this.normalizeType(sfType) === this.normalizeType(shopifyType);
   }
 

@@ -4,9 +4,6 @@ public with sharing class PaymentInvoiceMappingController {
     private static final String SETUP_MARKER = '__setup__';
     private static final Set<String> SUPPORTED_GATEWAYS = new Set<String>{ 'stripe', 'authorizenet', 'paypal' };
     private static final Set<String> CUSTOMER_OBJECTS = new Set<String>{ 'Account', 'Contact' };
-    private static final Set<String> IGNORED_FIELD_NAMES = new Set<String>{
-        'ownerid', 'recordtypeid', 'currencyisocode', 'createdbyid', 'lastmodifiedbyid', 'systemmodstamp'
-    };
 
     public class FieldOption {
         @AuraEnabled public String label { get; set; }
@@ -167,7 +164,7 @@ public with sharing class PaymentInvoiceMappingController {
         for (Schema.SObjectField fieldToken : objectType.getDescribe().fields.getMap().values()) {
             Schema.DescribeFieldResult fieldDescribe = fieldToken.getDescribe();
             String fieldName = fieldDescribe.getName();
-            if (IGNORED_FIELD_NAMES.contains(fieldName.toLowerCase())) {
+            if (!MappingFieldEligibilityService.isSalesforceFieldAllowed(fieldName)) {
                 continue;
             }
             if (!fieldDescribe.isAccessible()) {
@@ -194,7 +191,7 @@ public with sharing class PaymentInvoiceMappingController {
         for (Schema.SObjectField fieldToken : fieldsByName.values()) {
             Schema.DescribeFieldResult fieldDescribe = fieldToken.getDescribe();
             String fieldName = fieldDescribe.getName();
-            if (!fieldDescribe.isAccessible() || IGNORED_FIELD_NAMES.contains(fieldName.toLowerCase())) {
+            if (!fieldDescribe.isAccessible() || !MappingFieldEligibilityService.isSalesforceFieldAllowed(fieldName)) {
                 continue;
             }
             Schema.DisplayType fieldType = fieldDescribe.getType();
@@ -445,6 +442,15 @@ public with sharing class PaymentInvoiceMappingController {
         config.sourceObject = resolveObjectApiName(config.sourceObject);
         config.invoiceObject = resolveObjectApiName(config.invoiceObject);
         config.transactionObject = resolveObjectApiName(config.transactionObject);
+        MappingFieldEligibilityService.assertNoBlockedSalesforceFields(new List<String>{
+            config.sourceCustomerLookupField,
+            config.sourceEmailField,
+            config.invoiceSourceLookupField,
+            config.transactionSourceLookupField
+        });
+        MappingFieldEligibilityService.assertNoBlockedSalesforceFields(sfFieldsFrom(config.sourceMappings));
+        MappingFieldEligibilityService.assertNoBlockedSalesforceFields(sfFieldsFrom(config.invoiceMappings));
+        MappingFieldEligibilityService.assertNoBlockedSalesforceFields(sfFieldsFrom(config.transactionMappings));
         validateCustomerLookup(config.sourceObject, config.sourceCustomerLookupField, config);
         validateTargetLookup(config.invoiceObject, config.sourceObject, config.invoiceSourceLookupField, 'invoice');
         validateTargetLookup(config.transactionObject, config.sourceObject, config.transactionSourceLookupField, 'payment transaction');
@@ -460,6 +466,15 @@ public with sharing class PaymentInvoiceMappingController {
             : new Set<String>{ 'gatewayEventId', 'gatewayEventType', 'gatewayAmount', 'gatewayReferenceNumber', 'gatewayTransactionId', 'paymentType', 'stripeLiveMode' };
         validateRequiredSemanticMappings(config.invoiceMappings, requiredInvoiceFields, 'invoice record', false);
         validateRequiredSemanticMappings(config.transactionMappings, requiredTransactionFields, 'payment transaction', false);
+    }
+
+    private static List<String> sfFieldsFrom(List<MappingRow> rows) {
+        List<String> result = new List<String>();
+        if (rows == null) return result;
+        for (MappingRow r : rows) {
+            if (String.isNotBlank(r.sourceField)) result.add(r.sourceField);
+        }
+        return result;
     }
 
     private static void validateCustomerLookup(String objectApiName, String fieldName, GatewayMappingConfig config) {

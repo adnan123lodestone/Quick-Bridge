@@ -56,7 +56,8 @@ public with sharing class FieldMappingController {
       for (String fieldName : fieldMap.keySet()) {
         Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName)
           .getDescribe();
-        if (fieldDescribe.isAccessible()) {
+        if (fieldDescribe.isAccessible()
+            && MappingFieldEligibilityService.isSalesforceFieldAllowed(fieldDescribe.getName())) {
           fields.add(
             new FieldWrapper(
               fieldDescribe.getLabel(),
@@ -259,6 +260,32 @@ public with sharing class FieldMappingController {
   }
 
   @AuraEnabled
+  public static Integer deactivateBlockedFieldMappings() {
+    List<Field_Mapping__mdt> active = [
+      SELECT DeveloperName, SF_Field__c
+      FROM Field_Mapping__mdt
+      WHERE Is_Active__c = true
+    ];
+    String nsPrefix = getNamespacePrefix();
+    Metadata.DeployContainer container = new Metadata.DeployContainer();
+    Integer count = 0;
+    for (Field_Mapping__mdt rec : active) {
+      if (!MappingFieldEligibilityService.isSalesforceFieldAllowed(rec.SF_Field__c)) {
+        Metadata.CustomMetadata md = new Metadata.CustomMetadata();
+        md.fullName = nsPrefix + 'Field_Mapping__mdt.' + rec.DeveloperName;
+        md.label = rec.DeveloperName;
+        addCustomMetadataValue(md, 'Is_Active__c', false);
+        container.addMetadata(md);
+        count++;
+      }
+    }
+    if (count > 0 && !Test.isRunningTest()) {
+      Metadata.Operations.enqueueDeployment(container, null);
+    }
+    return count;
+  }
+
+  @AuraEnabled
   public static String saveFieldMappings(
     String integration,
     String sfObject,
@@ -323,6 +350,10 @@ public with sharing class FieldMappingController {
         requestedMappings.add(new MappingRow(sfField, extField, syncDirection));
         requestedExternalFields.add(extField);
       }
+
+      List<String> sfFieldNames = new List<String>();
+      for (MappingRow row : requestedMappings) { sfFieldNames.add(row.sfField); }
+      MappingFieldEligibilityService.assertNoBlockedSalesforceFields(sfFieldNames);
 
       validateObjectDirectionAvailability(
         integration,
@@ -1812,6 +1843,10 @@ public with sharing class FieldMappingController {
       if (requestedDirection == null) {
         requestedDirection = 'SF to Carrier';
       }
+
+      List<String> carrierSfFields = new List<String>();
+      for (MappingRow row : requestedMappings) { carrierSfFields.add(row.sfField); }
+      MappingFieldEligibilityService.assertNoBlockedSalesforceFields(carrierSfFields);
 
       Map<String, QBFieldDefinition> fieldDefs = getCarrierFieldDefinitions(
         integration,

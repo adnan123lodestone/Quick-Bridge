@@ -4,24 +4,76 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
     private Boolean isInitialSync;
     private Integer successCount = 0;
     private Integer errorCount = 0;
+    private Map<String, String> fieldMap;
+    private String shopifyIdField;
+    private String acctShopifyIdField;
+
+    // Rate-limit state — populated when Shopify returns 429 mid-execute
+    private Set<Id> rateLimitedIds = new Set<Id>();
+    private Integer retryAfterSeconds = 60;
+    private Boolean hitRateLimit = false;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
+
+    // Lightweight error context collected during callout loop, flushed after all callouts.
+    private class PendingError {
+        String method;
+        Exception ex;
+        String message;
+        Integer httpStatus;
+        Id recordId;
+        Boolean isCallout;
+
+        PendingError(String method, Exception ex, Id recordId) {
+            this.method   = method;
+            this.ex       = ex;
+            this.recordId = recordId;
+            this.isCallout = false;
+        }
+
+        PendingError(String method, String message, Integer httpStatus, Id recordId) {
+            this.method     = method;
+            this.message    = message;
+            this.httpStatus = httpStatus;
+            this.recordId   = recordId;
+            this.isCallout  = true;
+        }
+    }
+
+    private Map<String, String> lineItemFieldMap;
 
     global ShopifyOrdersOutboundBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
+        this.fieldMap = ShopifyObjectMappings.getOrderToShopifyMapping();
+        this.lineItemFieldMap = ShopifyObjectMappings.getOrderItemToLineItemMapping();
+        this.shopifyIdField = resolveFieldName(Schema.SObjectType.Order.fields.getMap(), 'shopify_id__c');
+        this.acctShopifyIdField = resolveFieldName(Schema.SObjectType.Account.fields.getMap(), 'shopify_id__c');
     }
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
-        return Database.getQueryLocator([
-            SELECT Id, OrderReferenceNumber, EffectiveDate, Status, Shopify_ID__c,
-                   Financial_Status__c, Fulfillment_Status__c,
-                   Total_Amount__c, Total_Tax__c, Total_Discounts__c,
-                   Contact_Email__c, Cancel_Reason__c, Payment_Gateway__c,
-                   Account.PersonEmail, Account.Shopify_ID__c
-            FROM Order
-            WHERE Id IN :recordIds
-        ]);
+        Map<String, Schema.SObjectField> orderFields = Schema.SObjectType.Order.fields.getMap();
+        Set<String> fieldSet = new Set<String>{
+            'id', 'orderreferencenumber', 'effectivedate', 'status'
+        };
+        for (String sfField : fieldMap.keySet()) {
+            String lower = sfField.toLowerCase();
+            // Skip relationship paths (e.g. Account.PersonEmail) — handled via getSObject separately
+            if (!lower.contains('.') && orderFields.containsKey(lower)) {
+                fieldSet.add(lower);
+            }
+        }
+        Set<String> selected = new Set<String>{ shopifyIdField };
+        for (String key : fieldSet) {
+            Schema.SObjectField f = orderFields.get(key);
+            if (f != null) selected.add(f.getDescribe().getName());
+        }
+        String soql = 'SELECT ' + String.join(new List<String>(selected), ', ') +
+                      ', Account.PersonEmail, Account.' + acctShopifyIdField +
+                      ', (SELECT Id, Quantity, UnitPrice, Description,' +
+                      ' Product2.Name, Product2.StockKeepingUnit FROM OrderItems)' +
+                      ' FROM Order WHERE Id IN :recordIds';
+        return Database.getQueryLocator(soql);
     }
 
     global void execute(Database.BatchableContext bc, List<sObject> scope) {
@@ -32,31 +84,47 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
 
         IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
 
-        Map<String, String> fieldMap = ShopifyObjectMappings.getOrderToShopifyMapping();
-        List<Order> toUpdate = new List<Order>();
+        List<Order> toUpdate       = new List<Order>();
+        List<PendingError> errors  = new List<PendingError>();
 
+        // ── Phase 1: callouts only — no DML ──────────────────────────────────────
+        Boolean rateLimited = false;
         for (sObject sobj : scope) {
             Order ord = (Order) sobj;
+            if (rateLimited) {
+                rateLimitedIds.add(ord.Id);
+                continue;
+            }
             try {
                 Map<String, Object> payload = buildOrderPayload(ord, fieldMap);
-                String responseId = upsertToShopify(ord.Shopify_ID__c, payload);
-                if (String.isNotBlank(responseId)) {
-                    ord.Shopify_ID__c = responseId;
+                if (payload == null) {
+                    errorCount++;
+                    errors.add(new PendingError(
+                        'ShopifyOrdersOutboundBatch.execute',
+                        new IllegalArgumentException('Order has no line items and cannot be sent to Shopify'),
+                        ord.Id
+                    ));
+                    continue;
+                }
+                String responseId = upsertToShopify((String) ord.get(shopifyIdField), payload, errors, ord.Id);
+                if (responseId == '__rate_limited__') {
+                    rateLimited = true;
+                    hitRateLimit = true;
+                    rateLimitedIds.add(ord.Id);
+                } else if (String.isNotBlank(responseId)) {
+                    ord.put(shopifyIdField, responseId);
                     toUpdate.add(ord);
                     successCount++;
                 }
             } catch (Exception e) {
                 errorCount++;
-                ErrorLogUtility.logException(
-                    'Shopify',
-                    'ShopifyOrdersOutboundBatch.execute',
-                    e,
-                    'Order',
-                    ord == null ? null : ord.Id
-                );
+                errors.add(new PendingError(
+                    'ShopifyOrdersOutboundBatch.execute', e, ord == null ? null : ord.Id
+                ));
             }
         }
 
+        // ── Phase 2: DML — all callouts are finished ──────────────────────────────
         if (!toUpdate.isEmpty()) {
             Database.SaveResult[] updateResults = Database.update(toUpdate, false);
             ErrorLogUtility.logDmlResults(
@@ -69,14 +137,35 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
                 null
             );
         }
+
+        for (PendingError pe : errors) {
+            if (pe.isCallout) {
+                ErrorLogUtility.logCalloutFailure(
+                    'Shopify', pe.method, pe.message, pe.httpStatus, 'Order', pe.recordId
+                );
+            } else {
+                ErrorLogUtility.logException(
+                    'Shopify', pe.method, pe.ex, 'Order', pe.recordId
+                );
+            }
+        }
     }
 
     global void finish(Database.BatchableContext bc) {
         System.debug('ShopifyOrdersOutboundBatch complete. Success: ' + successCount + ' | Errors: ' + errorCount);
         IntegrationUsageService.recordSuccessfulRecordSync('Shopify', successCount);
         IntegrationUsageService.incrementEndpointUsage('Shopify', successCount + errorCount);
+        if (hitRateLimit && !rateLimitedIds.isEmpty()) {
+            Integer delayMinutes = (Integer) Math.max(1, Math.ceil(retryAfterSeconds / 60.0));
+            System.scheduleBatch(
+                new ShopifyOrdersOutboundBatch(rateLimitedIds, isInitialSync),
+                'ShopifyOrdersOutboundBatch_RateLimit_Retry_' + Datetime.now().getTime(),
+                delayMinutes
+            );
+        }
     }
 
+    // Returns null when the order has no usable line items (caller must skip the callout).
     private Map<String, Object> buildOrderPayload(Order ord, Map<String, String> fieldMap) {
         Map<String, Object> order = new Map<String, Object>();
 
@@ -92,7 +181,7 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
             order.put(shopifyPath, val);
         }
 
-        String accountShopifyId = (String) ord.getSObject('Account')?.get('Shopify_ID__c');
+        String accountShopifyId = (String) ord.getSObject('Account')?.get(acctShopifyIdField);
         String accountEmail = (String) ord.getSObject('Account')?.get('PersonEmail');
 
         if (String.isNotBlank(accountShopifyId)) {
@@ -101,18 +190,73 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
             order.put('email', accountEmail);
         }
 
+        List<Object> lineItems = new List<Object>();
+        List<OrderItem> items = ord.OrderItems;
+        if (items != null) {
+            for (OrderItem item : items) {
+                Map<String, Object> li = new Map<String, Object>();
+
+                // Apply dynamic field mappings (SF field → Shopify field)
+                for (String sfField : lineItemFieldMap.keySet()) {
+                    String shopifyField = lineItemFieldMap.get(sfField);
+                    Object val;
+                    try { val = item.get(sfField); } catch (Exception e) { continue; }
+                    if (val == null) continue;
+                    // price must be a decimal string per Shopify spec
+                    if (shopifyField == 'price' && val instanceof Decimal) {
+                        li.put(shopifyField, ((Decimal) val).setScale(2).toPlainString());
+                    } else if (shopifyField == 'quantity' && val instanceof Decimal) {
+                        li.put(shopifyField, ((Decimal) val).intValue());
+                    } else {
+                        li.put(shopifyField, val);
+                    }
+                }
+
+                // title and sku come from Product2 relationship — not direct OrderItem fields
+                String title = null;
+                String sku = null;
+                if (item.Product2 != null) {
+                    title = item.Product2.Name;
+                    sku = item.Product2.StockKeepingUnit;
+                }
+                if (String.isBlank(title)) title = item.Description;
+                if (String.isBlank(title)) title = 'Item';
+                li.put('title', title);
+                if (String.isNotBlank(sku)) li.put('sku', sku);
+
+                lineItems.add(li);
+            }
+        }
+
+        if (lineItems.isEmpty()) return null;
+
+        order.put('line_items', lineItems);
         return new Map<String, Object>{ 'order' => order };
     }
 
-    private String upsertToShopify(String existingShopifyId, Map<String, Object> payload) {
+    private static String resolveFieldName(Map<String, Schema.SObjectField> fieldMap, String localName) {
+        Schema.SObjectField f = fieldMap.get(localName);
+        if (f == null) {
+            for (String key : fieldMap.keySet()) {
+                if (key.endsWith(localName) && !key.equals(localName)) {
+                    f = fieldMap.get(key);
+                    break;
+                }
+            }
+        }
+        return f?.getDescribe().getName();
+    }
+
+    // Returns the Shopify ID on success, '__rate_limited__' on 429, null on other non-2xx.
+    private String upsertToShopify(String existingShopifyId, Map<String, Object> payload, List<PendingError> errors, Id orderId) {
         String endpoint;
         String method;
 
         if (String.isNotBlank(existingShopifyId)) {
-            endpoint = 'callout:QuickBridgeTLG__Shopify_API/orders/' + existingShopifyId + '.json';
+            endpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/orders/' + existingShopifyId + '.json';
             method = 'PUT';
         } else {
-            endpoint = 'callout:QuickBridgeTLG__Shopify_API/orders.json';
+            endpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/orders.json';
             method = 'POST';
         }
 
@@ -132,15 +276,20 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
                 : null;
         }
 
-        ErrorLogUtility.logCalloutFailure(
-            'Shopify',
-            'ShopifyOrdersOutboundBatch.upsertToShopify',
-            'Shopify orders API returned ' + res.getStatusCode() + ': ' + res.getBody(),
-            res.getStatusCode(),
-            null,
-            null
-        );
-        throw new CalloutException('Shopify orders API returned ' + res.getStatusCode() + ': ' + res.getBody());
+        if (res.getStatusCode() == 429) {
+            String retryAfterHeader = res.getHeader('Retry-After');
+            if (String.isNotBlank(retryAfterHeader)) {
+                try { retryAfterSeconds = Integer.valueOf(retryAfterHeader.trim()); } catch (Exception e) {}
+            }
+            return '__rate_limited__';
+        }
+
+        String errMsg = 'Shopify orders API returned ' + res.getStatusCode() + ': ' + res.getBody();
+        errors.add(new PendingError(
+            'ShopifyOrdersOutboundBatch.upsertToShopify', errMsg, res.getStatusCode(), orderId
+        ));
+        errorCount++;
+        return null;
     }
 
 }

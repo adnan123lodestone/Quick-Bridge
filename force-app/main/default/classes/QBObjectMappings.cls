@@ -10,8 +10,7 @@ public class QBObjectMappings {
         'BillingPostalCode' => 'BillAddr.PostalCode',
         'BillingCountry' => 'BillAddr.Country',
         'Terms__c' => 'SalesTermRef.value',
-        'External_Id__c' => 'ExternalId',
-        'Current_Balance__c' => 'Balance'
+        'External_Id__c' => 'ExternalId'
     };
     
     private static final Map<String, String> PRODUCT_TO_ITEM_FALLBACK = new Map<String, String>{

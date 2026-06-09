@@ -107,6 +107,47 @@ private class ShopifyProductsOutboundBatchTest {
         System.assertNotEquals(null, updated.Shopify_ID__c);
     }
 
+    // ── Mapped Description field (regression for missing-SOQL-field error) ──────
+
+    @isTest
+    static void testPositive_MappedDescriptionFieldNoSObjectException() {
+        // Description is a standard Product2 field that may appear in org mappings;
+        // this test confirms start() now selects it so prod.get(sfField) doesn't throw.
+        ShopifyProductsOutboundBatch.bypassAuthCheckForTest = true;
+        Product2 prd = new Product2(Name = 'Desc Product', Description = 'A test description', IsActive = true);
+        insert prd;
+        Test.setMock(HttpCalloutMock.class, new ProductsOutboundMock(201, buildShopifyProductResponse('99001')));
+
+        Test.startTest();
+        Database.executeBatch(new ShopifyProductsOutboundBatch(new Set<Id>{ prd.Id }, true), 10);
+        Test.stopTest();
+
+        Product2 updated = [SELECT Shopify_ID__c FROM Product2 WHERE Id = :prd.Id];
+        System.assertEquals('99001', updated.Shopify_ID__c, 'Batch should complete without SObjectException on mapped Description field');
+    }
+
+    // ── Regression: 429 rate limit — remaining records deferred ──────────────
+
+    @isTest
+    static void testNegative_RateLimit429_RecordsDeferredNotWritten() {
+        ShopifyProductsOutboundBatch.bypassAuthCheckForTest = true;
+        Product2 prd1 = new Product2(Name = 'RateLimit Product 1', IsActive = true);
+        Product2 prd2 = new Product2(Name = 'RateLimit Product 2', IsActive = true);
+        insert new List<Product2>{ prd1, prd2 };
+        Test.setMock(HttpCalloutMock.class, new ProductsOutboundMock(429, '{"errors":"Too Many Requests"}'));
+
+        Test.startTest();
+        Database.executeBatch(
+            new ShopifyProductsOutboundBatch(new Set<Id>{ prd1.Id, prd2.Id }, true), 200
+        );
+        Test.stopTest();
+
+        Product2 updated1 = [SELECT Shopify_ID__c FROM Product2 WHERE Id = :prd1.Id];
+        Product2 updated2 = [SELECT Shopify_ID__c FROM Product2 WHERE Id = :prd2.Id];
+        System.assertEquals(null, updated1.Shopify_ID__c, 'Rate-limited product must not write Shopify ID');
+        System.assertEquals(null, updated2.Shopify_ID__c, 'Deferred product must not write Shopify ID');
+    }
+
     // ── Negative ──────────────────────────────────────────────────────────────
 
     @isTest

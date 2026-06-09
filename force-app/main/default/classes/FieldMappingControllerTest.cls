@@ -485,4 +485,77 @@ public class FieldMappingControllerTest {
     }
     Assert.isTrue(didThrow);
   }
+
+  @isTest
+  static void getObjectFieldsExcludesBlockedFields() {
+    Test.startTest();
+    List<Map<String, String>> result = FieldMappingController.getOrderFields();
+    Test.stopTest();
+
+    Set<String> fieldValues = new Set<String>();
+    for (Map<String, String> field : result) {
+      fieldValues.add(field.get('value').toLowerCase());
+    }
+
+    // Blocked fields must be absent
+    List<String> blocked = new List<String>{
+      'ownerid', 'createddate', 'createdbyid',
+      'lastmodifieddate', 'lastmodifiedbyid', 'systemmodstamp',
+      'isdeleted', 'recordtypeid', 'currencyisocode',
+      'lastvieweddate', 'lastreferenceddate'
+    };
+    for (String b : blocked) {
+      Assert.isFalse(fieldValues.contains(b), b + ' should not appear in getObjectFields results');
+    }
+
+    // Allowed fields must still be present
+    Assert.isTrue(fieldValues.contains('id'), 'Id must remain in field list');
+    Assert.isTrue(fieldValues.contains('ordernumber'), 'OrderNumber must remain in field list');
+  }
+
+  @isTest
+  static void saveFieldMappingsRejectsBlockedSfField() {
+    String mappingsJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'CreatedById',
+        'externalField' => 'DisplayName',
+        'syncDirection' => 'Two-Way'
+      }
+    });
+
+    Test.startTest();
+    Boolean didThrow = false;
+    try {
+      FieldMappingController.saveFieldMappings('qbonline', 'Account', 'Customer', mappingsJson);
+    } catch (AuraHandledException e) {
+      didThrow = true;
+      Assert.isTrue(e.getMessage().contains('CreatedById'), 'Exception message should name the blocked field');
+    }
+    Test.stopTest();
+
+    Assert.isTrue(didThrow, 'saveFieldMappings should reject a blocked sfField');
+  }
+
+  @isTest
+  static void saveFieldMappingsAllowsSalesforceId() {
+    // Salesforce record Id must never be blocked
+    String mappingsJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Id',
+        'externalField' => 'id',
+        'syncDirection' => 'Two-Way'
+      }
+    });
+
+    Test.startTest();
+    Boolean threw = false;
+    try {
+      FieldMappingController.saveFieldMappings('qbonline', 'Account', 'Customer', mappingsJson);
+    } catch (AuraHandledException e) {
+      if (e.getMessage().contains('cannot be used in a mapping')) threw = true;
+    }
+    Test.stopTest();
+
+    Assert.isFalse(threw, 'Salesforce Id should never be blocked by eligibility check');
+  }
 }

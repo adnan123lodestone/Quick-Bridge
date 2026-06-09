@@ -212,6 +212,30 @@ private class ShopifyOrdersBatchTest {
         System.assertEquals(0, items.size(), 'Line item without product_id must be skipped');
     }
 
+    // ── Regression: order linked by Shopify ID when customer email absent ──────
+
+    @isTest
+    static void testPositive_OrderLinkedByShopifyIdWhenEmailMissing() {
+        // Customer payload has no email (protected customer data scenario).
+        // The Account exists with Shopify_ID__c = '777001' (from @TestSetup).
+        // The batch must still create the Order using the Shopify ID lookup.
+        String body = '{"orders":[{"id":510001,"name":"#3001",' +
+            '"created_at":"2024-01-15T10:30:00Z",' +
+            '"financial_status":"paid","total_price":"75.00","total_tax":"5.00","total_discounts":"0",' +
+            '"customer":{"id":777001,"first_name":"Jane","last_name":"Doe"},' +
+            '"line_items":[]}]}';
+        Test.setMock(HttpCalloutMock.class, new OrdersMock(200, body, null));
+
+        Test.startTest();
+        Database.executeBatch(new ShopifyOrdersBatch(), 1);
+        Test.stopTest();
+
+        List<Order> orders = [SELECT Id, AccountId FROM Order WHERE Shopify_ID__c = '510001'];
+        System.assertEquals(1, orders.size(), 'Order must be created even when customer email is absent, using Shopify ID lookup');
+        Account acc = [SELECT Shopify_ID__c FROM Account WHERE Id = :orders[0].AccountId];
+        System.assertEquals('777001', acc.Shopify_ID__c, 'Order must be linked to the Account found by Shopify customer ID');
+    }
+
     // ── Bulk ──────────────────────────────────────────────────────────────────
 
     @isTest

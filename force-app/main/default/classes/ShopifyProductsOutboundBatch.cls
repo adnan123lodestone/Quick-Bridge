@@ -4,20 +4,38 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
     private Boolean isInitialSync;
     private Integer successCount = 0;
     private Integer errorCount = 0;
+    private Map<String, String> fieldMap;
+    private String shopifyIdField;
+
+    private Set<Id> rateLimitedIds = new Set<Id>();
+    private Integer retryAfterSeconds = 60;
+    private Boolean hitRateLimit = false;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
 
     global ShopifyProductsOutboundBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds    = recordIds;
         this.isInitialSync = isInitialSync;
+        this.fieldMap = ShopifyObjectMappings.getProductToShopifyMapping();
+        this.shopifyIdField = resolveFieldName(Schema.SObjectType.Product2.fields.getMap(), 'shopify_id__c');
     }
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
-        return Database.getQueryLocator([
-            SELECT Id, Name, StockKeepingUnit, IsActive, Shopify_ID__c
-            FROM Product2
-            WHERE Id IN :recordIds
-        ]);
+        Map<String, Schema.SObjectField> product2Fields = Schema.SObjectType.Product2.fields.getMap();
+        Set<String> fieldSet = new Set<String>{ 'id', 'name', 'stockkeepingunit', 'isactive' };
+        for (String sfField : fieldMap.keySet()) {
+            if (product2Fields.containsKey(sfField.toLowerCase())) {
+                fieldSet.add(sfField.toLowerCase());
+            }
+        }
+        Set<String> selected = new Set<String>{ shopifyIdField };
+        for (String key : fieldSet) {
+            Schema.SObjectField f = product2Fields.get(key);
+            if (f != null) selected.add(f.getDescribe().getName());
+        }
+        String soql = 'SELECT ' + String.join(new List<String>(selected), ', ') +
+                      ' FROM Product2 WHERE Id IN :recordIds';
+        return Database.getQueryLocator(soql);
     }
 
     global void execute(Database.BatchableContext bc, List<sObject> scope) {
@@ -28,16 +46,24 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
 
         IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
 
-        Map<String, String> fieldMap = ShopifyObjectMappings.getProductToShopifyMapping();
         List<Product2> toUpdate = new List<Product2>();
 
+        Boolean rateLimited = false;
         for (sObject sobj : scope) {
             Product2 prod = (Product2) sobj;
+            if (rateLimited) {
+                rateLimitedIds.add(prod.Id);
+                continue;
+            }
             try {
                 Map<String, Object> payload = buildProductPayload(prod, fieldMap);
-                String responseId = upsertToShopify(prod.Shopify_ID__c, payload);
-                if (String.isNotBlank(responseId)) {
-                    prod.Shopify_ID__c = responseId;
+                String responseId = upsertToShopify((String) prod.get(shopifyIdField), payload);
+                if (responseId == '__rate_limited__') {
+                    rateLimited = true;
+                    hitRateLimit = true;
+                    rateLimitedIds.add(prod.Id);
+                } else if (String.isNotBlank(responseId)) {
+                    prod.put(shopifyIdField, responseId);
                     toUpdate.add(prod);
                     successCount++;
                 }
@@ -71,6 +97,14 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
         System.debug('ShopifyProductsOutboundBatch complete. Success: ' + successCount + ' | Errors: ' + errorCount);
         IntegrationUsageService.recordSuccessfulRecordSync('Shopify', successCount);
         IntegrationUsageService.incrementEndpointUsage('Shopify', successCount + errorCount);
+        if (hitRateLimit && !rateLimitedIds.isEmpty()) {
+            Integer delayMinutes = (Integer) Math.max(1, Math.ceil(retryAfterSeconds / 60.0));
+            System.scheduleBatch(
+                new ShopifyProductsOutboundBatch(rateLimitedIds, isInitialSync),
+                'ShopifyProductsOutboundBatch_RateLimit_Retry_' + Datetime.now().getTime(),
+                delayMinutes
+            );
+        }
     }
 
     private Map<String, Object> buildProductPayload(Product2 prod, Map<String, String> fieldMap) {
@@ -98,15 +132,28 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
         return new Map<String, Object>{ 'product' => product };
     }
 
+    private static String resolveFieldName(Map<String, Schema.SObjectField> fieldMap, String localName) {
+        Schema.SObjectField f = fieldMap.get(localName);
+        if (f == null) {
+            for (String key : fieldMap.keySet()) {
+                if (key.endsWith(localName) && !key.equals(localName)) {
+                    f = fieldMap.get(key);
+                    break;
+                }
+            }
+        }
+        return f?.getDescribe().getName();
+    }
+
     private String upsertToShopify(String existingShopifyId, Map<String, Object> payload) {
         String endpoint;
         String method;
 
         if (String.isNotBlank(existingShopifyId)) {
-            endpoint = 'callout:QuickBridgeTLG__Shopify_API/products/' + existingShopifyId + '.json';
+            endpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/products/' + existingShopifyId + '.json';
             method   = 'PUT';
         } else {
-            endpoint = 'callout:QuickBridgeTLG__Shopify_API/products.json';
+            endpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/products.json';
             method   = 'POST';
         }
 
@@ -124,6 +171,14 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
             return (product != null && product.get('id') != null)
                 ? String.valueOf(product.get('id'))
                 : null;
+        }
+
+        if (res.getStatusCode() == 429) {
+            String retryAfterHeader = res.getHeader('Retry-After');
+            if (String.isNotBlank(retryAfterHeader)) {
+                try { retryAfterSeconds = Integer.valueOf(retryAfterHeader.trim()); } catch (Exception e) {}
+            }
+            return '__rate_limited__';
         }
 
         ErrorLogUtility.logCalloutFailure(

@@ -134,6 +134,45 @@ private class ShopifyCustomersOutboundBatchTest {
         System.assertEquals(null, updated.Shopify_ID__c, 'Execution skipped when license check fails');
     }
 
+    // ── Mapped consent fields (regression for missing-SOQL-field error) ─────────
+
+    @isTest
+    static void testPositive_MappedConsentFieldsNoSObjectException() {
+        // Email_Opt_In_Level__c and SMS_Opt_In_Level__c are in the fallback mapping;
+        // this test confirms start() now selects them so acc.get(sfField) doesn't throw.
+        Account acc = makeAccount('consent.test@shopify.test', null);
+        ShopifyCustomersOutboundBatch.bypassAuthCheckForTest = true;
+        Test.setMock(HttpCalloutMock.class, new CreateMock(201, '222333'));
+
+        Test.startTest();
+        Database.executeBatch(new ShopifyCustomersOutboundBatch(new Set<Id>{ acc.Id }, true), 10);
+        Test.stopTest();
+
+        Account updated = [SELECT Shopify_ID__c FROM Account WHERE Id = :acc.Id];
+        System.assertEquals('222333', updated.Shopify_ID__c, 'Batch should complete without SObjectException on mapped consent fields');
+    }
+
+    // ── Regression: 429 rate limit — remaining records deferred ────────────────
+
+    @isTest
+    static void testNegative_RateLimit429_RecordsDeferredNotWritten() {
+        Account acc1 = makeAccount('rate.limit.c1@shopify.test', null);
+        Account acc2 = makeAccount('rate.limit.c2@shopify.test', null);
+        ShopifyCustomersOutboundBatch.bypassAuthCheckForTest = true;
+        Test.setMock(HttpCalloutMock.class, new CreateMock(429, null));
+
+        Test.startTest();
+        Database.executeBatch(
+            new ShopifyCustomersOutboundBatch(new Set<Id>{ acc1.Id, acc2.Id }, true), 200
+        );
+        Test.stopTest();
+
+        Account updated1 = [SELECT Shopify_ID__c FROM Account WHERE Id = :acc1.Id];
+        Account updated2 = [SELECT Shopify_ID__c FROM Account WHERE Id = :acc2.Id];
+        System.assertEquals(null, updated1.Shopify_ID__c, 'Rate-limited customer must not write Shopify ID');
+        System.assertEquals(null, updated2.Shopify_ID__c, 'Deferred customer must not write Shopify ID');
+    }
+
     // ── Bulk ────────────────────────────────────────────────────────────────────
 
     @isTest

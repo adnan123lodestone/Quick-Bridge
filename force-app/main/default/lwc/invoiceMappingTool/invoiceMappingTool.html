@@ -247,7 +247,7 @@
                 value={row.targetField}
                 options={row.filteredTargetOptions}
                 placeholder="Select invoice field"
-                disabled={row.lockTarget}
+                disabled={row.isTargetDisabled}
                 onchange={handleInvoiceRowChange}
               ></lightning-combobox>
               <lightning-button-icon
@@ -382,7 +382,7 @@
                 value={row.targetField}
                 options={row.filteredTargetOptions}
                 placeholder="Select transaction field"
-                disabled={row.lockTarget}
+                disabled={row.isTargetDisabled}
                 onchange={handleTransactionRowChange}
               ></lightning-combobox>
               <lightning-button-icon

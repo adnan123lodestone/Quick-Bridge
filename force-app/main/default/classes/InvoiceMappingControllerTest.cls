@@ -86,4 +86,26 @@ private class InvoiceMappingControllerTest {
         }
         Test.stopTest();
     }
+
+    @isTest
+    static void getObjectFieldsExcludesBlockedFields() {
+        Test.startTest();
+        List<Map<String, String>> fields = InvoiceMappingController.getObjectFields('Invoice__c');
+        Test.stopTest();
+
+        Set<String> values = new Set<String>();
+        for (Map<String, String> f : fields) {
+            values.add(f.get('value').toLowerCase());
+        }
+
+        List<String> blocked = new List<String>{
+            'ownerid', 'createddate', 'createdbyid',
+            'lastmodifieddate', 'lastmodifiedbyid', 'systemmodstamp',
+            'isdeleted', 'recordtypeid', 'currencyisocode',
+            'lastvieweddate', 'lastreferenceddate'
+        };
+        for (String b : blocked) {
+            Assert.isFalse(values.contains(b), b + ' must not appear in InvoiceMappingController.getObjectFields');
+        }
+    }
 }

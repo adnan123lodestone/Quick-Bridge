@@ -598,7 +598,9 @@ global without sharing class PaymentWebhookRestResource {
     }
 
     private static SignatureVerificationResult verifyAuthorizeNetSignature(String requestBody, RestRequest request) {
-        String signingKey = getAuthorizeNetWebhookSigningKey();
+        AuthorizeNetConfigService.Config anetConfig = AuthorizeNetConfigService.getConfig();
+        String signingKey = anetConfig == null ? null : anetConfig.webhookSigningKey;
+        String configSource = anetConfig == null ? 'null' : (anetConfig.fromNormalizedConfig == true ? 'normalized' : 'legacy');
         if (String.isBlank(signingKey)) {
             trace('Authorize.Net verification failed because signing key is not configured.');
             return new SignatureVerificationResult(false, 503, 'Authorize.Net webhook signing key is not configured.');
@@ -629,27 +631,84 @@ global without sharing class PaymentWebhookRestResource {
             return new SignatureVerificationResult(false, 401, 'Authorize.Net signature header is invalid.');
         }
 
+        String keyPrefix = normalizedKey.length() >= 8 ? normalizedKey.substring(0, 8).toUpperCase() : normalizedKey.toUpperCase();
         trace('Authorize.Net verification input summary: headerLength=' + String.valueOf(signatureHeader.length()) +
             ', digestLength=' + String.valueOf(providedDigest.length()) +
             ', keyLength=' + String.valueOf(normalizedKey.length()) +
-            ', bodyLength=' + String.valueOf(getRequestBodyLength(request))
+            ', bodyLength=' + String.valueOf(getRequestBodyLength(request)) +
+            ', configSource=' + configSource +
+            ', keyPrefix=' + keyPrefix
         );
 
+        // Raw body blob — what Salesforce received over the wire
         Blob payloadBlob = request != null && request.requestBody != null
             ? request.requestBody
             : Blob.valueOf(requestBody == null ? '' : requestBody);
-        String expectedDigest = EncodingUtil.convertToHex(
+
+        // Digest over the raw blob
+        String expectedDigestBlob = EncodingUtil.convertToHex(
             Crypto.generateMac('HmacSHA512', payloadBlob, keyBlob)
         ).toUpperCase();
 
-        if (providedDigest == expectedDigest) {
-            trace('Authorize.Net signature verification succeeded.');
+        // Digest over the UTF-8 re-encoding of the string (requestBody = requestBody.toString())
+        String expectedDigestStr = EncodingUtil.convertToHex(
+            Crypto.generateMac('HmacSHA512', Blob.valueOf(requestBody == null ? '' : requestBody), keyBlob)
+        ).toUpperCase();
+
+        // Digest trimming trailing whitespace — Authorize.Net sometimes strips trailing \n
+        String trimmedBody = requestBody == null ? '' : requestBody.replaceAll('[\\s\\n\\r]+$', '');
+        String expectedDigestTrimmed = EncodingUtil.convertToHex(
+            Crypto.generateMac('HmacSHA512', Blob.valueOf(trimmedBody), keyBlob)
+        ).toUpperCase();
+
+        if (providedDigest == expectedDigestBlob) {
+            trace('Authorize.Net signature verification succeeded (blob match).');
+            return new SignatureVerificationResult(true, 200, null);
+        }
+        if (providedDigest == expectedDigestStr) {
+            trace('Authorize.Net signature verification succeeded (string match).');
+            return new SignatureVerificationResult(true, 200, null);
+        }
+        if (providedDigest == expectedDigestTrimmed) {
+            trace('Authorize.Net signature verification succeeded (trimmed match).');
             return new SignatureVerificationResult(true, 200, null);
         }
 
-        trace('Authorize.Net signature verification failed because computed digest did not match provided digest.');
+        // First 50 chars of body as hex for body-content diagnosis
+        String bodyHexPrefix = EncodingUtil.convertToHex(
+            Blob.valueOf(requestBody == null ? '' : requestBody.substring(0, Math.min(25, requestBody.length())))
+        ).toUpperCase();
 
-        return new SignatureVerificationResult(false, 401, 'Authorize.Net signature verification failed.');
+        trace('Authorize.Net signature verification failed.' +
+            ' provided=' + (providedDigest == null ? 'null' : providedDigest.substring(0, 16)) +
+            ' blobDigest=' + expectedDigestBlob.substring(0, 16) +
+            ' strDigest=' + expectedDigestStr.substring(0, 16) +
+            ' trimDigest=' + expectedDigestTrimmed.substring(0, 16) +
+            ' blobBytes=' + (payloadBlob == null ? 0 : payloadBlob.size()) +
+            ' strBytes=' + (requestBody == null ? 0 : requestBody.length()) +
+            ' trimBytes=' + trimmedBody.length() +
+            ' blobEqStr=' + (expectedDigestBlob == expectedDigestStr) +
+            ' bodyHexPrefix=' + bodyHexPrefix +
+            ' rawHeaderPrefix=' + signatureHeader.substring(0, Math.min(20, signatureHeader.length())) +
+            ' configSource=' + configSource +
+            ' keyPrefix=' + keyPrefix
+        );
+
+        return new SignatureVerificationResult(false, 401,
+            'Authorize.Net signature verification failed. Diagnostic:' +
+            ' provided=' + (providedDigest == null ? 'null' : providedDigest.substring(0, 8)) +
+            ' blobDigest=' + expectedDigestBlob.substring(0, 8) +
+            ' strDigest=' + expectedDigestStr.substring(0, 8) +
+            ' trimDigest=' + expectedDigestTrimmed.substring(0, 8) +
+            ' blobBytes=' + (payloadBlob == null ? 0 : payloadBlob.size()) +
+            ' strBytes=' + (requestBody == null ? 0 : requestBody.length()) +
+            ' trimBytes=' + trimmedBody.length() +
+            ' blobEqStr=' + (expectedDigestBlob == expectedDigestStr) +
+            ' bodyHexPrefix=' + bodyHexPrefix.substring(0, Math.min(16, bodyHexPrefix.length())) +
+            ' rawHeader=' + signatureHeader.substring(0, Math.min(15, signatureHeader.length())) +
+            ' cfgSrc=' + configSource +
+            ' keyPfx=' + keyPrefix
+        );
     }
 
     private static SignatureVerificationResult verifyPayPalSignature(String requestBody, RestRequest request) {

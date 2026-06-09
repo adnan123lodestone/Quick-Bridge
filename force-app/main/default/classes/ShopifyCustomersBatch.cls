@@ -36,7 +36,7 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
             Integer daysAgo = Integer.valueOf(calloutControl.Days__c != null ? calloutControl.Days__c : 0);
             
             if (String.isBlank(this.endpoint)) {
-                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/customers.json?status=any';
+                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/customers.json?status=any';
                 if (daysAgo != 0) {
                     String formattedDate = getPastDateTimeFormatted(daysAgo);
                     finalEndpoint += '&updated_at_min=' + formattedDate;
@@ -78,26 +78,27 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
                 Id personAccountRTId = getPersonAccountRecordTypeId();
                 Map<String, Account> existingByEmail = new Map<String, Account>();
                 Map<String, Account> existingByExternalId = new Map<String, Account>();
-                
-                if (!emailSet.isEmpty()) {
-                    for (Account acc : [
-                        SELECT Id, PersonEmail, Shopify_ID__c FROM Account
-                        WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet
-                    ]) {
-                        existingByEmail.put(acc.PersonEmail.toLowerCase(), acc);
-                    }
-                }
-                
-                if (!externalIdSet.isEmpty()) {
-                    for (Account acc : [
-                        SELECT Id, Shopify_ID__c FROM Account
-                        WHERE RecordTypeId = :personAccountRTId AND Shopify_ID__c IN :externalIdSet
-                    ]) {
-                        existingByExternalId.put(acc.Shopify_ID__c, acc);
-                    }
-                }
-                
+
                 Map<String, String> fieldMap = ShopifyObjectMappings.getCustomerToAccountMapping();
+                Set<String> sfFields = new Set<String>{'Id', 'PersonEmail', 'Shopify_ID__c', 'RecordTypeId'};
+                sfFields.addAll(fieldMap.values());
+                String accountFieldList = String.join(new List<String>(sfFields), ', ');
+
+                if (!emailSet.isEmpty()) {
+                    for (Account acc : Database.query(
+                        'SELECT ' + accountFieldList + ' FROM Account WHERE RecordTypeId = :personAccountRTId AND PersonEmail IN :emailSet'
+                    )) {
+                        existingByEmail.put(((String) acc.get('PersonEmail')).toLowerCase(), acc);
+                    }
+                }
+
+                if (!externalIdSet.isEmpty()) {
+                    for (Account acc : Database.query(
+                        'SELECT ' + accountFieldList + ' FROM Account WHERE RecordTypeId = :personAccountRTId AND Shopify_ID__c IN :externalIdSet'
+                    )) {
+                        existingByExternalId.put((String) acc.get('Shopify_ID__c'), acc);
+                    }
+                }
                 List<Account> toUpsert = new List<Account>();
                 
                 for (Object obj : customers) {
@@ -267,7 +268,7 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
     
     public static void syncCustomerFromShopify(String customerId) {
         HttpRequest req = new HttpRequest();
-        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/customers/' + customerId + '.json');
+        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/customers/' + customerId + '.json');
         req.setMethod('GET');
         HttpResponse res = new Http().send(req);
         if (res.getStatusCode() == 200) {

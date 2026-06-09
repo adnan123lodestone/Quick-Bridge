@@ -26,13 +26,11 @@ public with sharing class InvoiceMappingController {
         
         Map<String, Schema.SObjectField> fieldMap = globalDescribe.get(objectApiName).getDescribe().fields.getMap();
         
-        Set<String> ignoredFields = new Set<String>{'ownerid', 'recordtypeid', 'currencyisocode', 'createdbyid', 'lastmodifiedbyid', 'systemmodstamp'};
-        
         for (String fieldName : fieldMap.keySet()) {
             Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName).getDescribe();
-            String fieldApiName = fieldName.toLowerCase();
-            
-            if ((fieldDescribe.isCreateable() || !fieldDescribe.isCalculated()) && !ignoredFields.contains(fieldApiName)) {
+
+            if ((fieldDescribe.isCreateable() || !fieldDescribe.isCalculated())
+                    && MappingFieldEligibilityService.isSalesforceFieldAllowed(fieldName)) {
                 fieldList.add(new Map<String, String>{
                     'label' => fieldDescribe.getLabel() + ' (' + fieldName + ')',
                     'value' => fieldName

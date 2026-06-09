@@ -35,7 +35,7 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
             Integer daysAgo = calloutControl.Days__c != null ? Integer.valueOf(calloutControl.Days__c) : 0;
 
             if (String.isBlank(this.endpoint)) {
-                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/products.json';
+                finalEndpoint = 'callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/products.json';
                 if (daysAgo > 0) {
                     finalEndpoint += '?updated_at_min=' + getPastDateTimeFormatted(daysAgo);
                 }
@@ -278,7 +278,7 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
 
     public static void syncProductFromShopify(String productId) {
         HttpRequest req = new HttpRequest();
-        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/products/' + productId + '.json');
+        req.setEndpoint('callout:QuickBridgeTLG__Shopify_API/admin/api/2024-04/products/' + productId + '.json');
         req.setMethod('GET');
         HttpResponse res = new Http().send(req);
         if (res.getStatusCode() == 200) {

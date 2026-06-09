@@ -506,10 +506,21 @@ export default class FieldMappingComponent extends LightningElement {
   handleResetConfirm() {
     this.showResetConfirm = false;
     this.isLoading = true;
-    clearFieldMappings({
-      integration: this.selectedIntegration,
-      sfObject: this.selectedSFObject
-    })
+    const clearCalls = [
+      clearFieldMappings({
+        integration: this.selectedIntegration,
+        sfObject: this.selectedSFObject
+      })
+    ];
+    if (this.showChildMapping && this.childSfObject) {
+      clearCalls.push(
+        clearFieldMappings({
+          integration: this.selectedIntegration,
+          sfObject: this.childSfObject
+        })
+      );
+    }
+    Promise.all(clearCalls)
       .then(() => {
         this.showToast(
           "Success",

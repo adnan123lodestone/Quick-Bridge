@@ -378,4 +378,105 @@ private class PaymentInvoiceMappingControllerTest {
         }
         return false;
     }
+
+    @IsTest
+    static void getObjectFieldsExcludesBlockedFields() {
+        Test.startTest();
+        List<PaymentInvoiceMappingController.FieldOption> fields =
+            PaymentInvoiceMappingController.getObjectFields('Order');
+        Test.stopTest();
+
+        Set<String> values = new Set<String>();
+        for (PaymentInvoiceMappingController.FieldOption f : fields) {
+            values.add(f.value.toLowerCase());
+        }
+
+        List<String> blocked = new List<String>{
+            'ownerid', 'createddate', 'createdbyid',
+            'lastmodifieddate', 'lastmodifiedbyid', 'systemmodstamp',
+            'isdeleted', 'recordtypeid', 'currencyisocode',
+            'lastvieweddate', 'lastreferenceddate'
+        };
+        for (String b : blocked) {
+            Assert.isFalse(values.contains(b), b + ' must not appear in getObjectFields');
+        }
+        Assert.isTrue(values.contains('id'), 'Id must remain in field list');
+    }
+
+    @IsTest
+    static void saveConfigRejectsBlockedSourceField() {
+        String payload = JSON.serialize(new Map<String, Object>{
+            'gateway' => 'stripe',
+            'sourceObject' => 'Order',
+            'sourceCustomerLookupField' => 'AccountId',
+            'invoiceObject' => 'Invoice__c',
+            'invoiceSourceLookupField' => 'Order__c',
+            'transactionObject' => 'Portal_Payment_Transaction__c',
+            'transactionSourceLookupField' => 'Order__c',
+            'sourceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'OwnerId', 'targetField' => 'amount' }
+            },
+            'invoiceMappings' => new List<Object>(),
+            'transactionMappings' => new List<Object>()
+        });
+
+        Test.startTest();
+        Boolean threw = false;
+        try {
+            PaymentInvoiceMappingController.saveGatewayMappingConfig(payload);
+        } catch (AuraHandledException e) {
+            threw = true;
+            Assert.isTrue(e.getMessage().contains('OwnerId'), 'Exception message should name the blocked field');
+        }
+        Test.stopTest();
+
+        Assert.isTrue(threw, 'saveGatewayMappingConfig should reject blocked sourceField OwnerId');
+    }
+
+    @IsTest
+    static void saveConfigGatewaySemanticFieldsAreNotBlocked() {
+        // Gateway semantic keys like 'gatewayTransactionId' live in targetField — not SF fields.
+        // A valid Stripe config with all required semantic mappings should not be rejected
+        // by the eligibility check.
+        String payload = JSON.serialize(new Map<String, Object>{
+            'gateway' => 'stripe',
+            'sourceObject' => 'Order',
+            'sourceCustomerLookupField' => 'AccountId',
+            'invoiceObject' => 'Invoice__c',
+            'invoiceSourceLookupField' => 'Order__c',
+            'transactionObject' => 'Portal_Payment_Transaction__c',
+            'transactionSourceLookupField' => 'Order__c',
+            'sourceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
+            },
+            'invoiceMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'amount', 'targetField' => 'Amount__c' },
+                new Map<String, Object>{ 'sourceField' => 'hostedInvoiceUrl', 'targetField' => 'Stripe_Invoice_Link__c' },
+                new Map<String, Object>{ 'sourceField' => 'referenceNumber', 'targetField' => 'Reference_number__c' },
+                new Map<String, Object>{ 'sourceField' => 'status', 'targetField' => 'Status__c' },
+                new Map<String, Object>{ 'sourceField' => 'invoiceDate', 'targetField' => 'Invoice_Date__c' },
+                new Map<String, Object>{ 'sourceField' => 'stripeInvoiceId', 'targetField' => 'Stripe_Invoice_Id__c' }
+            },
+            'transactionMappings' => new List<Object>{
+                new Map<String, Object>{ 'sourceField' => 'gatewayEventId', 'targetField' => 'Gateway_Event_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayEventType', 'targetField' => 'Gateway_Event_Type__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayAmount', 'targetField' => 'Gateway_Amount__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayReferenceNumber', 'targetField' => 'Gateway_Reference_Number__c' },
+                new Map<String, Object>{ 'sourceField' => 'gatewayTransactionId', 'targetField' => 'Gateway_Transaction_Id__c' },
+                new Map<String, Object>{ 'sourceField' => 'paymentType', 'targetField' => 'Payment_Type__c' },
+                new Map<String, Object>{ 'sourceField' => 'stripeLiveMode', 'targetField' => 'Stripe_Live_Mode__c' }
+            }
+        });
+
+        Test.startTest();
+        Boolean blockedByEligibility = false;
+        try {
+            PaymentInvoiceMappingController.saveGatewayMappingConfig(payload);
+        } catch (AuraHandledException e) {
+            if (e.getMessage().contains('cannot be used in a mapping')) blockedByEligibility = true;
+        }
+        Test.stopTest();
+
+        Assert.isFalse(blockedByEligibility, 'Gateway semantic fields must not be rejected by eligibility check');
+    }
 }

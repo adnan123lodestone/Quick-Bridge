@@ -522,7 +522,8 @@ export default class InvoiceMappingTool extends LightningElement {
           row.sourceField
         )
       ),
-      isPinned: row.isRequired
+      isPinned: row.isRequired,
+      isTargetDisabled: row.lockTarget || (!row.lockSource && !row.sourceField)
     }));
   }
 
@@ -536,7 +537,8 @@ export default class InvoiceMappingTool extends LightningElement {
           row.sourceField
         )
       ),
-      isPinned: row.isRequired
+      isPinned: row.isRequired,
+      isTargetDisabled: row.lockTarget || (!row.lockSource && !row.sourceField)
     }));
   }
 
