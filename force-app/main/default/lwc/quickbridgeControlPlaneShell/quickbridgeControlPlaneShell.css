@@ -1,0 +1,141 @@
+:host {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.sidebar {
+  width: 16rem;
+  background: var(--qb-sidebar, #111827);
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex-shrink: 0;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.22);
+  z-index: 10;
+}
+
+.sidebar-header {
+  padding: 2rem 1.5rem 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-logo-image {
+  width: 100%;
+  max-width: 188px;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  padding: 0.65rem;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.nav-button {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  color: #9ca3af;
+  border: none;
+  border-left: 4px solid transparent;
+  border-radius: 0;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.nav-button:hover {
+  background: var(--qb-sidebar-hover, rgba(255, 255, 255, 0.08));
+  color: #e5e7eb;
+}
+
+.nav-button.active {
+  background: var(--qb-sidebar-active, rgba(255, 255, 255, 0.14));
+  border-left-color: var(--qb-brand-blue, #2563eb);
+  color: #ffffff;
+}
+
+.nav-button.logout {
+  color: #fca5a5;
+  margin-top: 0.75rem;
+}
+
+.nav-button.logout:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+}
+
+.nav-icon {
+  flex: 0 0 auto;
+  --sds-c-icon-color-foreground-default: #9ca3af;
+}
+
+.nav-button:hover .nav-icon,
+.nav-button.active .nav-icon {
+  --sds-c-icon-color-foreground-default: #ffffff;
+}
+
+.sidebar-footer {
+  padding: 1.5rem;
+  color: #6b7280;
+  border-top: none;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 13.5rem;
+  }
+
+  .sidebar-logo-image {
+    max-width: 158px;
+  }
+}
+
+@media (max-width: 640px) {
+  :host,
+  .sidebar {
+    width: 100%;
+  }
+
+  .sidebar {
+    max-height: none;
+  }
+
+  .sidebar-header {
+    padding: 0.75rem;
+  }
+
+  .sidebar-logo-image {
+    max-width: 120px;
+  }
+
+  .sidebar-nav {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+}

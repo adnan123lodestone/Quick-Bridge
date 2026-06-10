@@ -1,0 +1,120 @@
+<template>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <img src={quickBridgeLogo} alt="QuickBridge" class="sidebar-logo-image" />
+    </div>
+
+    <nav class="sidebar-nav">
+      <template if:true={isLoggedIn}>
+        <button
+          class={navHomeClass}
+          data-screen="home"
+          onclick={handleNavigate}
+        >
+          <lightning-icon
+            icon-name="utility:home"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Integrations
+        </button>
+        <button
+          class={navReportingClass}
+          data-screen="reporting"
+          onclick={handleNavigate}
+        >
+          <lightning-icon
+            icon-name="utility:chart"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Reporting
+        </button>
+        <button
+          class={navDashboardClass}
+          data-screen="dashboard"
+          onclick={handleNavigate}
+        >
+          <lightning-icon
+            icon-name="utility:error"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Error Log
+        </button>
+        <button
+          class={navMappingClass}
+          data-screen="mapping"
+          onclick={handleNavigate}
+        >
+          <lightning-icon
+            icon-name="utility:setup"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Field Mapping
+        </button>
+        <button
+          class={navSettingsClass}
+          data-screen="settings"
+          onclick={handleNavigate}
+        >
+          <lightning-icon
+            icon-name="utility:settings"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Settings
+        </button>
+        <template if:true={isSchedulerAvailable}>
+          <button
+            class={navSchedulerClass}
+            data-screen="scheduler"
+            onclick={handleNavigate}
+          >
+            <lightning-icon
+              icon-name="utility:clock"
+              size="x-small"
+              class="nav-icon"
+            ></lightning-icon>
+            Scheduler
+          </button>
+        </template>
+        <template if:true={showSidebarBackButton}>
+          <button class="nav-button" onclick={handleBack}>
+            <lightning-icon
+              icon-name="utility:back"
+              size="x-small"
+              class="nav-icon"
+            ></lightning-icon>
+            Back
+          </button>
+        </template>
+      </template>
+      <template if:false={isLoggedIn}>
+        <button class="nav-button active" onclick={handleLogin}>
+          <lightning-icon
+            icon-name="utility:user"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Login
+        </button>
+      </template>
+    </nav>
+
+    <div class="sidebar-footer">
+      <template if:true={isLoggedIn}>
+        <button class="nav-button logout" onclick={handleLogout}>
+          <lightning-icon
+            icon-name="utility:logout"
+            size="x-small"
+            class="nav-icon"
+          ></lightning-icon>
+          Logout
+        </button>
+      </template>
+      <p>Product of The Lodestone Group</p>
+    </div>
+  </aside>
+</template>

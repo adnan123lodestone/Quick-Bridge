@@ -537,10 +537,18 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         this.adminSessionToken = response.sessionToken || "";
         this.adminSessionExpiresAt = response.sessionExpiresAt || null;
         this.persistSessionToStorage();
+
+        // Automatically refresh licenses to sync products (QBO, Stripe, etc.) upon login
+        try {
+          await refreshLicenses({ sessionToken: this.adminSessionToken });
+        } catch (refreshError) {
+          console.error("Automatic license refresh failed during login:", refreshError);
+        }
+
         this.selectedTile = "";
         this.currentGatewayProperName = "";
         this.currentScreen = "reporting";
-        this.loadMetadataConfigs();
+        await this.loadMetadataConfigs();
         this.loadConfigPanelPreferences();
       } else {
         this.showToast("Login Failed", response.message, "error");

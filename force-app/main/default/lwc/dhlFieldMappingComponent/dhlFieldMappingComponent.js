@@ -1,0 +1,560 @@
+import { LightningElement, api, track } from "lwc";
+import { ShowToastEvent } from "lightning/platformShowToastEvent";
+import getSalesforceObjects from "@salesforce/apex/FieldMappingController.getSalesforceObjects";
+import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFields";
+import getDHLFields from "@salesforce/apex/FieldMappingController.getDHLFields";
+import getExistingDHLMappings from "@salesforce/apex/FieldMappingController.getExistingDHLMappings";
+import saveDHLFieldMappings from "@salesforce/apex/FieldMappingController.saveDHLFieldMappings";
+import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
+
+const SHIPMENT_ONLY_ACTIONS = new Set(["voidShipment", "syncTrackingStatus"]);
+const SHIPMENT_OBJECT = "QuickBridgeTLG__Carrier_Shipment__c";
+
+const ACTIONS = [
+  {
+    value: "validateAddress",
+    label: "Validate Address",
+    scope: "Any object",
+    note: "Uses SF fields to validate an address, shows the correction to the user, and only writes the selected validated address when the user confirms."
+  },
+  {
+    value: "getRateQuote",
+    label: "Get Rate Quote",
+    scope: "Any object",
+    note: "Builds a rate request from mapped fields, shows every returned option, and stores the user-selected response fields."
+  },
+  {
+    value: "createShipment",
+    label: "Create Shipment",
+    scope: "Shipment-centric",
+    note: "Creates or uses a shipment record, updates package, label, tracking, cost, and status fields after DHL confirms."
+  },
+  {
+    value: "syncTrackingStatus",
+    label: "Sync Tracking Status",
+    scope: "Shipment plus schedule",
+    note: "Uses tracking number, updates latest shipment status, inserts deduped tracking events, and stops terminal shipments. Also captures tracking numbers and exception fields automatically."
+  },
+  {
+    value: "createReturnLabel",
+    label: "Create Return Label",
+    scope: "Shipment, return, case, RMA",
+    note: "Creates a separate return shipment, preserving the original shipment and storing return tracking plus label file data."
+  },
+  {
+    value: "voidShipment",
+    label: "Void Shipment",
+    scope: "Shipment only",
+    note: "Calls DHL void/cancel before updating Salesforce and is blocked for delivered or terminal shipments."
+  }
+];
+
+export default class DhlFieldMappingComponent extends LightningElement {
+  @track selectedAction = "validateAddress";
+  @track selectedDirection = "SF to DHL";
+  @track selectedSFObject = "Case";
+  @track allSFObjectOptions = [];
+
+  get sfObjectOptions() {
+    if (SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)) {
+      return [{ label: "Shipment", value: SHIPMENT_OBJECT, selected: true }];
+    }
+    return this.allSFObjectOptions;
+  }
+  @track sfFieldOptions = [];
+  @track dhlFieldOptions = [];
+  @track mappingRows = [];
+  @track rowCounter = 1;
+  @track isLoading = true;
+  @track showResetConfirm = false;
+
+  get directionOptions() {
+    return [
+      {
+        label: "SF to DHL",
+        value: "SF to DHL",
+        selected: this.selectedDirection === "SF to DHL"
+      },
+      {
+        label: "DHL to SF",
+        value: "DHL to SF",
+        selected: this.selectedDirection === "DHL to SF"
+      }
+    ];
+  }
+
+  get actionOptions() {
+    return ACTIONS.map((action) => ({
+      ...action,
+      selected: action.value === this.selectedAction,
+      className:
+        action.value === this.selectedAction
+          ? "action-tile selected"
+          : "action-tile"
+    }));
+  }
+
+  get selectedActionConfig() {
+    return (
+      ACTIONS.find((action) => action.value === this.selectedAction) ||
+      ACTIONS[0]
+    );
+  }
+
+  get selectedActionLabel() {
+    return this.selectedActionConfig.label;
+  }
+
+  get selectedActionScope() {
+    return this.selectedActionConfig.scope;
+  }
+
+  get selectedActionNote() {
+    return this.selectedActionConfig.note;
+  }
+
+  get isExceptionAction() {
+    return this.selectedAction === "handleDeliveryExceptions";
+  }
+
+  connectedCallback() {
+    this.loadInitialData();
+  }
+
+  loadInitialData() {
+    this.isLoading = true;
+    this.loadSalesforceObjects()
+      .then(() => this.reloadMappings())
+      .catch((error) => {
+        this.showToast("Error", error.body?.message || error.message, "error");
+        this.isLoading = false;
+      });
+  }
+
+  loadSalesforceObjects() {
+    return getSalesforceObjects().then((result) => {
+      const preferredObjects = [
+        "Case",
+        "Shipment",
+        "QuickBridgeTLG__Carrier_Shipment__c",
+        "Carrier_Package__c",
+        "Carrier_Rate_Quote__c",
+        "ReturnOrder",
+        "Account",
+        "Order"
+      ];
+      const filtered = (result || []).filter((obj) =>
+        preferredObjects.includes(obj.value)
+      );
+      const optionsSource = filtered.length ? filtered : result || [];
+      this.allSFObjectOptions = optionsSource.map((obj) => ({
+        label: obj.label,
+        value: obj.value,
+        selected: obj.value === this.selectedSFObject
+      }));
+      if (
+        !this.allSFObjectOptions.some(
+          (obj) => obj.value === this.selectedSFObject
+        ) &&
+        this.allSFObjectOptions.length
+      ) {
+        this.selectedSFObject = this.allSFObjectOptions[0].value;
+        this.allSFObjectOptions[0].selected = true;
+      }
+    });
+  }
+
+  reloadMappings() {
+    this.isLoading = true;
+    return Promise.all([
+      getObjectFields({ objectName: this.selectedSFObject }),
+      getDHLFields({
+        actionName: this.selectedAction,
+        direction: this.selectedDirection
+      }),
+      getExistingDHLMappings({
+        actionName: this.selectedAction,
+        sfObject: this.selectedSFObject
+      })
+    ])
+      .then(([sfFields, dhlFields, savedMappings]) => {
+        this.sfFieldOptions = (sfFields || []).map((field) => ({
+          ...field,
+          type: this.normalizeType(field.type)
+        }));
+        this.dhlFieldOptions = (dhlFields || []).map((field) => ({
+          ...field,
+          type: this.normalizeType(field.type),
+          required: Boolean(field.required)
+        }));
+        this.buildMappingRows(savedMappings || []);
+        this.isLoading = false;
+      })
+      .catch((error) => {
+        this.showToast("Error", error.body?.message || error.message, "error");
+        this.isLoading = false;
+      });
+  }
+
+  buildMappingRows(savedMappings) {
+    const relevantSavedMappings = savedMappings.filter((mapping) => {
+      const direction = mapping.syncDirection || "SF to DHL";
+      return direction === this.selectedDirection;
+    });
+    const requiredDHLFields = this.dhlFieldOptions.filter(
+      (field) => field.required
+    );
+    const rows = [];
+    let counter = 1;
+
+    requiredDHLFields.forEach((field) => {
+      const existingMapping = relevantSavedMappings.find(
+        (mapping) => mapping.externalField === field.value
+      );
+      rows.push({
+        id: counter++,
+        sfField: existingMapping?.sfField || "",
+        externalField: field.value,
+        syncDirection: this.selectedDirection,
+        isMandatory: true
+      });
+    });
+
+    relevantSavedMappings.forEach((mapping) => {
+      const isRequired = requiredDHLFields.some(
+        (field) => field.value === mapping.externalField
+      );
+      if (!isRequired) {
+        rows.push({
+          id: counter++,
+          sfField: mapping.sfField,
+          externalField: mapping.externalField,
+          syncDirection: this.selectedDirection,
+          isMandatory: false
+        });
+      }
+    });
+
+    if (rows.length === 0) {
+      rows.push({
+        id: counter++,
+        sfField: "",
+        externalField: "",
+        syncDirection: this.selectedDirection,
+        isMandatory: false
+      });
+    }
+
+    this.mappingRows = rows;
+    this.rowCounter = counter;
+    this.updateRowDropdowns();
+    this.notifyMappingContextChange();
+  }
+
+  handleActionSelect(event) {
+    this.selectedAction = event.currentTarget.dataset.action;
+    this.selectedDirection =
+      this.selectedAction === "handleDeliveryExceptions"
+        ? "DHL to SF"
+        : this.selectedDirection;
+    if (SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)) {
+      this.selectedSFObject = SHIPMENT_OBJECT;
+    }
+    this.reloadMappings();
+  }
+
+  handleDirectionChange(event) {
+    this.selectedDirection = event.target.value;
+    this.reloadMappings();
+  }
+
+  handleSalesforceObjectChange(event) {
+    this.selectedSFObject = event.target.value;
+    this.allSFObjectOptions = this.allSFObjectOptions.map((option) => ({
+      ...option,
+      selected: option.value === this.selectedSFObject
+    }));
+    this.reloadMappings();
+  }
+
+  handleAddRow() {
+    this.mappingRows = [
+      ...this.mappingRows,
+      {
+        id: this.rowCounter++,
+        sfField: "",
+        externalField: "",
+        syncDirection: this.selectedDirection,
+        isMandatory: false
+      }
+    ];
+    this.updateRowDropdowns();
+    this.notifyMappingContextChange();
+  }
+
+  handleRemoveRow(event) {
+    const rowId = Number(event.currentTarget.dataset.rowId);
+    this.mappingRows = this.mappingRows.filter((row) => row.id !== rowId);
+    if (!this.mappingRows.length) {
+      this.handleAddRow();
+      return;
+    }
+    this.updateRowDropdowns();
+    this.notifyMappingContextChange();
+  }
+
+  handleExternalFieldChange(event) {
+    const rowId = Number(event.currentTarget.dataset.rowId);
+    const value = event.target.value;
+    this.mappingRows = this.mappingRows.map((row) => {
+      if (row.id !== rowId) return row;
+      const dhlField = this.dhlFieldOptions.find(
+        (option) => option.value === value
+      );
+      const sfField = this.sfFieldOptions.find(
+        (option) => option.value === row.sfField
+      );
+      const keepSfField =
+        dhlField && sfField && this.isTypeMatch(sfField.type, dhlField.type);
+      return {
+        ...row,
+        externalField: value,
+        sfField: keepSfField ? row.sfField : ""
+      };
+    });
+    this.updateRowDropdowns();
+    this.notifyMappingContextChange();
+  }
+
+  handleSFFieldChange(event) {
+    const rowId = Number(event.currentTarget.dataset.rowId);
+    const value = event.target.value;
+    this.mappingRows = this.mappingRows.map((row) => {
+      return row.id === rowId ? { ...row, sfField: value } : row;
+    });
+    this.updateRowDropdowns();
+    this.notifyMappingContextChange();
+  }
+
+  handleSave() {
+    const duplicateExternalFields = this.getDuplicateExternalFields();
+    if (duplicateExternalFields.length) {
+      this.showToast(
+        "Validation Error",
+        "Each DHL field can only be mapped once per direction.",
+        "error"
+      );
+      return;
+    }
+
+    const missingRequiredRow = this.mappingRows.find(
+      (row) => row.isMandatory && (!row.externalField || !row.sfField)
+    );
+    if (missingRequiredRow) {
+      this.showToast(
+        "Validation Error",
+        "Map a Salesforce field to every required DHL field.",
+        "error"
+      );
+      return;
+    }
+
+    const rowsToSave = this.mappingRows
+      .filter((row) => row.sfField && row.externalField)
+      .map((row) => {
+        return {
+          sfField: row.sfField,
+          externalField: row.externalField,
+          syncDirection: this.selectedDirection
+        };
+      });
+
+    this.isLoading = true;
+    saveDHLFieldMappings({
+      actionName: this.selectedAction,
+      sfObject: this.selectedSFObject,
+      mappingsJson: JSON.stringify(rowsToSave)
+    })
+      .then((result) => {
+        this.isLoading = false;
+        this.showToast("Success", result, "success");
+      })
+      .catch((error) => {
+        this.isLoading = false;
+        this.showToast("Error", error.body?.message || error.message, "error");
+      });
+  }
+
+  handleReset() {
+    this.showResetConfirm = true;
+  }
+
+  handleResetCancel() {
+    this.showResetConfirm = false;
+  }
+
+  handleResetConfirm() {
+    this.showResetConfirm = false;
+    this.isLoading = true;
+    clearFieldMappings({
+      integration: "dhl",
+      sfObject: this.selectedSFObject
+    })
+      .then(() => {
+        this.showToast(
+          "Success",
+          "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.",
+          "success"
+        );
+        this.mappingRows = [];
+        this.rowCounter = 1;
+        this.isLoading = false;
+      })
+      .catch((error) => {
+        this.isLoading = false;
+        this.showToast("Error", error.body?.message || error.message, "error");
+      });
+  }
+
+  @api
+  applyMappingSuggestions(suggestions = []) {
+    const rows = [...this.mappingRows];
+    let changed = false;
+
+    suggestions.forEach((suggestion) => {
+      const sfField = suggestion.salesforceField || suggestion.sfField;
+      const externalField = suggestion.externalField;
+      if (!sfField || !externalField) return;
+      if (
+        rows.some(
+          (row) =>
+            row.sfField === sfField && row.externalField === externalField
+        )
+      )
+        return;
+
+      const existingExternal = rows.find(
+        (row) => row.externalField === externalField
+      );
+      if (existingExternal) {
+        if (!existingExternal.sfField) {
+          existingExternal.sfField = sfField;
+          existingExternal.syncDirection = this.selectedDirection;
+          changed = true;
+        }
+        return;
+      }
+
+      rows.push({
+        id: this.rowCounter++,
+        sfField,
+        externalField,
+        syncDirection: this.selectedDirection,
+        isMandatory: suggestion.required === true
+      });
+      changed = true;
+    });
+
+    if (changed) {
+      this.mappingRows = rows;
+      this.updateRowDropdowns();
+      this.notifyMappingContextChange();
+    }
+  }
+
+  notifyMappingContextChange() {
+    this.dispatchEvent(
+      new CustomEvent("mappingcontextchange", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          connectorKey: "dhl",
+          connectorLabel: "DHL",
+          salesforceObject: this.selectedSFObject,
+          externalObject: this.selectedAction,
+          syncDirection: this.selectedDirection,
+          allowApply: true,
+          mappings: this.mappingRows.map((row) => ({
+            sfField: row.sfField,
+            externalField: row.externalField,
+            syncDirection: row.syncDirection,
+            isMandatory: row.isMandatory
+          }))
+        }
+      })
+    );
+  }
+
+  updateRowDropdowns() {
+    this.mappingRows = this.mappingRows.map((row) => {
+      const dhlField = this.dhlFieldOptions.find(
+        (option) => option.value === row.externalField
+      );
+      const dhlType = dhlField ? dhlField.type : null;
+      const availableSfOptions = dhlType
+        ? this.sfFieldOptions.filter((option) =>
+            this.isTypeMatch(option.type, dhlType)
+          )
+        : this.sfFieldOptions;
+      const currentSfFieldValid =
+        row.sfField &&
+        availableSfOptions.some((option) => option.value === row.sfField);
+
+      return {
+        ...row,
+        sfField: currentSfFieldValid ? row.sfField : "",
+        isSFFieldDisabled: !row.isMandatory && !row.externalField,
+        externalFieldOptions: this.dhlFieldOptions.map((option) => ({
+          ...option,
+          selected: option.value === row.externalField
+        })),
+        sfFieldOptions: availableSfOptions.map((option) => ({
+          ...option,
+          selected: option.value === row.sfField
+        }))
+      };
+    });
+  }
+
+  getDuplicateExternalFields() {
+    const seen = new Set();
+    const duplicates = [];
+    this.mappingRows.forEach((row) => {
+      if (!row.externalField) return;
+      if (seen.has(row.externalField)) {
+        duplicates.push(row.externalField);
+        return;
+      }
+      seen.add(row.externalField);
+    });
+    return duplicates;
+  }
+
+  normalizeType(type) {
+    const value = (type || "").toUpperCase();
+    if (
+      [
+        "CURRENCY",
+        "DOUBLE",
+        "INTEGER",
+        "PERCENT",
+        "DECIMAL",
+        "LONG",
+        "NUMBER"
+      ].includes(value)
+    )
+      return "NUMBER";
+    if (["DATE", "DATETIME"].includes(value)) return "DATE";
+    if (value === "BOOLEAN") return "BOOLEAN";
+    return "STRING";
+  }
+
+  isTypeMatch(sfType, dhlType) {
+    if (!sfType || !dhlType) return true;
+    return this.normalizeType(sfType) === this.normalizeType(dhlType);
+  }
+
+  showToast(title, message, variant) {
+    this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+  }
+}
