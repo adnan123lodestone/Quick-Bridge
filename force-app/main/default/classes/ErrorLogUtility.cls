@@ -283,81 +283,208 @@ public without sharing class ErrorLogUtility {
         List<Map<String, Object>> columns = new List<Map<String, Object>>();
         List<String> queryFields = new List<String>{'Id', 'Name'};
         
-        Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
-        Schema.SObjectType sObjType = globalDescribe.get('QuickBridgeTLG__Error_Log__c');
-        if (sObjType == null) {
-            sObjType = globalDescribe.get('Error_Log__c'); // Fallback if no namespace
-        }
-        
-        // Fetch the Field Set
-        Schema.FieldSet fieldSet = sObjType.getDescribe().fieldSets.getMap().get('QuickBridgeTLG__Default_Error_Logs');
-        if (fieldSet == null) {
-            fieldSet = sObjType.getDescribe().fieldSets.getMap().get('Default_Error_Logs');
-        }
-        
-        // Build Columns for LWC Datatable & Extract SOQL Fields
-        for (Schema.FieldSetMember fsm : fieldSet.getFields()) {
-            String fieldPath = fsm.getFieldPath();
-            
-            // Add field to SOQL list
-            if (!queryFields.contains(fieldPath)) {
-                queryFields.add(fieldPath);
+        try {
+            // 1. Get object
+            String objectName = getErrorLogObjectName();
+            if (String.isBlank(objectName)) {
+                result.put('columns', columns);
+                result.put('records', new List<SObject>());
+                return result;
             }
             
-            Map<String, Object> col = new Map<String, Object>();
-            col.put('label', fsm.getLabel());
-            
-            Schema.DisplayType sfType = fsm.getType();
-            
-            // A) Handle Date/Time Fields
-            if (sfType == Schema.DisplayType.DATETIME || sfType == Schema.DisplayType.DATE) {
-                col.put('type', 'date');
-                col.put('fieldName', fieldPath);
-                col.put('typeAttributes', new Map<String, Object>{
-                    'year' => 'numeric', 'month' => 'short', 'day' => '2-digit',
-                    'hour' => '2-digit', 'minute' => '2-digit'
-                });
+            Schema.SObjectType sObjType = Schema.getGlobalDescribe().get(objectName);
+            if (sObjType == null) {
+                result.put('columns', columns);
+                result.put('records', new List<SObject>());
+                return result;
             }
-            // B) Handle Clickable Lookups & ID Text Fields
-            else if (sfType == Schema.DisplayType.REFERENCE || fieldPath.contains('Source_Record_Id__c') || fieldPath.contains('Action_Source_Record_Id__c')) {
-                col.put('type', 'url');
-                col.put('fieldName', fieldPath + '_Url'); // Custom JS property for URL
-                col.put('typeAttributes', new Map<String, Object>{
-                    'label' => new Map<String, String>{ 'fieldName' => fieldPath + '_Name' },
-                    'target' => '_blank'
-                });
+            
+            // 2. Get field set - SIMPLE APPROACH
+            Schema.FieldSet fieldSet = getErrorLogFieldSet(sObjType);
+            if (fieldSet == null) {
+                result.put('columns', columns);
+                result.put('records', new List<SObject>());
+                return result;
+            }
+            
+            // 3. Build columns (same as before)
+            for (Schema.FieldSetMember fsm : fieldSet.getFields()) {
+                String fieldPath = fsm.getFieldPath();
                 
-                if (sfType == Schema.DisplayType.REFERENCE) {
+                if (!queryFields.contains(fieldPath)) {
+                    queryFields.add(fieldPath);
+                }
+                
+                Map<String, Object> col = new Map<String, Object>();
+                col.put('label', fsm.getLabel());
+                col.put('fieldName', fieldPath);
+                
+                Schema.DisplayType sfType = fsm.getType();
+                
+                if (sfType == Schema.DisplayType.DATETIME || sfType == Schema.DisplayType.DATE) {
+                    col.put('type', 'date');
+                    col.put('typeAttributes', new Map<String, Object>{
+                        'year' => 'numeric', 'month' => 'short', 'day' => '2-digit',
+                        'hour' => '2-digit', 'minute' => '2-digit'
+                    });
+                }
+                else if (sfType == Schema.DisplayType.REFERENCE) {
+                    col.put('type', 'url');
+                    col.put('fieldName', fieldPath + '_Url');
+                    col.put('typeAttributes', new Map<String, Object>{
+                        'label' => new Map<String, String>{ 'fieldName' => fieldPath + '_Name' },
+                        'target' => '_blank'
+                    });
+                    
                     String relationName = fieldPath.endsWith('__c') ? fieldPath.replace('__c', '__r') : fieldPath.replace('Id', '');
-                    queryFields.add(relationName + '.Name');
+                    if (!queryFields.contains(relationName + '.Name')) {
+                        queryFields.add(relationName + '.Name');
+                    }
+                }
+                else {
+                    col.put('type', 'text');
+                    col.put('wrapText', true);
+                }
+                
+                columns.add(col);
+            }
+            
+            // 4. Add required fields
+            String namespace = getNamespace();
+            addRequiredFields(queryFields, namespace);
+            
+            // 5. Build SOQL
+            String gatewayField = addNamespace('Gateway_Name__c', namespace);
+            String errorMsgField = addNamespace('Error_Message__c', namespace);
+            
+            String query = 'SELECT ' + String.join(queryFields, ', ') +
+                ' FROM ' + objectName +
+                ' WHERE ' + gatewayField + ' = :gatewayName ' +
+                ' ORDER BY CreatedDate DESC LIMIT 500';
+            
+            List<SObject> records = Database.query(query);
+            
+            // 6. Redact
+            for (SObject rec : records) {
+                String raw = (String) rec.get(errorMsgField);
+                if (raw != null) {
+                    rec.put(errorMsgField, redactSensitive(raw));
                 }
             }
-            // C) Normal Text Fields
-            else {
-                col.put('type', 'text');
-                col.put('fieldName', fieldPath);
-                col.put('wrapText', true);
-            }
             
-            columns.add(col);
+            result.put('columns', columns);
+            result.put('records', records);
+            
+        } catch (Exception e) {
+            result.put('columns', columns);
+            result.put('records', new List<SObject>());
         }
         
-        // 4. Build and Execute Dynamic SOQL
-        String objectName = sObjType.getDescribe().getName();
-        String gatewayField = objectName.contains('QuickBridgeTLG__') ? 'QuickBridgeTLG__Gateway_Name__c' : 'Gateway_Name__c';
-        queryFields.add('QuickBridgeTLG__Is_Retryable__c');
-        queryFields.add('QuickBridgeTLG__Retry_Count__c');
-        queryFields.add('QuickBridgeTLG__Retry_Status__c');
-        
-        String query = 'SELECT ' + String.join(queryFields, ', ') +
-            ' FROM ' + objectName +
-            ' WHERE ' + gatewayField + ' = :gatewayName ' +
-            ' ORDER BY CreatedDate DESC LIMIT 500';
-        
-        result.put('columns', columns);
-        result.put('records', Database.query(query));
-        
         return result;
+    }
+
+    // ============ SIMPLE HELPER METHODS ============
+
+    private static String getErrorLogObjectName() {
+        // Try common patterns
+        String namespace = getNamespace();
+        List<String> possibleNames = new List<String>();
+        
+        if (String.isNotBlank(namespace)) {
+            possibleNames.add(namespace + '__Error_Log__c');
+        }
+        possibleNames.add('Error_Log__c');
+        
+        for (String name : possibleNames) {
+            if (Schema.getGlobalDescribe().containsKey(name)) {
+                return name;
+            }
+        }
+        
+        // Search for it
+        for (String key : Schema.getGlobalDescribe().keySet()) {
+            if (key.endsWith('Error_Log__c')) {
+                return key;
+            }
+        }
+        
+        return null;
+    }
+
+    private static String getNamespace() {
+        try {
+            String className = ErrorLogUtility.class.getName();
+            if (className.contains('.')) {
+                String ns = className.substringBefore('.');
+                if (String.isNotBlank(ns) && !ns.equals('ErrorLogUtility')) {
+                    return ns;
+                }
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private static Schema.FieldSet getErrorLogFieldSet(Schema.SObjectType sObjType) {
+        if (sObjType == null) return null;
+        
+        Map<String, Schema.FieldSet> fieldSetMap = sObjType.getDescribe().fieldSets.getMap();
+        String namespace = getNamespace();
+        
+        // Try all possible names
+        List<String> possibleNames = new List<String>();
+        
+        if (String.isNotBlank(namespace)) {
+            possibleNames.add(namespace + '__Default_Error_Logs');
+            possibleNames.add(namespace + '__DefaultErrorLogs');
+            possibleNames.add(namespace + '__Error_Log_Field_Set');
+        }
+        possibleNames.add('Default_Error_Logs');
+        possibleNames.add('DefaultErrorLogs');
+        possibleNames.add('Error_Log_Field_Set');
+        possibleNames.add('Default Error Logs');
+        
+        for (String name : possibleNames) {
+            if (fieldSetMap.containsKey(name)) {
+                return fieldSetMap.get(name);
+            }
+        }
+        
+        // Search by pattern
+        for (String key : fieldSetMap.keySet()) {
+            if (key.contains('Default') && key.contains('Error')) {
+                return fieldSetMap.get(key);
+            }
+        }
+        
+        return null;
+    }
+
+    private static String addNamespace(String fieldName, String namespace) {
+        if (String.isBlank(fieldName)) return fieldName;
+        if (String.isNotBlank(namespace) && fieldName.endsWith('__c')) {
+            return namespace + '__' + fieldName;
+        }
+        return fieldName;
+    }
+
+    private static void addRequiredFields(List<String> queryFields, String namespace) {
+        if (queryFields == null) return;
+        
+        List<String> required = new List<String>{
+            'Gateway_Name__c',
+            'Error_Message__c',
+            'Is_Retryable__c',
+            'Retry_Count__c',
+            'Retry_Status__c',
+            'CreatedDate'
+        };
+        
+        for (String field : required) {
+            String fieldWithNs = addNamespace(field, namespace);
+            if (!queryFields.contains(fieldWithNs)) {
+                queryFields.add(fieldWithNs);
+            }
+        }
     }
     
     private static Boolean isRetryableError(LogContext ctx) {
@@ -398,5 +525,19 @@ public without sharing class ErrorLogUtility {
         Integer newCount = (Integer) (log.Retry_Count__c == null ? 0 : log.Retry_Count__c) + 1;
         log.Retry_Count__c = newCount;
         update log;
+    }
+
+    // Redacts common secret patterns (passwords, tokens, API keys) from a log message
+    // before the message is surfaced to the UI via getDynamicLogs.
+    public static String redactSensitive(String message) {
+        if (String.isBlank(message)) {
+            return message;
+        }
+        String result = message;
+        // key=value patterns: password=X, token=X, secret=X, key=X, apikey=X
+        result = result.replaceAll('(?i)(password|passwd|pwd|token|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\\s*[:=]\\s*\\S+', '$1=[REDACTED]');
+        // Authorization header values: Bearer <token>, Basic <creds>
+        result = result.replaceAll('(?i)(Authorization:\\s*(?:Bearer|Basic))\\s+\\S+', '$1 [REDACTED]');
+        return result;
     }
 }

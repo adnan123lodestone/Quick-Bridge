@@ -255,6 +255,7 @@ public with sharing class QBOInvoicePdfActionController {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
+    @TestVisible
     private static Map<String, String> resolveInboundMapping(String externalEntity, String objectApiName) {
         if (externalEntity == 'Customer') {
             return QBObjectMappings.getCustomerToAccountMapping();
@@ -266,6 +267,7 @@ public with sharing class QBOInvoicePdfActionController {
         return QBObjectMappings.reverseMapping(QBObjectMappings.getInvoiceMapping());
     }
 
+    @TestVisible
     private static void applyMapping(SObject record, Map<String, Object> data, Map<String, String> mapping) {
         if (mapping == null || mapping.isEmpty()) return;
         for (String qboPath : mapping.keySet()) {
@@ -284,6 +286,7 @@ public with sharing class QBOInvoicePdfActionController {
         }
     }
 
+    @TestVisible
     private static Object getNestedValue(Map<String, Object> data, String path) {
         if (String.isBlank(path) || data == null) return null;
         if (!path.contains('.')) return data.get(path);
@@ -297,6 +300,7 @@ public with sharing class QBOInvoicePdfActionController {
         return cur.get(keys[keys.size() - 1]);
     }
 
+    @TestVisible
     private static String fetchFieldValue(Id recordId, String objectApiName, String fieldApiName) {
         if (String.isBlank(fieldApiName)) return null;
         try {
@@ -310,6 +314,7 @@ public with sharing class QBOInvoicePdfActionController {
         }
     }
 
+    @TestVisible
     private static String savePdf(Id recordId, Blob pdfBlob, String fileTitle) {
         String safeTitle   = fileTitle.replaceAll('[^A-Za-z0-9_ \\-()]', '');
         String pathOnClient = safeTitle.replaceAll('[ ()]', '_') + '.pdf';

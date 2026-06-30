@@ -141,7 +141,10 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                         }
                         acc.Shopify_ID__c = shopifyId;
                         acc.FirstName     = (String) customer.get('first_name');
-                        acc.LastName      = String.isNotBlank((String) customer.get('last_name')) ? (String) customer.get('last_name') : acc.FirstName;
+                        String resolvedLastName = String.isNotBlank((String) customer.get('last_name'))
+                            ? (String) customer.get('last_name')
+                            : acc.FirstName;
+                        acc.LastName = String.isNotBlank(resolvedLastName) ? resolvedLastName : ('Customer-' + shopifyId);
                         acc.Phone         = (String) customer.get('phone');
                         accountsToUpsert.add(acc);
                         processedShopifyIds.add(shopifyId);
@@ -198,16 +201,18 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                     String sfField = orderFieldMap.get(shopifyField);
                     Object val     = orderMap.get(shopifyField);
                     if (val == null) continue;
+                    // endsWith is namespace-safe: dynamic mappings return QuickBridgeTLG__Total_Amount__c,
+                    // fallback returns Total_Amount__c — both end with the same suffix
                     try {
                         if (sfField == 'EffectiveDate') {
                             ord.EffectiveDate = Date.valueOf(String.valueOf(val).substring(0, 10));
-                        } else if (sfField == 'Total_Amount__c' || sfField == 'Total_Tax__c' || sfField == 'Total_Discounts__c') {
+                        } else if (sfField.endsWith('Total_Amount__c') || sfField.endsWith('Total_Tax__c') || sfField.endsWith('Total_Discounts__c')) {
                             ord.put(sfField, Decimal.valueOf(String.valueOf(val)));
                         } else {
                             ord.put(sfField, val);
                         }
                     } catch (Exception ex) {
-                        System.debug('Order field mapping error ' + sfField + ': ' + ex.getMessage());
+                        ErrorLogUtility.logException('Shopify', 'ShopifyOrdersBatch.mapOrderFields', ex, null, null);
                     }
                 }
                 
@@ -514,12 +519,14 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             try {
                 if (sfField == 'EffectiveDate') {
                     ord.EffectiveDate = Date.valueOf(String.valueOf(val).substring(0, 10));
-                } else if (sfField == 'Total_Amount__c' || sfField == 'Total_Tax__c' || sfField == 'Total_Discounts__c') {
+                } else if (sfField.endsWith('Total_Amount__c') || sfField.endsWith('Total_Tax__c') || sfField.endsWith('Total_Discounts__c')) {
                     ord.put(sfField, Decimal.valueOf(String.valueOf(val)));
                 } else {
                     ord.put(sfField, val);
                 }
-            } catch (Exception ex) { /* ignore */ }
+            } catch (Exception ex) {
+                ErrorLogUtility.logException('Shopify', 'ShopifyOrdersBatch.buildOrderFromData', ex, null, null);
+            }
         }
 
         // Additional fields from your execute method

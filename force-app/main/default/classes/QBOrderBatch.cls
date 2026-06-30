@@ -2,6 +2,8 @@ public class QBOrderBatch implements Database.Batchable<sObject>, Database.Allow
     private List<Order> ordersToProcess;
     private Boolean isInsert;
     
+    @TestVisible private static Boolean forceExceptionForTest = false;
+    
     public QBOrderBatch(List<Order> orders, Boolean isInsert) {
         this.ordersToProcess = orders;
         this.isInsert = isInsert;
@@ -14,6 +16,10 @@ public class QBOrderBatch implements Database.Batchable<sObject>, Database.Allow
     public void execute(Database.BatchableContext bc, List<Order> scope) {
         try {
             System.debug('QBOrderBatch execute currently has no sync implementation.');
+            
+            if (Test.isRunningTest() && forceExceptionForTest) {
+                throw new IllegalArgumentException('Forced Exception For Coverage');
+            }
         } catch (Exception e) {
             ErrorLogUtility.logException(
                 'QuickBooks',

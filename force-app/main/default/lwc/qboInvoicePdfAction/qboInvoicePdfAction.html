@@ -1,79 +1,79 @@
 <template>
-    <div class="qbo-pdf-panel">
+  <div class="qbo-pdf-panel">
+    <template if:true={isPanelLoading}>
+      <div class="qbo-pdf-loading">
+        <lightning-spinner
+          size="x-small"
+          alternative-text="Loading..."
+        ></lightning-spinner>
+      </div>
+    </template>
 
-        <template if:true={isPanelLoading}>
-            <div class="qbo-pdf-loading">
-                <lightning-spinner size="x-small" alternative-text="Loading..."></lightning-spinner>
-            </div>
+    <template if:false={isPanelLoading}>
+      <div class="qbo-pdf-bar">
+        <template if:false={isConfigured}>
+          <span class="qbo-pdf-no-actions">{panelMessage}</span>
         </template>
 
-        <template if:false={isPanelLoading}>
-            <div class="qbo-pdf-bar">
-
-                <template if:false={isConfigured}>
-                    <span class="qbo-pdf-no-actions">{panelMessage}</span>
+        <template if:true={isConfigured}>
+          <div class="qbo-pdf-actions">
+            <template if:true={showSyncToQbo}>
+              <button
+                type="button"
+                class="qbo-pdf-btn"
+                onclick={handleSyncToQbo}
+                disabled={isSyncToDisabled}
+              >
+                <template if:true={isSyncingTo}>
+                  <lightning-spinner
+                    size="x-small"
+                    alternative-text="Syncing..."
+                  ></lightning-spinner>
                 </template>
+                <template if:false={isSyncingTo}> Sync to QBO </template>
+              </button>
+            </template>
 
-                <template if:true={isConfigured}>
-
-                    <div class="qbo-pdf-actions">
-
-                        <template if:true={showSyncToQbo}>
-                            <button
-                                type="button"
-                                class="qbo-pdf-btn"
-                                onclick={handleSyncToQbo}
-                                disabled={isSyncToDisabled}
-                            >
-                                <template if:true={isSyncingTo}>
-                                    <lightning-spinner size="x-small" alternative-text="Syncing..."></lightning-spinner>
-                                </template>
-                                <template if:false={isSyncingTo}>
-                                    Sync to QBO
-                                </template>
-                            </button>
-                        </template>
-
-                        <template if:true={showSyncFromQbo}>
-                            <button
-                                type="button"
-                                class="qbo-pdf-btn"
-                                onclick={handleSyncFromQbo}
-                                disabled={isSyncFromDisabled}
-                            >
-                                <template if:true={isSyncingFrom}>
-                                    <lightning-spinner size="x-small" alternative-text="Syncing..."></lightning-spinner>
-                                </template>
-                                <template if:false={isSyncingFrom}>
-                                    Sync from QBO
-                                </template>
-                            </button>
-                        </template>
-
-                        <button
-                            type="button"
-                            class="qbo-pdf-btn"
-                            onclick={handleDownload}
-                            disabled={isDownloadDisabled}
-                        >
-                            <template if:true={isLoading}>
-                                <lightning-spinner size="x-small" alternative-text="Downloading..."></lightning-spinner>
-                            </template>
-                            <template if:false={isLoading}>
-                                Download QBO Invoice PDF
-                            </template>
-                        </button>
-
-                    </div>
-
-                    <template if:true={hasMessage}>
-                        <span class="qbo-pdf-no-actions">{panelMessage}</span>
-                    </template>
-
+            <template if:true={showSyncFromQbo}>
+              <button
+                type="button"
+                class="qbo-pdf-btn"
+                onclick={handleSyncFromQbo}
+                disabled={isSyncFromDisabled}
+              >
+                <template if:true={isSyncingFrom}>
+                  <lightning-spinner
+                    size="x-small"
+                    alternative-text="Syncing..."
+                  ></lightning-spinner>
                 </template>
+                <template if:false={isSyncingFrom}> Sync from QBO </template>
+              </button>
+            </template>
 
-            </div>
+            <button
+              type="button"
+              class="qbo-pdf-btn"
+              onclick={handleDownload}
+              disabled={isDownloadDisabled}
+            >
+              <template if:true={isLoading}>
+                <lightning-spinner
+                  size="x-small"
+                  alternative-text="Downloading..."
+                ></lightning-spinner>
+              </template>
+              <template if:false={isLoading}>
+                Download QBO Invoice PDF
+              </template>
+            </button>
+          </div>
+
+          <template if:true={hasMessage}>
+            <span class="qbo-pdf-no-actions">{panelMessage}</span>
+          </template>
         </template>
-
-    </div>
+      </div>
+    </template>
+  </div>
 </template>

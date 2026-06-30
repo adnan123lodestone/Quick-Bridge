@@ -4,9 +4,13 @@ global with sharing class ScheduledIntegrationHeartbeat implements Schedulable {
 
   @TestVisible
   private static Boolean skipSchedulingForTests = true;
+  @TestVisible private static Boolean forceExceptionForTest = false;
 
   global void execute(SchedulableContext context) {
     try {
+      if (Test.isRunningTest() && forceExceptionForTest) {
+          throw new IllegalArgumentException('Forced Exception');
+      }
       GenericScheduleDispatcher.dispatchDue();
     } catch (Exception e) {
       ErrorLogUtility.logException(

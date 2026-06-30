@@ -63,41 +63,9 @@ public with sharing class FedExAuthService {
             return normalizedConfig;
         }
 
-        Quickbridge_Config__mdt quickbridgeConfig = Quickbridge_Config__mdt.getInstance('FedEx');
-        if (quickbridgeConfig != null && (
-            String.isNotBlank(quickbridgeConfig.FedEx_Client_Id__c) ||
-            String.isNotBlank(quickbridgeConfig.FedEx_Client_Secret__c) ||
-            String.isNotBlank(quickbridgeConfig.FedEx_Account_Number__c)
-        )) {
-            FedExCredentialConfig config = new FedExCredentialConfig();
-            config.clientId = quickbridgeConfig.FedEx_Client_Id__c;
-            config.clientSecret = quickbridgeConfig.FedEx_Client_Secret__c;
-            config.environment = String.isBlank(quickbridgeConfig.FedEx_Environment__c) ? 'Sandbox' : quickbridgeConfig.FedEx_Environment__c;
-            config.accountNumber = quickbridgeConfig.FedEx_Account_Number__c;
-            config.defaultServiceType = quickbridgeConfig.FedEx_Default_Service_Type__c;
-            config.defaultPackagingType = quickbridgeConfig.FedEx_Default_Packaging_Type__c;
-            config.defaultPickupType = quickbridgeConfig.FedEx_Default_Pickup_Type__c;
-            config.isActive = quickbridgeConfig.FedEx_Active__c == true;
-            return config;
-        }
-
-        List<FedEx_Config__mdt> legacyConfigs = [
-            SELECT Client_Id__c, Client_Secret__c, Environment__c, MasterLabel
-            FROM FedEx_Config__mdt
-            LIMIT 1
-        ];
         FedExCredentialConfig config = new FedExCredentialConfig();
-        if (legacyConfigs.isEmpty()) {
-            config.environment = 'Sandbox';
-            config.isActive = false;
-            return config;
-        }
-        FedEx_Config__mdt legacyConfig = legacyConfigs[0];
-        config.clientId = legacyConfig.Client_Id__c;
-        config.clientSecret = legacyConfig.Client_Secret__c;
-        config.environment = String.isBlank(legacyConfig.Environment__c) ? 'Sandbox' : legacyConfig.Environment__c;
-        config.accountNumber = legacyConfig.MasterLabel;
-        config.isActive = true;
+        config.environment = 'Sandbox';
+        config.isActive = false;
         return config;
     }
 

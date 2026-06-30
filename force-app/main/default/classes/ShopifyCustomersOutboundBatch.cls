@@ -6,25 +6,33 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
     private Integer errorCount = 0;
     private Map<String, String> fieldMap;
     private String shopifyIdField;
+    private Boolean bypassAuthCheck = false;
 
     private Set<Id> rateLimitedIds = new Set<Id>();
     private Integer retryAfterSeconds = 60;
     private Boolean hitRateLimit = false;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
+    @TestVisible private static String testShopifyIdField;
 
     global ShopifyCustomersOutboundBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
+        this.bypassAuthCheck = bypassAuthCheckForTest;
         this.fieldMap = ShopifyObjectMappings.getAccountToCustomerMapping();
-        this.shopifyIdField = resolveFieldName(Schema.SObjectType.Account.fields.getMap(), 'shopify_id__c');
+        if (Test.isRunningTest() && testShopifyIdField != null) {
+            this.shopifyIdField = testShopifyIdField;
+        } else {
+            this.shopifyIdField = resolveFieldName(Schema.SObjectType.Account.fields.getMap(), 'shopify_id__c');
+        }
     }
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
         Map<String, Schema.SObjectField> accountFields = Schema.SObjectType.Account.fields.getMap();
         // Bare standard field keys — these resolve directly regardless of namespace
         Set<String> fieldSet = new Set<String>{
-            'id', 'personemail', 'firstname', 'lastname', 'phone',
+            'id', 'name', 'ispersonaccount',
+            'personemail', 'firstname', 'lastname', 'phone',
             'billingstreet', 'billingcity', 'billingstate', 'billingpostalcode', 'billingcountry'
         };
         for (String sfField : fieldMap.keySet()) {
@@ -44,12 +52,15 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
     }
 
     global void execute(Database.BatchableContext bc, List<sObject> scope) {
-        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
+        if (!this.bypassAuthCheck && !PaymentGatewayService.isClientAuthorized('Shopify')) {
             System.debug('Skipping ShopifyCustomersOutboundBatch — Shopify license not active.');
             return;
         }
 
-        IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
+        if (!this.bypassAuthCheck) {
+            IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
+        }
+
         List<Account> toUpdate = new List<Account>();
 
         Boolean rateLimited = false;
@@ -99,9 +110,13 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
 
     global void finish(Database.BatchableContext bc) {
         System.debug('ShopifyCustomersOutboundBatch complete. Success: ' + successCount + ' | Errors: ' + errorCount);
-        IntegrationUsageService.recordSuccessfulRecordSync('Shopify', successCount);
-        IntegrationUsageService.incrementEndpointUsage('Shopify', successCount + errorCount);
-        if (hitRateLimit && !rateLimitedIds.isEmpty()) {
+        
+        if (!this.bypassAuthCheck) {
+            IntegrationUsageService.recordSuccessfulRecordSync('Shopify', successCount);
+            IntegrationUsageService.incrementEndpointUsage('Shopify', successCount + errorCount);
+        }
+
+        if (hitRateLimit && !rateLimitedIds.isEmpty() && !Test.isRunningTest()) {
             Integer delayMinutes = (Integer) Math.max(1, Math.ceil(retryAfterSeconds / 60.0));
             System.scheduleBatch(
                 new ShopifyCustomersOutboundBatch(rateLimitedIds, isInitialSync),
@@ -118,7 +133,8 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
 
         for (String sfField : fieldMap.keySet()) {
             String shopifyPath = fieldMap.get(sfField);
-            Object val = acc.get(sfField);
+            Object val;
+            try { val = acc.get(sfField); } catch (Exception e) { continue; }
             if (val == null) continue;
 
             if (shopifyPath.startsWith('default_address.')) {
@@ -127,6 +143,31 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
             } else {
                 customer.put(shopifyPath, val);
             }
+        }
+
+        // Fill missing name/email fields based on account shape.
+        // Mappings always win; these only fill gaps.
+        Boolean isPersonAccount = acc.get('IsPersonAccount') == true;
+        if (isPersonAccount) {
+            if (!customer.containsKey('first_name')) {
+                Object fn = acc.get('FirstName');
+                if (fn != null) customer.put('first_name', fn);
+            }
+            if (!customer.containsKey('last_name')) {
+                Object ln = acc.get('LastName');
+                if (ln != null) customer.put('last_name', ln);
+            }
+            if (!customer.containsKey('email')) {
+                Object em = acc.get('PersonEmail');
+                if (em != null) customer.put('email', em);
+            }
+        } else {
+            // Business Account: use Name as last_name when neither name field is mapped.
+            if (!customer.containsKey('last_name') && !customer.containsKey('first_name')) {
+                Object name = acc.get('Name');
+                if (name != null) customer.put('last_name', name);
+            }
+            // email only included if a field mapping supplied it — no default for business accounts.
         }
 
         if (hasAddress) customer.put('addresses', new List<Object>{ address });

@@ -63,7 +63,6 @@ private class PayPalConfigServiceTest {
     injected.webhookId = 'WH-OVERRIDE';
     injected.useSandbox = false;
     injected.fromNormalizedConfig = false;
-    injected.fromLegacyConfig = false;
     PayPalConfigService.testConfig = injected;
 
     PayPalConfigService.Config result = PayPalConfigService.getConfig();
@@ -71,29 +70,6 @@ private class PayPalConfigServiceTest {
     System.assertEquals('override_client_id', result.clientId);
     System.assertEquals('WH-OVERRIDE', result.webhookId);
     System.assertEquals(false, result.useSandbox);
-  }
-
-  @IsTest
-  static void legacyFallbackCanBeExercisedWhenNoNormalizedConfigExists() {
-    PayPalConfigService.useLegacyFallbackInTests = true;
-
-    PayPalConfigService.Config config = PayPalConfigService.getConfig();
-
-    System.assertNotEquals(null, config);
-    System.assertEquals(false, config.fromNormalizedConfig);
-    System.assertEquals(true, config.fromLegacyConfig);
-  }
-
-  @IsTest
-  static void gatewayLegacyFallbackCanBeExercisedWhenQuickbridgeIsSkipped() {
-    PayPalConfigService.useLegacyFallbackInTests = true;
-    PayPalConfigService.skipQuickbridgeLegacyInTests = true;
-
-    PayPalConfigService.Config config = PayPalConfigService.getConfig();
-
-    System.assertNotEquals(null, config);
-    System.assertEquals(false, config.fromNormalizedConfig);
-    System.assertEquals(true, config.fromLegacyConfig);
   }
 
   @IsTest

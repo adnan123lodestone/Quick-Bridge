@@ -42,9 +42,21 @@ private class IntegrationWorkWorkerCoverageTest {
         Invoice__c invoiceRecord = new Invoice__c(Related_Account__c = accountRecord.Id);
         insert invoiceRecord;
 
+        Order orderRecord = new Order(
+            AccountId = accountRecord.Id,
+            EffectiveDate = Date.today(),
+            Status = 'Draft'
+        );
+        insert orderRecord;
+
         QBAccountWorker.process(workItem('QuickBooks', 'AccountUpsert', 'Account', accountRecord.Id));
         QBProductWorker.process(workItem('QuickBooks', 'ProductUpsert', 'Product2', productRecord.Id));
 
+        try {
+            QBInvoiceWorker.process(workItem('QuickBooks', 'InvoiceUpsert', 'Order', orderRecord.Id));
+        } catch (Exception e) {
+            System.assertNotEquals(null, e.getMessage());
+        }
         try {
             QBInvoiceWorker.process(workItem('QuickBooks', 'InvoiceUpsert', 'Invoice__c', invoiceRecord.Id));
         } catch (Exception e) {

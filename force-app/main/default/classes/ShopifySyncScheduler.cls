@@ -17,8 +17,7 @@ global class ShopifySyncScheduler implements Schedulable {
                 if (isSfToShopify) {
                     Map<Id, Account> unsyncedAccounts = new Map<Id, Account>([
                         SELECT Id FROM Account
-                        WHERE RecordType.DeveloperName = 'PersonAccount'
-                          AND Shopify_ID__c = null
+                        WHERE Shopify_ID__c = null
                     ]);
                     if (!unsyncedAccounts.isEmpty()) {
                         Database.executeBatch(new ShopifyCustomersOutboundBatch(unsyncedAccounts.keySet(), true), 10);

@@ -3,6 +3,9 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
     private String endpoint;
     private String nextUrl;
 
+    @TestVisible private static Integer mockDaysAgo = 0;
+    @TestVisible private static Boolean forceBusinessAccountTest = false;
+
     public KlaviyoProfilesBatch(String endpoint) {
         this.endpoint = endpoint;
     }
@@ -207,8 +210,11 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
 
     private API_Callout_Control__mdt getCalloutControl() {
         if (Test.isRunningTest()) {
-            return new API_Callout_Control__mdt(Allow_Callouts__c = true, Days__c = 0);
-        }
+        return new API_Callout_Control__mdt(
+            Allow_Callouts__c = true, 
+            Days__c = mockDaysAgo != null ? mockDaysAgo : 0
+        );
+    }
         return [SELECT Allow_Callouts__c, Days__c
                 FROM API_Callout_Control__mdt 
                 WHERE MasterLabel = 'Klaviyo - Profile' AND Endpoint__c = 'profile' 
@@ -216,6 +222,9 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
     }
 
     private Id getPersonAccountRecordTypeId() {
+        if (Test.isRunningTest() && forceBusinessAccountTest) {
+        return null;  
+        }
         List<RecordType> recordTypes = [
             SELECT Id
             FROM RecordType
@@ -226,6 +235,7 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
         return recordTypes.isEmpty() ? null : recordTypes[0].Id;
     }
 
+    @TestVisible
     private static String buildBusinessAccountName(String firstName, String lastName, String org, String email, String klaviyoId) {
         String fullName = String.join(new List<String>{
             String.isBlank(firstName) ? null : firstName,
@@ -243,6 +253,7 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
         return klaviyoId;
     }
     
+    @TestVisible
     private static String getPastDateTimeFormatted(Integer daysAgo) {
         Datetime currentDateTime = Datetime.now();
         Datetime pastDateTime = currentDateTime.addDays(-daysAgo);

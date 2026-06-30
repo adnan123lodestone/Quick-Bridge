@@ -42,7 +42,8 @@ export default class FieldMappingComponent extends LightningElement {
     { label: "Invoice", value: "Invoice", selected: false },
     { label: "Credit Memo", value: "CreditMemo", selected: false },
     { label: "Purchase Order", value: "PurchaseOrder", selected: false },
-    { label: "Tax Code", value: "TaxCode", selected: false }
+    { label: "Tax Code", value: "TaxCode", selected: false },
+    { label: "Estimate", value: "Estimate", selected: false }
   ];
 
   // --- Child Mapping Variables ---
@@ -138,7 +139,8 @@ export default class FieldMappingComponent extends LightningElement {
       Invoice__c: "Invoice",
       Credit_Memo__c: "CreditMemo",
       Purchase_Order__c: "PurchaseOrder",
-      Item_Sales_Tax__c: "TaxCode"
+      Item_Sales_Tax__c: "TaxCode",
+      Quote: "Estimate"
     };
 
     let key = sfObject;
@@ -229,6 +231,7 @@ export default class FieldMappingComponent extends LightningElement {
 
     const childObjectMap = {
       Order: "OrderItem",
+      Quote: "QuoteLineItem",
       QuickBridgeTLG__Invoice__c: "QuickBridgeTLG__Invoice_Line__c",
       Invoice__c: "Invoice_Line__c",
       QuickBridgeTLG__Credit_Memo__c: "QuickBridgeTLG__Credit_Memo_Line__c",
@@ -240,6 +243,7 @@ export default class FieldMappingComponent extends LightningElement {
 
     const childQbObjectMap = {
       OrderItem: "InvoiceLine",
+      QuoteLineItem: "EstimateLine",
       QuickBridgeTLG__Invoice_Line__c: "InvoiceLine",
       Invoice_Line__c: "InvoiceLine",
       QuickBridgeTLG__Credit_Memo_Line__c: "CreditMemoLine",

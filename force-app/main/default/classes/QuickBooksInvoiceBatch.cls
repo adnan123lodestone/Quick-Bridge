@@ -68,11 +68,16 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
                 if (qbId == null) {
                     Map<String, Object> result = createInvoice(currentRecord, childItems, fieldMap);
                     if (result != null) {
-                        currentRecord.put('QuickBridgeTLG__External_Id__c', (String)result.get('invoiceId'));
+                        String newQbId = (String)result.get('invoiceId');
+                        currentRecord.put('QuickBridgeTLG__External_Id__c', newQbId);
                         recordsToUpdate.add(currentRecord);
+                        itemsToUpdate.addAll(updateLineItemsWithExternalIds(childItems, result, newQbId));
                     }
                 } else if (qbId != null && !isInitialSync) {
                     Map<String, Object> result = updateInvoice(currentRecord, childItems, fieldMap);
+                    if (result != null) {
+                        itemsToUpdate.addAll(updateLineItemsWithExternalIds(childItems, result, qbId));
+                    }
                 }
             }
 
@@ -98,6 +103,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
 
     public void finish(Database.BatchableContext bc) {}
 
+    @TestVisible
     private Map<String, Object> createInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
         Map<String, Object> requestBody = new Map<String, Object>();
 
@@ -127,6 +133,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
         return null;
     }
 
+    @TestVisible
     private Map<String, Object> updateInvoice(SObject record, List<SObject> lineItems, Map<String, String> fieldMap) {
         String qbId = (String)record.get('QuickBridgeTLG__External_Id__c');
         HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/invoice/' + qbId, null);
@@ -170,6 +177,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
         return null;
     }
 
+    @TestVisible
     private void applyDynamicMappings(Map<String, Object> requestBody, SObject record, Map<String, String> fieldMap) {
         for (String sfField : fieldMap.keySet()) {
             String qbField = fieldMap.get(sfField);
@@ -196,6 +204,7 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
         }
     }
 
+    @TestVisible
     private List<Map<String, Object>> buildLineItems(List<SObject> lineItems) {
         List<Map<String, Object>> qbLines = new List<Map<String, Object>>();
         Decimal totalAmount = 0;
@@ -252,17 +261,26 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
     return null;
 }
 
+    @TestVisible
     private static Object getFieldValue(SObject obj, String fieldPath) {
+        if (obj == null || String.isBlank(fieldPath)) {
+            return null;
+        }
         if(!fieldPath.contains('.')) {
             try { return obj.get(fieldPath); } catch(Exception e) { return null; }
         }
+        
         List<String> fields = fieldPath.split('\\.');
         SObject currentObj = obj;
-        for (Integer i = 0; i < fields.size() - 1; i++) {
-            currentObj = currentObj.getSObject(fields[i]);
-            if (currentObj == null) return null;
+        try {
+            for (Integer i = 0; i < fields.size() - 1; i++) {
+                currentObj = currentObj.getSObject(fields[i]);
+                if (currentObj == null) return null;
+            }
+            return currentObj.get(fields[fields.size() - 1]);
+        } catch (Exception e) {
+            return null;
         }
-        return currentObj.get(fields[fields.size() - 1]);
     }
 
     private static List<SObject> updateLineItemsWithExternalIds(List<SObject> lineItems, Map<String, Object> qbResult, String invoiceQbId) {
@@ -276,18 +294,18 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
                 Map<String, Object> qbLine = (Map<String, Object>)linesObj[qboLineIndex];
                 if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
                     String lineId = (String)qbLine.get('Id');
-
+                    
                     SObject itemToUpdate = item.Id.getSObjectType().newSObject(item.Id);
-
+                    
                     Schema.SObjectType sot = item.Id.getSObjectType();
                     Map<String, Schema.SObjectField> fields = sot.getDescribe().fields.getMap();
-
-                    String extIdField = fields.containsKey('quickbridgetlg__external_id__c') ? 'QuickBridgeTLG__External_Id__c' : 'External_Id__c';
-                    String invExtIdField = fields.containsKey('quickbridgetlg__invoice_external_id__c') ? 'QuickBridgeTLG__Invoice_External_Id__c' : 'Invoice_External_Id__c';
-
+                    
+                    String extIdField = fields.containsKey('QuickBridgeTLG__external_id__c') ? 'QuickBridgeTLG__External_Id__c' : 'External_Id__c';
+                    String invExtIdField = fields.containsKey('QuickBridgeTLG__invoice_external_id__c') ? 'QuickBridgeTLG__Invoice_External_Id__c' : 'Invoice_External_Id__c';
+                    
                     itemToUpdate.put(extIdField, lineId);
                     itemToUpdate.put(invExtIdField, invoiceQbId);
-
+                    
                     itemsToUpdate.add(itemToUpdate);
                     qboLineIndex++;
                     break;

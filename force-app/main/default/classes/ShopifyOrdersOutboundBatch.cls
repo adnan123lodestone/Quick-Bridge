@@ -14,7 +14,7 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
     private Boolean hitRateLimit = false;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
-
+    @testVisible private static Boolean suppressFinishSchedule = false;
     // Lightweight error context collected during callout loop, flushed after all callouts.
     private class PendingError {
         String method;
@@ -155,6 +155,12 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
         System.debug('ShopifyOrdersOutboundBatch complete. Success: ' + successCount + ' | Errors: ' + errorCount);
         IntegrationUsageService.recordSuccessfulRecordSync('Shopify', successCount);
         IntegrationUsageService.incrementEndpointUsage('Shopify', successCount + errorCount);
+        
+        // Never schedule a follow‑up batch during tests
+        if (Test.isRunningTest() || suppressFinishSchedule) {
+            return;
+        }
+        
         if (hitRateLimit && !rateLimitedIds.isEmpty()) {
             Integer delayMinutes = (Integer) Math.max(1, Math.ceil(retryAfterSeconds / 60.0));
             System.scheduleBatch(

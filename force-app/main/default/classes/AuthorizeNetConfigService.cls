@@ -11,15 +11,10 @@ public with sharing class AuthorizeNetConfigService {
     public Date startDate;
     public Date endDate;
     public Boolean fromNormalizedConfig;
-    public Boolean fromLegacyConfig;
   }
 
   @TestVisible
   static Config testConfig;
-  @TestVisible
-  static Boolean useLegacyFallbackInTests = false;
-  @TestVisible
-  static Boolean skipQuickbridgeLegacyInTests = false;
 
   public static Config getConfig() {
     if (Test.isRunningTest() && testConfig != null) {
@@ -31,20 +26,8 @@ public with sharing class AuthorizeNetConfigService {
       return normalizedConfig;
     }
 
-    if (Test.isRunningTest() && useLegacyFallbackInTests != true) {
+    if (Test.isRunningTest()) {
       return getDefaultTestConfig();
-    }
-
-    Config quickbridgeConfig = Test.isRunningTest() && skipQuickbridgeLegacyInTests == true
-      ? null
-      : getQuickbridgeLegacyConfig();
-    if (quickbridgeConfig != null) {
-      return quickbridgeConfig;
-    }
-
-    Config gatewayConfig = getGatewayLegacyConfig();
-    if (gatewayConfig != null) {
-      return gatewayConfig;
     }
 
     throw new AuraHandledException('Authorize.Net configuration record was not found.');
@@ -69,7 +52,6 @@ public with sharing class AuthorizeNetConfigService {
 
     Config config = new Config();
     config.fromNormalizedConfig = true;
-    config.fromLegacyConfig = false;
     config.active =
       rawConfig.active == true &&
       (rawConfig.expiryDate == null || rawConfig.expiryDate >= Date.today());
@@ -97,54 +79,6 @@ public with sharing class AuthorizeNetConfigService {
     return config;
   }
 
-  private static Config getQuickbridgeLegacyConfig() {
-    Quickbridge_Config__mdt legacy;
-    try {
-      legacy = Quickbridge_Config__mdt.getInstance('AuthorizeNet');
-    } catch (Exception e) {
-      legacy = null;
-    }
-    if (legacy == null) {
-      return null;
-    }
-
-    Config config = new Config();
-    config.fromNormalizedConfig = false;
-    config.fromLegacyConfig = true;
-    config.active = legacy.AuthorizeNet_Active__c;
-    config.apiLoginId = legacy.AuthorizeNet_API_Login_ID__c;
-    config.publicClientKey = legacy.AuthorizeNet_Public_Client_Key__c;
-    config.webhookSigningKey = legacy.AuthorizeNet_Webhook_Signing_Key__c;
-    config.useSandbox = legacy.AuthorizeNet_Use_Sandbox__c;
-    config.startDate = legacy.AuthorizeNet_Start_Date__c;
-    config.endDate = legacy.AuthorizeNet_End_Date__c;
-    return config;
-  }
-
-  private static Config getGatewayLegacyConfig() {
-    AuthorizeNet_Config__mdt legacy;
-    try {
-      legacy = AuthorizeNet_Config__mdt.getInstance('Default');
-    } catch (Exception e) {
-      legacy = null;
-    }
-    if (legacy == null) {
-      return null;
-    }
-
-    Config config = new Config();
-    config.fromNormalizedConfig = false;
-    config.fromLegacyConfig = true;
-    config.active = legacy.Active__c;
-    config.apiLoginId = legacy.APILoginId__c;
-    config.publicClientKey = legacy.PublicClientKey__c;
-    config.webhookSigningKey = legacy.WebhookSigningKey__c;
-    config.useSandbox = legacy.UseSandbox__c;
-    config.startDate = legacy.StartDate__c;
-    config.endDate = legacy.EndDate__c;
-    return config;
-  }
-
   private static Config getDefaultTestConfig() {
     Config config = new Config();
     config.active = true;
@@ -153,7 +87,6 @@ public with sharing class AuthorizeNetConfigService {
     config.webhookSigningKey = TEST_WEBHOOK_SIGNING_KEY;
     config.useSandbox = true;
     config.fromNormalizedConfig = false;
-    config.fromLegacyConfig = false;
     return config;
   }
 
@@ -170,7 +103,6 @@ public with sharing class AuthorizeNetConfigService {
     copy.startDate = source.startDate;
     copy.endDate = source.endDate;
     copy.fromNormalizedConfig = source.fromNormalizedConfig;
-    copy.fromLegacyConfig = source.fromLegacyConfig;
     return copy;
   }
 

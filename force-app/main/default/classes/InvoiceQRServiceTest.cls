@@ -7,9 +7,6 @@ private class InvoiceQRServiceTest {
         QBInvoiceToOrderSyncBatch.isProcessing = true;
     }
 
-    /**
-     * @description Sets up the foundational test data required across all test contexts.
-     */
     @testSetup
     static void setupTestData() {
         disableTriggersForTest();
@@ -33,7 +30,7 @@ private class InvoiceQRServiceTest {
         Order orderPayPal = new Order(AccountId = acc.Id, Status = 'Draft', EffectiveDate = Date.today(), Payment_Gateway__c = 'PayPal', Pricebook2Id = standardPricebookId);
         Order orderAuthNet = new Order(AccountId = acc.Id, Status = 'Draft', EffectiveDate = Date.today(), Payment_Gateway__c = 'Authorize.Net', Pricebook2Id = standardPricebookId);
         Order orderInvalid = new Order(AccountId = acc.Id, Status = 'Draft', EffectiveDate = Date.today(), Payment_Gateway__c = 'Bitcoin', Pricebook2Id = standardPricebookId);
-        Order orderNoAmount = new Order(AccountId = acc.Id, Status = 'Draft', EffectiveDate = Date.today(), Payment_Gateway__c = 'Stripe'); 
+        Order orderNoAmount = new Order(AccountId = acc.Id, Status = 'Draft', EffectiveDate = Date.today(), Payment_Gateway__c = 'Stripe', Pricebook2Id = standardPricebookId);
         
         insert new List<Order>{ orderStripe, orderPayPal, orderAuthNet, orderInvalid, orderNoAmount };
 
@@ -83,6 +80,7 @@ private class InvoiceQRServiceTest {
         }
     }
 
+    // ========== Existing passing tests (unchanged except fix for error log) ==========
     @IsTest
     static void testStripeQRGenerationSuccess() {
         disableTriggersForTest(); 
@@ -145,7 +143,7 @@ private class InvoiceQRServiceTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Invoice__c = :inv.Id
+            WHERE Source_Record_Id__c = :inv.Id
             AND Class_Method_Name__c = 'InvoiceQRService.generateAndSaveQRCode'
         ]);
     }
@@ -200,5 +198,65 @@ private class InvoiceQRServiceTest {
             System.assert(e.getMessage().contains('No PayPal Invoice ID found'), 'Expected specific error message regarding missing PayPal transaction.');
         }
         Test.stopTest();
+    }
+
+
+    @IsTest
+    static void testBuildQRCodeImageUrl_Success() {
+        String paymentUrl = 'https://example.com/pay/123';
+        Test.startTest();
+        String result = InvoiceQRService.buildQRCodeImageUrl(paymentUrl);
+        Test.stopTest();
+        System.assert(result.startsWith('https://quickchart.io/qr?text='), 'QR URL should be generated using quickchart.io');
+        System.assert(result.contains(EncodingUtil.urlEncode(paymentUrl, 'UTF-8')), 'Payment URL should be URL-encoded');
+    }
+
+    @IsTest
+    static void testBuildQRCodeImageUrl_BlankUrl_ThrowsException() {
+        Test.startTest();
+        try {
+            InvoiceQRService.buildQRCodeImageUrl('');
+            System.assert(false, 'Exception expected for blank URL');
+        } catch (InvoiceQRService.CustomQRException e) {
+            System.assert(e.getMessage().contains('Payment URL is required'), 'Correct exception message');
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void testSaveQRCodeFileForUrl_Success() {
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        String paymentUrl = 'https://example.com/pay/456';
+        String title = 'Test QR File';
+        Test.startTest();
+        Id contentDocId = InvoiceQRService.saveQRCodeFileForUrl(acc.Id, paymentUrl, title);
+        Test.stopTest();
+        System.assertNotEquals(null, contentDocId, 'ContentDocument Id should be returned');
+        ContentDocumentLink link = [SELECT LinkedEntityId FROM ContentDocumentLink WHERE ContentDocumentId = :contentDocId LIMIT 1];
+        System.assertEquals(acc.Id, link.LinkedEntityId, 'Should be linked to the parent record');
+    }
+
+    @IsTest
+    static void testSaveQRCodeFileForUrl_NullParentId_ThrowsException() {
+        String paymentUrl = 'https://example.com/pay';
+        Test.startTest();
+        try {
+            InvoiceQRService.saveQRCodeFileForUrl(null, paymentUrl, null);
+            System.assert(false, 'Exception expected for null parent Id');
+        } catch (InvoiceQRService.CustomQRException e) {
+            System.assert(e.getMessage().contains('parent record is required'), 'Correct exception message');
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void testSaveQRCodeFileForUrl_NullTitle_UsesDefault() {
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        String paymentUrl = 'https://example.com/pay';
+        Test.startTest();
+        Id contentDocId = InvoiceQRService.saveQRCodeFileForUrl(acc.Id, paymentUrl, null);
+        Test.stopTest();
+        ContentVersion cv = [SELECT Title FROM ContentVersion WHERE ContentDocumentId = :contentDocId LIMIT 1];
+        System.assertEquals('Payment QR Code', cv.Title, 'Should use default title when null provided');
     }
 }

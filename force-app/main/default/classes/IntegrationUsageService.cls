@@ -587,7 +587,8 @@ public without sharing class IntegrationUsageService {
   private static Integer toNullableInt(Decimal value) {
     return value == null ? null : value.intValue();
   }
-
+  
+  @TestVisible
   private static Integer aggregateInteger(Object value) {
     if (value == null) {
       return 0;

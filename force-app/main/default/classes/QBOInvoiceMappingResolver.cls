@@ -16,13 +16,31 @@ public with sharing class QBOInvoiceMappingResolver {
     private static final String INTEGRATION = 'qbonline';
     private static final String EXTERNAL_ENTITY = 'Invoice';
 
+    @TestVisible
+    private static List<Field_Mapping__mdt> testFieldMappingRows;
+
+    @TestVisible
+    public static void setTestFieldMappingRows(List<Field_Mapping__mdt> rows) {
+        testFieldMappingRows = rows;
+    }
+
+    @TestVisible
+    public static void clearTestFieldMappingRows() {
+        testFieldMappingRows = null;
+    }
+
     public static ResolverResult resolve() {
-        List<Field_Mapping__mdt> allRows = [
-            SELECT SF_Object__c, SF_Field__c, External_Field__c, Sync_Direction__c, Is_Active__c
-            FROM Field_Mapping__mdt
-            WHERE Integration__c = :INTEGRATION
-            AND Is_Active__c = true
-        ];
+        List<Field_Mapping__mdt> allRows;
+        if (testFieldMappingRows != null) {
+            allRows = testFieldMappingRows;
+        } else {
+            allRows = [
+                SELECT SF_Object__c, SF_Field__c, External_Field__c, Sync_Direction__c, Is_Active__c
+                FROM Field_Mapping__mdt
+                WHERE Integration__c = :INTEGRATION
+                AND Is_Active__c = true
+            ];
+        }
 
         // Group rows by SF_Object__c
         Map<String, List<Field_Mapping__mdt>> byObject = new Map<String, List<Field_Mapping__mdt>>();

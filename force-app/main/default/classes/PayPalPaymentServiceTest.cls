@@ -363,28 +363,28 @@ private class PayPalPaymentServiceTest {
     }
 
     @IsTest
-    static void captureOrder_errorLogsAgainstOrder() {
-        Order orderRecord = createPaymentOrder();
-        useTestOverrides();
-        Test.setMock(HttpCalloutMock.class, new CaptureErrorMock());
+static void captureOrder_errorLogsAgainstOrder() {
+    Order orderRecord = createPaymentOrder();
+    useTestOverrides();
+    Test.setMock(HttpCalloutMock.class, new CaptureErrorMock());
 
-        PayPalPaymentService.CaptureRequest request = new PayPalPaymentService.CaptureRequest();
-        request.paypalOrderId = 'ORDER_FAIL';
-        request.orderId = orderRecord.Id;
+    PayPalPaymentService.CaptureRequest request = new PayPalPaymentService.CaptureRequest();
+    request.paypalOrderId = 'ORDER_FAIL';
+    request.orderId = orderRecord.Id;
 
-        Test.startTest();
-        PayPalPaymentService.PaymentResponse response = PayPalPaymentService.captureOrder(request);
-        Test.stopTest();
+    Test.startTest();
+    PayPalPaymentService.PaymentResponse response = PayPalPaymentService.captureOrder(request);
+    Test.stopTest();
 
-        System.assertEquals(false, response.success);
-        System.assertEquals(1, [
-            SELECT Count()
-            FROM Error_Log__c
-            WHERE Order__c = :orderRecord.Id
-            AND Gateway_Name__c = 'PayPal'
-            AND Error_Category__c = 'Callout Failure'
-        ]);
-    }
+    System.assertEquals(false, response.success);
+    System.assertEquals(1, [
+        SELECT Count()
+        FROM Error_Log__c
+        WHERE Order_Id__c = :orderRecord.Id
+        AND Gateway_Name__c = 'PayPal'
+        AND Error_Category__c = 'Callout Failure'
+    ]);
+}
 
     @IsTest
     static void captureOrder_succeedsWithoutSessionTokenForInternalAction() {

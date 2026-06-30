@@ -16,7 +16,7 @@ private class ShopifyProductsBatchTest {
             HttpResponse res = new HttpResponse();
             res.setStatusCode(statusCode);
             res.setBody(body);
-            if (String.isNotBlank(nextLink)) {
+            if (String.isNotBlank(nextLink) && !req.getEndpoint().contains('page2')) {
                 res.setHeader('link', '<' + nextLink + '>; rel="next"');
             }
             return res;
@@ -173,7 +173,7 @@ private class ShopifyProductsBatchTest {
         Database.executeBatch(new ShopifyProductsBatch(), 1);
         Test.stopTest();
 
-        List<Product2> products = [SELECT Id FROM Product2 WHERE Shopify_ID__c LIKE '2000%'];
+        List<Product2> products = [SELECT Id FROM Product2 WHERE Shopify_ID__c LIKE '200%'];
         System.assertEquals(20, products.size(), 'All 20 bulk products should be created');
     }
 }

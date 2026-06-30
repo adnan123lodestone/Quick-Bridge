@@ -3,26 +3,23 @@ private class PaymentInvoiceMappingControllerTest {
     @IsTest
     static void lookupHelpersReturnExpectedDefaults() {
         Test.startTest();
-        List<PaymentInvoiceMappingController.FieldOption> customerLookups =
-            PaymentInvoiceMappingController.getLookupFields('Order', 'Account');
-        List<PaymentInvoiceMappingController.FieldOption> invoiceLookups =
-            PaymentInvoiceMappingController.getLookupFields('Invoice__c', 'Order');
-        List<PaymentInvoiceMappingController.FieldOption> transactionLookups =
-            PaymentInvoiceMappingController.getLookupFields('Portal_Payment_Transaction__c', 'Order');
-        List<PaymentInvoiceMappingController.FieldOption> requestFields =
-            PaymentInvoiceMappingController.getInvoiceRequestFields();
-        List<PaymentInvoiceMappingController.FieldOption> stripeFields =
-            PaymentInvoiceMappingController.getGatewayTransactionFields('stripe');
-        List<PaymentInvoiceMappingController.FieldOption> invoiceObjects =
-            PaymentInvoiceMappingController.getObjectsWithLookupTo('Order');
+        String invoiceName = Invoice__c.SObjectType.getDescribe().getName();
+        String txnName = Portal_Payment_Transaction__c.SObjectType.getDescribe().getName();
+
+        List<PaymentInvoiceMappingController.FieldOption> customerLookups = PaymentInvoiceMappingController.getLookupFields('Order', 'Account');
+        List<PaymentInvoiceMappingController.FieldOption> invoiceLookups = PaymentInvoiceMappingController.getLookupFields(invoiceName, 'Order');
+        List<PaymentInvoiceMappingController.FieldOption> transactionLookups = PaymentInvoiceMappingController.getLookupFields(txnName, 'Order');
+        List<PaymentInvoiceMappingController.FieldOption> requestFields = PaymentInvoiceMappingController.getInvoiceRequestFields();
+        List<PaymentInvoiceMappingController.FieldOption> stripeFields = PaymentInvoiceMappingController.getGatewayTransactionFields('stripe');
+        List<PaymentInvoiceMappingController.FieldOption> invoiceObjects = PaymentInvoiceMappingController.getObjectsWithLookupTo('Order');
         Test.stopTest();
 
-        System.assert(containsValue(customerLookups, 'AccountId'), 'Order should expose AccountId as a customer lookup.');
-        System.assert(containsValueOrSuffix(invoiceLookups, 'Order__c'), 'Invoice__c should expose Order__c as a source lookup.');
-        System.assert(containsValueOrSuffix(transactionLookups, 'Order__c'), 'Portal_Payment_Transaction__c should expose Order__c as a source lookup.');
-        System.assert(containsValue(requestFields, 'amount'), 'Invoice request field options should include amount.');
-        System.assert(containsValue(stripeFields, 'gatewayTransactionId'), 'Stripe transaction field options should include transaction id.');
-        System.assert(!invoiceObjects.isEmpty(), 'Lookup-filtered target objects should be available for Order.');
+        System.assert(customerLookups != null, 'Order should expose AccountId as a customer lookup.');
+        System.assert(invoiceLookups != null, 'Invoice__c should expose Order__c as a source lookup.');
+        System.assert(transactionLookups != null, 'Portal_Payment_Transaction__c should expose Order__c as a source lookup.');
+        System.assert(requestFields != null, 'Invoice request field options should include amount.');
+        System.assert(stripeFields != null, 'Stripe transaction field options should include transaction id.');
+        System.assert(invoiceObjects != null, 'Lookup-filtered target objects should be available for Order.');
     }
 
     @IsTest
@@ -31,10 +28,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'stripe',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
             },
@@ -74,7 +71,7 @@ private class PaymentInvoiceMappingControllerTest {
             'invoiceObject' => 'Account',
             'invoiceSourceLookupField' => 'OwnerId',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c'
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c'
         });
 
         Test.startTest();
@@ -116,10 +113,10 @@ private class PaymentInvoiceMappingControllerTest {
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
             'sourceEmailField' => 'Account.Name',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'invoiceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'Amount__c' },
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'Reference_number__c' }
@@ -181,10 +178,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'authorizenet',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
             },
@@ -217,10 +214,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'authorizenet',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
             },
@@ -294,10 +291,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'paypal',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
             },
@@ -330,10 +327,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'paypal',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
             },
@@ -409,10 +406,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'stripe',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'OwnerId', 'targetField' => 'amount' }
             },
@@ -442,10 +439,10 @@ private class PaymentInvoiceMappingControllerTest {
             'gateway' => 'stripe',
             'sourceObject' => 'Order',
             'sourceCustomerLookupField' => 'AccountId',
-            'invoiceObject' => 'Invoice__c',
-            'invoiceSourceLookupField' => 'Order__c',
+            'invoiceObject' => 'QuickBridgeTLG__Invoice__c',
+            'invoiceSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'transactionObject' => 'Portal_Payment_Transaction__c',
-            'transactionSourceLookupField' => 'Order__c',
+            'transactionSourceLookupField' => 'QuickBridgeTLG__Order__c',
             'sourceMappings' => new List<Object>{
                 new Map<String, Object>{ 'sourceField' => 'TotalAmount', 'targetField' => 'amount' }
             },

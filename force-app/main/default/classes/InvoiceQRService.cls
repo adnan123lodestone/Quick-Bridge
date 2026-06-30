@@ -152,8 +152,7 @@ public with sharing class InvoiceQRService {
     // PAYPAL: Fetch Native QR Code Image (Base64)
     // ==========================================
     private static String generatePayPalQR(String paypalInvoiceId) {
-        PayPal_Config__mdt config = PayPal_Config__mdt.getInstance('Default');
-        String namedCredential = (config != null && config.UseSandbox__c) ? 'PayPal_API_Sandbox' : 'PayPal_API_Production';
+        String namedCredential = PayPalConfigService.getUseSandbox() ? 'PayPal_API_Sandbox' : 'PayPal_API_Production';
         
         Http http = new Http();
         HttpRequest req = new HttpRequest();
@@ -175,8 +174,13 @@ public with sharing class InvoiceQRService {
     // AUTHORIZE.NET: Generate Hosted Page Link & Convert to QR
     // ==========================================
     private static String generateAuthorizeNetQR(Decimal amount) {
-        AuthorizeNet_Config__mdt config = AuthorizeNet_Config__mdt.getInstance('Default');
-        String apiLoginId = (config != null && config.APILoginId__c != null) ? config.APILoginId__c : '';
+        String apiLoginId;
+        try {
+            apiLoginId = AuthorizeNetConfigService.getConfig().apiLoginId;
+        } catch (Exception e) {
+            apiLoginId = '';
+        }
+        if (apiLoginId == null) apiLoginId = '';
         
         String jsonPayload = '{' +
             '"getHostedPaymentPageRequest": {' +

@@ -112,10 +112,15 @@ public with sharing class InvoiceDisputeService {
 
         if (String.isBlank(transId)) throw new CustomDisputeException('Error: PayPal Transaction ID is missing on the Transaction record.');
 
-        PayPal_Config__mdt config = PayPal_Config__mdt.getInstance('Default');
-        
-        Boolean isActive = config != null ? config.Active__c : false;
-        Boolean useSandbox = config != null ? config.UseSandbox__c : true;
+        PayPalConfigService.Config config;
+        try {
+            config = PayPalConfigService.getConfig();
+        } catch (Exception e) {
+            config = null;
+        }
+
+        Boolean isActive = config != null && config.active == true;
+        Boolean useSandbox = config == null || config.useSandbox == true;
 
         if (!isActive && !Test.isRunningTest()) {
             throw new CustomDisputeException('Error: PayPal is not configured or active in Custom Metadata.');
@@ -164,10 +169,15 @@ public with sharing class InvoiceDisputeService {
 
         if (String.isBlank(transId)) throw new CustomDisputeException('Error: Authorize.Net Transaction ID is missing.');
 
-        AuthorizeNet_Config__mdt config = AuthorizeNet_Config__mdt.getInstance('Default');
-        
-        Boolean isActive = config != null ? config.Active__c : false;
-        String apiLoginId = config != null && config.APILoginId__c != null ? config.APILoginId__c : 'test_login';
+        AuthorizeNetConfigService.Config config;
+        try {
+            config = AuthorizeNetConfigService.getConfig();
+        } catch (Exception e) {
+            config = null;
+        }
+
+        Boolean isActive = config != null && config.active == true;
+        String apiLoginId = config != null && String.isNotBlank(config.apiLoginId) ? config.apiLoginId : 'test_login';
 
         if (!isActive && !Test.isRunningTest()) {
             throw new CustomDisputeException('Error: Authorize.Net is not configured or active.');

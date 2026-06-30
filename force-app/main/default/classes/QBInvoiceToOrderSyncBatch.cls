@@ -111,6 +111,24 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
         List<Product2> productsToUpsert = new List<Product2>();
         Set<String> productQBIds = new Set<String>();
 
+        // Pre-fetch which existing accounts are PersonAccounts so we avoid setting Name directly on them
+        // (PersonAccount.Name is a read-only formula; FirstName/LastName must be used instead)
+        Set<String> incomingQBIds = new Set<String>();
+        for (String invoiceStr : scope) {
+            Map<String, Object> inv = (Map<String, Object>) JSON.deserializeUntyped(invoiceStr);
+            if (inv.containsKey('CustomerRef')) {
+                Map<String, Object> cr = (Map<String, Object>) inv.get('CustomerRef');
+                String qbId = (String) cr.get('value');
+                if (String.isNotBlank(qbId)) incomingQBIds.add(qbId);
+            }
+        }
+        Map<String, Boolean> isPersonAccountByQBId = new Map<String, Boolean>();
+        if (!incomingQBIds.isEmpty()) {
+            for (Account a : [SELECT QuickbookID__c, IsPersonAccount FROM Account WHERE QuickbookID__c IN :incomingQBIds]) {
+                isPersonAccountByQBId.put(a.QuickbookID__c, a.IsPersonAccount == true);
+            }
+        }
+
         // Collect all accounts and products from invoices
         for(String invoiceStr : scope) {
             Map<String, Object> invoice = (Map<String, Object>)JSON.deserializeUntyped(invoiceStr);
@@ -122,10 +140,17 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
                 String customerName = (String)customerRef.get('name');
 
                 if(!customerIdMap.containsKey(qbCustomerId)) {
-                    accountsToUpsert.add(new Account(
-                        Name = customerName,
-                        QuickbookID__c = qbCustomerId
-                    ));
+                    Account acct = new Account(QuickbookID__c = qbCustomerId);
+                    if (isPersonAccountByQBId.get(qbCustomerId) == true) {
+                        List<String> parts = String.isNotBlank(customerName)
+                            ? customerName.trim().split(' ', 2)
+                            : new List<String>();
+                        acct.LastName  = parts.size() > 1 ? parts[1] : (parts.isEmpty() ? 'Unknown' : parts[0]);
+                        acct.FirstName = parts.size() > 1 ? parts[0] : null;
+                    } else {
+                        acct.Name = customerName;
+                    }
+                    accountsToUpsert.add(acct);
                 }
             }
 

@@ -10,7 +10,7 @@ public class QBOErrorHandler {
         // Outbound syncs (Salesforce → QBO)
         if (method.contains('QBAccountService.syncAccountToQuickBooks') ||
             method.contains('QBAccountBatch.execute')) {
-            Account acc = [SELECT Id, QuickbookID__c FROM Account WHERE Id = :recordId];
+            Account acc = [SELECT Id, Name, RecordTypeId, QuickbookID__c FROM Account WHERE Id = :recordId];
             QBAccountService.SyncResult res = QBAccountService.syncAccountToQuickBooks(acc, acc.QuickbookID__c == null);
             return 'Account retried: ' + res.quickBooksId;
         }

@@ -347,7 +347,19 @@ public with sharing class FedExCarrierAdapter implements ICarrierAdapter {
             for (Object errorObject : (List<Object>) errorsObject) {
                 if (!(errorObject instanceof Map<String, Object>)) continue;
                 Map<String, Object> errorMap = (Map<String, Object>) errorObject;
-                messages.add('[' + errorMap.get('code') + '] ' + errorMap.get('message'));
+                String topCode = String.valueOf(errorMap.get('code'));
+                // For INVALID.INPUT.EXCEPTION, FedEx puts field-level errors in parameterList[].value.
+                // Surface those instead of the unhelpful summary count message.
+                Object paramListObj = errorMap.get('parameterList');
+                if (paramListObj instanceof List<Object> && !((List<Object>) paramListObj).isEmpty()) {
+                    for (Object p : (List<Object>) paramListObj) {
+                        if (!(p instanceof Map<String, Object>)) continue;
+                        Map<String, Object> pm = (Map<String, Object>) p;
+                        messages.add('[' + topCode + '] ' + String.valueOf(pm.get('value')));
+                    }
+                } else {
+                    messages.add('[' + topCode + '] ' + errorMap.get('message'));
+                }
             }
         }
         String errorDetail = messages.isEmpty() ? 'HTTP ' + statusCode : String.join(messages, '; ');

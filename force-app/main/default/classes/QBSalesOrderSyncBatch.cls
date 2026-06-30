@@ -20,13 +20,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
   private Boolean getConfigValue() {
     try {
-      Quickbridge_Config__mdt config = [
-        SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c
-        FROM QuickBridgeTLG__Quickbridge_Config__mdt
-        WHERE DeveloperName = 'QuickBooks'
-        LIMIT 1
-      ];
-      return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
+      return ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
     } catch (Exception e) {
       System.debug('Could not load Draft Order setting: ' + e.getMessage());
       return false;
@@ -34,297 +28,394 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
   }
 
   public Database.QueryLocator start(Database.BatchableContext bc) {
-    return Database.getQueryLocator(
-      [
-        SELECT
-          Id,
-          Status,
-          QuickbookID__c,
-          SyncToken__c,
-          Account.QuickbookID__c,
-          (
-            SELECT
-              Id,
-              Quantity,
-              UnitPrice,
-              Description,
-              Product2.QuickbookID__c,
-              QB_LineiTemID__c
-            FROM OrderItems
-          )
-        FROM Order
-        WHERE Id IN :orderIds
-      ]
-    );
+    String orderFields = buildOrderQueryFields();
+    String query =
+      'SELECT ' + orderFields +
+      ', AccountId, Account.QuickbookID__c' +
+      ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice,' +
+      ' Product2.QuickbookID__c, QB_LineiTemID__c' +
+      buildOrderItemQueryFields() +
+      ' FROM OrderItems)' +
+      ' FROM Order WHERE Id IN :orderIds';
+    return Database.getQueryLocator(query);
+  }
+
+  public static String buildOrderQueryFields() {
+    Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Order.fields.getMap();
+    Set<String> names = new Set<String>{ 'Id', 'Status', 'QuickbookID__c', 'SyncToken__c' };
+    for (String sfField : QBObjectMappings.getOrderToInvoiceMapping().keySet()) {
+      if (!sfField.contains('.')) {
+        names.add(sfField);
+      }
+    }
+    Set<String> resolved = new Set<String>();
+    for (String f : names) {
+      String key = f.toLowerCase();
+      Schema.SObjectField token = schemaFields.get(key);
+      if (token == null) {
+        token = schemaFields.get('quickbridgetlg__' + key);
+      }
+      if (token != null) {
+        resolved.add(token.getDescribe().getName());
+      }
+    }
+    return String.join(new List<String>(resolved), ', ');
+  }
+
+  public static String buildOrderItemQueryFields() {
+    Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.OrderItem.fields.getMap();
+    Set<String> extra = new Set<String>();
+    for (String sfField : QBObjectMappings.getOrderItemMapping().keySet()) {
+      if (!sfField.contains('.')) {
+        extra.add(sfField);
+      }
+    }
+    // Base fields already listed in the SELECT; only append truly new ones.
+    Set<String> base = new Set<String>{ 'id', 'quantity', 'unitprice', 'description', 'totalprice',
+      'product2id', 'qb_lineitemid__c', 'quickbridgetlg__qb_lineitemid__c' };
+    List<String> additional = new List<String>();
+    for (String f : extra) {
+      if (!base.contains(f.toLowerCase())) {
+        Schema.SObjectField token = schemaFields.get(f.toLowerCase());
+        if (token == null) {
+          token = schemaFields.get('quickbridgetlg__' + f.toLowerCase());
+        }
+        if (token != null) {
+          String apiName = token.getDescribe().getName();
+          additional.add(apiName);
+          base.add(apiName.toLowerCase());
+        }
+      }
+    }
+    return additional.isEmpty() ? '' : ', ' + String.join(additional, ', ');
   }
 
   public void execute(Database.BatchableContext bc, List<Order> scope) {
-    List<Order> ordersToUpdate = new List<Order>();
-    List<OrderItem> itemsToUpdate = new List<OrderItem>();
+    // Disable order triggers during DML updates to prevent redundant/recursive sync work
+    QuickBooksInvoiceHandler.setBatchContext(true);
 
-    Map<String, String> headerMap = QBObjectMappings.getOrderToInvoiceMapping();
-    Map<String, String> lineMap = QBObjectMappings.getOrderItemMapping();
+    try {
+      List<Order> ordersToUpdate = new List<Order>();
+      List<OrderItem> itemsToUpdate = new List<OrderItem>();
 
-    for (Order ord : scope) {
-      try {
-        if (ord.OrderItems == null || ord.OrderItems.isEmpty()) {
-          System.debug(
-            'Skipping Order ' + ord.Id + ' because it has no Line Items.'
-          );
-          continue;
-        }
+      Map<String, String> headerMap = QBObjectMappings.getOrderToInvoiceMapping();
+      Map<String, String> lineMap = QBObjectMappings.getOrderItemMapping();
 
-        String endpointPath = '';
-        String qboObjectName = '';
+      for (Order ord : scope) {
+        try {
+          if (ord.OrderItems == null || ord.OrderItems.isEmpty()) {
+            System.debug(
+              'Skipping Order ' + ord.Id + ' because it has no Line Items.'
+            );
+            continue;
+          }
 
-        if (ord.Status == 'Draft') {
-          if (mapDraftOrdersAsEstimates) {
-            // Create Estimate
-            endpointPath = '/estimate';
-            qboObjectName = 'Estimate';
-          } else {
-            // Create Invoice directly
+          // Preflight: Account must have a QBO customer id before we can build CustomerRef.
+          if (ord.Account == null || String.isBlank(ord.Account.QuickbookID__c)) {
+            IntegrationWorkService.enqueueQuickBooksWork(
+              'AccountUpsert',
+              'Account',
+              ord.AccountId,
+              'Account:' + ord.AccountId,
+              true
+            );
+            ErrorLogUtility.logCalloutFailure(
+              'QuickBooks',
+              'QBSalesOrderSyncBatch.execute',
+              'Skipping Order ' + ord.Id + ': Account ' + ord.AccountId +
+                ' has no QBO Customer ID. AccountUpsert work queued; re-sync after Account syncs.',
+              null,
+              'Order',
+              ord.Id
+            );
+            continue;
+          }
+
+          // Preflight: every line product must have a QBO item id before we can build ItemRef.
+          Set<Id> missingProductIds = new Set<Id>();
+          for (OrderItem item : ord.OrderItems) {
+            if (item.Product2 == null || String.isBlank(item.Product2.QuickbookID__c)) {
+              missingProductIds.add(item.Product2Id);
+            }
+          }
+          if (!missingProductIds.isEmpty()) {
+            for (Id prodId : missingProductIds) {
+              IntegrationWorkService.enqueueQuickBooksWork(
+                'ProductUpsert',
+                'Product2',
+                prodId,
+                'Product2:' + prodId,
+                true
+              );
+            }
+            ErrorLogUtility.logCalloutFailure(
+              'QuickBooks',
+              'QBSalesOrderSyncBatch.execute',
+              'Skipping Order ' + ord.Id + ': ' + missingProductIds.size() +
+                ' product(s) have no QBO Item ID. ProductUpsert work queued; re-sync after products sync.',
+              null,
+              'Order',
+              ord.Id
+            );
+            continue;
+          }
+
+          String endpointPath = '';
+          String qboObjectName = '';
+
+          if (ord.Status == 'Draft') {
+            if (mapDraftOrdersAsEstimates) {
+              // Create Estimate
+              endpointPath = '/estimate';
+              qboObjectName = 'Estimate';
+            } else {
+              // Create Invoice directly
+              endpointPath = '/invoice';
+              qboObjectName = 'Invoice';
+            }
+          } else if (ord.Status == 'Activated') { System.debug('Activate selected');
             endpointPath = '/invoice';
             qboObjectName = 'Invoice';
-          }
-        } else if (ord.Status == 'Activated') {
-          endpointPath = '/invoice';
-          qboObjectName = 'Invoice';
-        } else {
-          continue;
-        }
-
-        // Build request body
-        Map<String, Object> requestBody = new Map<String, Object>();
-
-        Boolean isCreate = String.isBlank(ord.QuickbookID__c) || isInitialSync;
-        for (String sfField : headerMap.keySet()) {
-          String qboFieldMapping = headerMap.get(sfField);
-          if (String.isBlank(qboFieldMapping)) {
-            continue;
-          }
-          // CustomerRef is set explicitly below from the related Account.
-          if (
-            qboFieldMapping == 'CustomerRef.value' ||
-            qboFieldMapping == 'CustomerRef'
-          ) {
-            continue;
-          }
-          String rootProp = qboFieldMapping.contains('.')
-            ? qboFieldMapping.substringBefore('.')
-            : qboFieldMapping;
-          if (QBO_READONLY_PROPS.contains(rootProp)) {
-            continue; // never push server-calculated totals
-          }
-          if (rootProp == 'Id' && isCreate) {
-            continue; // Id is only valid on update
-          }
-          Object val = getFieldValue(ord, sfField);
-          if (val != null) {
-            if (val instanceof Date) {
-              val = DateTime.newInstance(
-                  (Date) val,
-                  Time.newInstance(0, 0, 0, 0)
-                )
-                .format('yyyy-MM-dd');
-            }
-            putPath(requestBody, qboFieldMapping, val);
-          }
-        }
-
-        // Customer Reference
-        if (
-          ord.Account != null && String.isNotBlank(ord.Account.QuickbookID__c)
-        ) {
-          requestBody.put(
-            'CustomerRef',
-            new Map<String, String>{ 'value' => ord.Account.QuickbookID__c }
-          );
-        }
-
-        // Line items
-        List<Map<String, Object>> lines = new List<Map<String, Object>>();
-        for (OrderItem item : ord.OrderItems) {
-          Map<String, Object> line = new Map<String, Object>();
-          line.put('DetailType', 'SalesItemLineDetail');
-
-          Map<String, Object> itemDetail = new Map<String, Object>();
-          Decimal quantity = item.Quantity != null ? item.Quantity : 1;
-          Decimal unitPrice = item.UnitPrice != null ? item.UnitPrice : 0;
-
-          for (String sfField : lineMap.keySet()) {
-            Object val = getFieldValue(item, sfField);
-            String qboField = lineMap.get(sfField);
-            if (val == null || String.isBlank(qboField)) {
-              continue;
-            }
-            // Mappings may be stored as full nested paths
-            // (e.g. 'Line.SalesItemLineDetail.Qty'); normalize to the leaf so
-            // they land on the correct QBO node instead of becoming a literal
-            // dotted property name (which QBO rejects with fault 2010).
-            String leaf = normalizeLineLeaf(qboField);
-            if (leaf == 'Qty') {
-              quantity = (Decimal) val;
-              itemDetail.put('Qty', quantity);
-            } else if (leaf == 'UnitPrice') {
-              unitPrice = (Decimal) val;
-              itemDetail.put('UnitPrice', unitPrice);
-            } else if (leaf == 'Description') {
-              line.put('Description', val);
-            } else if (leaf == 'Amount') {
-              // Line amount is computed below from quantity * unitPrice.
-              continue;
-            } else if (leaf == 'ItemRef.value' || leaf == 'ItemRef') {
-              // ItemRef is set below from Product2.QuickbookID__c; never push a
-              // raw Salesforce Id here.
-              continue;
-            } else if (!leaf.contains('.')) {
-              itemDetail.put(leaf, val);
-            }
-          }
-          line.put('Amount', quantity * unitPrice);
-          if (
-            item.Product2 != null &&
-            String.isNotBlank(item.Product2.QuickbookID__c)
-          ) {
-            itemDetail.put(
-              'ItemRef',
-              new Map<String, String>{ 'value' => item.Product2.QuickbookID__c }
-            );
-          }
-          line.put('SalesItemLineDetail', itemDetail);
-          if (
-            String.isNotBlank(item.QB_LineiTemID__c) &&
-            item.QB_LineiTemID__c.contains(':')
-          ) {
-            if (qboObjectName != 'Invoice') {
-              line.put('Id', item.QB_LineiTemID__c.split(':')[1]);
-            }
-          }
-          lines.add(line);
-        }
-        requestBody.put('Line', lines);
-
-        // Handle existing QBO ID for updates / conversion
-        if (String.isNotBlank(ord.QuickbookID__c) && !isInitialSync) {
-          if (ord.Status == 'Activated' && qboObjectName == 'Invoice') {
-            System.debug('Converting Estimate to Invoice.');
           } else {
-            requestBody.put('Id', ord.QuickbookID__c);
-            requestBody.put(
-              'SyncToken',
-              String.isBlank(ord.SyncToken__c) ? '0' : ord.SyncToken__c
-            );
-            requestBody.put('sparse', true);
+            continue;
           }
-        }
 
-        // API Callout
-        String jsonBody = JSON.serialize(requestBody);
-        HttpResponse res = QuickBooksAuthHandler.makeApiCall(
-          'POST',
-          endpointPath,
-          jsonBody
-        );
+          // Build request body
+          Map<String, Object> requestBody = new Map<String, Object>();
 
-        if (res != null && res.getStatusCode() == 200) {
-          Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(
-            res.getBody()
-          );
-          Map<String, Object> qboResponseObj = (Map<String, Object>) responseMap.get(
-            qboObjectName
-          );
+          Boolean isCreate = String.isBlank(ord.QuickbookID__c) || isInitialSync;
+          for (String sfField : headerMap.keySet()) {
+            String qboFieldMapping = headerMap.get(sfField);
+            if (String.isBlank(qboFieldMapping)) {
+              continue;
+            }
+            // CustomerRef is set explicitly below from the related Account.
+            if (
+              qboFieldMapping == 'CustomerRef.value' ||
+              qboFieldMapping == 'CustomerRef'
+            ) {
+              continue;
+            }
+            String rootProp = qboFieldMapping.contains('.')
+              ? qboFieldMapping.substringBefore('.')
+              : qboFieldMapping;
+            if (QBO_READONLY_PROPS.contains(rootProp)) {
+              continue; // never push server-calculated totals
+            }
+            if (rootProp == 'Id' && isCreate) {
+              continue; // Id is only valid on update
+            }
+            Object val = getFieldValue(ord, sfField);
+            if (val != null) {
+              if (val instanceof Date) {
+                val = DateTime.newInstance(
+                    (Date) val,
+                    Time.newInstance(0, 0, 0, 0)
+                  )
+                  .format('yyyy-MM-dd');
+              }
+              putPath(requestBody, qboFieldMapping, val);
+            }
+          }
 
-          Order ordToUpdate = new Order(Id = ord.Id);
-          ordToUpdate.QuickbookID__c = (String) qboResponseObj.get('Id');
-          ordToUpdate.SyncToken__c = (String) qboResponseObj.get('SyncToken');
-          ordersToUpdate.add(ordToUpdate);
+          // Customer Reference
+          if (
+            ord.Account != null && String.isNotBlank(ord.Account.QuickbookID__c)
+          ) {
+            requestBody.put(
+              'CustomerRef',
+              new Map<String, String>{ 'value' => ord.Account.QuickbookID__c }
+            );
+          }
 
-          List<Object> qboLines = (List<Object>) qboResponseObj.get('Line');
-          if (qboLines != null) {
-            Integer qboLineIndex = 0;
-            for (OrderItem item : ord.OrderItems) {
-              while (qboLineIndex < qboLines.size()) {
-                Map<String, Object> qbLine = (Map<String, Object>) qboLines[
-                  qboLineIndex
-                ];
-                if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
-                  OrderItem itemToUpdate = new OrderItem(Id = item.Id);
-                  itemToUpdate.QB_LineiTemID__c =
-                    ordToUpdate.QuickbookID__c +
-                    ':' +
-                    (String) qbLine.get('Id');
-                  itemsToUpdate.add(itemToUpdate);
-                  qboLineIndex++;
-                  break;
-                }
-                qboLineIndex++;
+          // Line items
+          List<Map<String, Object>> lines = new List<Map<String, Object>>();
+          for (OrderItem item : ord.OrderItems) {
+            Map<String, Object> line = new Map<String, Object>();
+            line.put('DetailType', 'SalesItemLineDetail');
+
+            Map<String, Object> itemDetail = new Map<String, Object>();
+            Decimal quantity = item.Quantity != null ? item.Quantity : 1;
+            Decimal unitPrice = item.UnitPrice != null ? item.UnitPrice : 0;
+
+            for (String sfField : lineMap.keySet()) {
+              Object val = getFieldValue(item, sfField);
+              String qboField = lineMap.get(sfField);
+              if (val == null || String.isBlank(qboField)) {
+                continue;
+              }
+              // Mappings may be stored as full nested paths
+              // (e.g. 'Line.SalesItemLineDetail.Qty'); normalize to the leaf so
+              // they land on the correct QBO node instead of becoming a literal
+              // dotted property name (which QBO rejects with fault 2010).
+              String leaf = normalizeLineLeaf(qboField);
+              if (leaf == 'Qty') {
+                quantity = (Decimal) val;
+                itemDetail.put('Qty', quantity);
+              } else if (leaf == 'UnitPrice') {
+                unitPrice = (Decimal) val;
+                itemDetail.put('UnitPrice', unitPrice);
+              } else if (leaf == 'Description') {
+                line.put('Description', val);
+              } else if (leaf == 'Amount') {
+                // Line amount is computed below from quantity * unitPrice.
+                continue;
+              } else if (leaf == 'ItemRef.value' || leaf == 'ItemRef') {
+                // ItemRef is set below from Product2.QuickbookID__c; never push a
+                // raw Salesforce Id here.
+                continue;
+              } else if (!leaf.contains('.')) {
+                itemDetail.put(leaf, val);
               }
             }
+            line.put('Amount', quantity * unitPrice);
+            if (
+              item.Product2 != null &&
+              String.isNotBlank(item.Product2.QuickbookID__c)
+            ) {
+              itemDetail.put(
+                'ItemRef',
+                new Map<String, String>{ 'value' => item.Product2.QuickbookID__c }
+              );
+            }
+            line.put('SalesItemLineDetail', itemDetail);
+            if (
+              String.isNotBlank(item.QB_LineiTemID__c) &&
+              item.QB_LineiTemID__c.contains(':')
+            ) {
+              if (qboObjectName != 'Invoice') {
+                line.put('Id', item.QB_LineiTemID__c.split(':')[1]);
+              }
+            }
+            lines.add(line);
           }
-        } else {
-          System.debug(
-            'QBO Sync Error: ' +
-            (res != null
-              ? res.getStatusCode() + ' - ' + res.getBody()
-              : 'Null Response')
+          requestBody.put('Line', lines);
+
+          // Handle existing QBO ID for updates / conversion
+          if (String.isNotBlank(ord.QuickbookID__c) && !isInitialSync) {
+            if (ord.Status == 'Activated' && qboObjectName == 'Invoice') {
+              System.debug('Converting Estimate to Invoice.');
+            } else {
+              requestBody.put('Id', ord.QuickbookID__c);
+              requestBody.put(
+                'SyncToken',
+                String.isBlank(ord.SyncToken__c) ? '0' : ord.SyncToken__c
+              );
+              requestBody.put('sparse', true);
+            }
+          }
+
+          // API Callout
+          String jsonBody = JSON.serialize(requestBody);
+          HttpResponse res = QuickBooksAuthHandler.makeApiCall(
+            'POST',
+            endpointPath,
+            jsonBody
           );
-          ErrorLogUtility.logCalloutFailure(
+
+          if (res != null && res.getStatusCode() == 200) {
+            Map<String, Object> responseMap = (Map<String, Object>) JSON.deserializeUntyped(
+              res.getBody()
+            );
+            System.debug('responseMap:'+ responseMap);
+            Map<String, Object> qboResponseObj = (Map<String, Object>) responseMap.get(
+              qboObjectName
+            );
+
+            Order ordToUpdate = new Order(Id = ord.Id);
+            ordToUpdate.QuickbookID__c = (String) qboResponseObj.get('Id');
+            ordToUpdate.SyncToken__c = (String) qboResponseObj.get('SyncToken');
+            ordersToUpdate.add(ordToUpdate);
+
+            List<Object> qboLines = (List<Object>) qboResponseObj.get('Line');
+            if (qboLines != null) {
+              Integer qboLineIndex = 0;
+              for (OrderItem item : ord.OrderItems) {
+                while (qboLineIndex < qboLines.size()) {
+                  Map<String, Object> qbLine = (Map<String, Object>) qboLines[
+                    qboLineIndex
+                  ];
+                  if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
+                    OrderItem itemToUpdate = new OrderItem(Id = item.Id);
+                    itemToUpdate.QB_LineiTemID__c =
+                      ordToUpdate.QuickbookID__c +
+                      ':' +
+                      (String) qbLine.get('Id');
+                    itemsToUpdate.add(itemToUpdate);
+                    qboLineIndex++;
+                    break;
+                  }
+                  qboLineIndex++;
+                }
+              }
+            }
+          } else {
+            System.debug(
+              'QBO Sync Error: ' +
+              (res != null
+                ? res.getStatusCode() + ' - ' + res.getBody()
+                : 'Null Response')
+            );
+            ErrorLogUtility.logCalloutFailure(
+              'QuickBooks',
+              'QBSalesOrderSyncBatch.execute',
+              'QBO sales order sync failed: ' +
+              (res != null
+                ? res.getStatusCode() + ' - ' + res.getBody()
+                : 'Null Response'),
+              res == null ? null : res.getStatusCode(),
+              'Order',
+              ord == null ? null : ord.Id
+            );
+          }
+        } catch (Exception e) {
+          System.debug(
+            'Exception in QBSalesOrderSyncBatch: ' +
+              e.getMessage() +
+              ' at Line ' +
+              e.getLineNumber()
+          );
+          ErrorLogUtility.logException(
             'QuickBooks',
             'QBSalesOrderSyncBatch.execute',
-            'QBO sales order sync failed: ' +
-            (res != null
-              ? res.getStatusCode() + ' - ' + res.getBody()
-              : 'Null Response'),
-            res == null ? null : res.getStatusCode(),
+            e,
             'Order',
             ord == null ? null : ord.Id
           );
         }
-      } catch (Exception e) {
-        System.debug(
-          'Exception in QBSalesOrderSyncBatch: ' +
-            e.getMessage() +
-            ' at Line ' +
-            e.getLineNumber()
+      }
+
+      // DML updates
+      if (!ordersToUpdate.isEmpty()) {
+        Database.SaveResult[] orderResults = Database.update(
+          ordersToUpdate,
+          false
         );
-        ErrorLogUtility.logException(
+        ErrorLogUtility.logDmlResults(
           'QuickBooks',
-          'QBSalesOrderSyncBatch.execute',
-          e,
-          'Order',
-          ord == null ? null : ord.Id
+          'QBSalesOrderSyncBatch.execute.updateOrders',
+          'update',
+          ordersToUpdate,
+          orderResults,
+          null,
+          null
         );
       }
-    }
-
-    // DML updates
-    if (!ordersToUpdate.isEmpty()) {
-      Database.SaveResult[] orderResults = Database.update(
-        ordersToUpdate,
-        false
-      );
-      ErrorLogUtility.logDmlResults(
-        'QuickBooks',
-        'QBSalesOrderSyncBatch.execute.updateOrders',
-        'update',
-        ordersToUpdate,
-        orderResults,
-        null,
-        null
-      );
-    }
-    if (!itemsToUpdate.isEmpty()) {
-      Database.SaveResult[] itemResults = Database.update(itemsToUpdate, false);
-      ErrorLogUtility.logDmlResults(
-        'QuickBooks',
-        'QBSalesOrderSyncBatch.execute.updateOrderItems',
-        'update',
-        itemsToUpdate,
-        itemResults,
-        null,
-        null
-      );
+      if (!itemsToUpdate.isEmpty()) {
+        Database.SaveResult[] itemResults = Database.update(itemsToUpdate, false);
+        ErrorLogUtility.logDmlResults(
+          'QuickBooks',
+          'QBSalesOrderSyncBatch.execute.updateOrderItems',
+          'update',
+          itemsToUpdate,
+          itemResults,
+          null,
+          null
+        );
+      }
+    } finally {
+      // Re-enable order triggers
+      QuickBooksInvoiceHandler.setBatchContext(false);
     }
   }
 

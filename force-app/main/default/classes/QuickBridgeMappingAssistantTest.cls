@@ -91,13 +91,14 @@ private class QuickBridgeMappingAssistantTest {
     );
   }
 
-  @IsTest
+    @IsTest
   static void reviewMappingsDetectsIncompatibleTypeRisk() {
+    // Map a Number field (AnnualRevenue) to a Date field (TxnDate) – types are incompatible.
     String mappingsJson = JSON.serialize(
       new List<Map<String, Object>>{
         new Map<String, Object>{
-          'sfField' => 'IsDeleted',
-          'externalField' => 'TotalAmt',
+          'sfField' => 'AnnualRevenue',
+          'externalField' => 'TxnDate',
           'syncDirection' => 'SF to QBO'
         }
       }
@@ -118,9 +119,10 @@ private class QuickBridgeMappingAssistantTest {
     ) {
       if (risk.message != null && risk.message.contains('type')) {
         foundTypeRisk = true;
+        break;
       }
     }
-    Assert.areEqual(true, foundTypeRisk);
+    System.assertEquals(true, foundTypeRisk, 'Type incompatibility risk should be detected for AnnualRevenue → TxnDate.');
   }
 
   @IsTest

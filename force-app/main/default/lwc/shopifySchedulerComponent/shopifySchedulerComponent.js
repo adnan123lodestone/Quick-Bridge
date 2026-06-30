@@ -257,7 +257,9 @@ export default class ShopifySchedulerComponent extends LightningElement {
 
   async handleStopSchedule() {
     try {
-      const result = await stopConnectorSchedules({ connectorKey: this.connectorKey });
+      const result = await stopConnectorSchedules({
+        connectorKey: this.connectorKey
+      });
       this.showToast("Schedule Stopped", result, "info");
       await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
@@ -328,7 +330,10 @@ export default class ShopifySchedulerComponent extends LightningElement {
   async handlePause() {
     const isCurrentlyPaused = this.selectedJob?.displayStatus === "Paused";
     try {
-      await togglePauseStatus({ connectorKey: this.connectorKey, pauseIt: !isCurrentlyPaused });
+      await togglePauseStatus({
+        connectorKey: this.connectorKey,
+        pauseIt: !isCurrentlyPaused
+      });
       this.showToast(
         "Success",
         !isCurrentlyPaused

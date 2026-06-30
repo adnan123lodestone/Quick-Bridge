@@ -55,7 +55,6 @@ private class AuthorizeNetConfigServiceTest {
     injected.webhookSigningKey = 'override_key';
     injected.useSandbox = false;
     injected.fromNormalizedConfig = false;
-    injected.fromLegacyConfig = false;
     AuthorizeNetConfigService.testConfig = injected;
 
     AuthorizeNetConfigService.Config result = AuthorizeNetConfigService.getConfig();
@@ -63,29 +62,6 @@ private class AuthorizeNetConfigServiceTest {
     System.assertEquals('override_login', result.apiLoginId);
     System.assertEquals('override_key', result.webhookSigningKey);
     System.assertEquals(false, result.useSandbox);
-  }
-
-  @IsTest
-  static void legacyFallbackCanBeExercisedWhenNoNormalizedConfigExists() {
-    AuthorizeNetConfigService.useLegacyFallbackInTests = true;
-
-    AuthorizeNetConfigService.Config config = AuthorizeNetConfigService.getConfig();
-
-    System.assertNotEquals(null, config);
-    System.assertEquals(false, config.fromNormalizedConfig);
-    System.assertEquals(true, config.fromLegacyConfig);
-  }
-
-  @IsTest
-  static void gatewayLegacyFallbackCanBeExercisedWhenQuickbridgeIsSkipped() {
-    AuthorizeNetConfigService.useLegacyFallbackInTests = true;
-    AuthorizeNetConfigService.skipQuickbridgeLegacyInTests = true;
-
-    AuthorizeNetConfigService.Config config = AuthorizeNetConfigService.getConfig();
-
-    System.assertNotEquals(null, config);
-    System.assertEquals(false, config.fromNormalizedConfig);
-    System.assertEquals(true, config.fromLegacyConfig);
   }
 
   @IsTest

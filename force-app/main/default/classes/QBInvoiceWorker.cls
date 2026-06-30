@@ -8,8 +8,28 @@ public with sharing class QBInvoiceWorker implements IntegrationWorkHandler {
         if (invoiceId == null) {
             throw new QBInvoiceWorkerException('Invoice work item has no Salesforce Id.');
         }
-        QuickBooksInvoiceBatch batch = new QuickBooksInvoiceBatch(new Set<Id>{ invoiceId }, isInitialSync(item));
-        batch.execute(null, new List<SObject>{ new Invoice__c(Id = invoiceId) });
+
+        // Dynamically routing based on SObject type of the Source Salesforce Id
+        if (invoiceId.getSObjectType() == Order.SObjectType) {
+            // Dynamic query to retrieve all mapped Order and OrderItem fields
+            String orderFields = QBSalesOrderSyncBatch.buildOrderQueryFields();
+            String orderItemFields = QBSalesOrderSyncBatch.buildOrderItemQueryFields();
+            String query = 'SELECT ' + orderFields +
+                           ', AccountId, Account.QuickbookID__c' +
+                           ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice, Product2.QuickbookID__c, QB_LineiTemID__c' +
+                           orderItemFields +
+                           ' FROM OrderItems)' +
+                           ' FROM Order WHERE Id = :invoiceId';
+            
+            List<Order> scope = (List<Order>) Database.query(query);
+            QBSalesOrderSyncBatch batch = new QBSalesOrderSyncBatch(new Set<Id>{ invoiceId }, isInitialSync(item));
+            batch.execute(null, scope);
+        } else {
+            // Dynamic SObject construction to support any other mapped Invoice object (e.g. Invoice__c)
+            SObject scopeRecord = invoiceId.getSObjectType().newSObject(invoiceId);
+            QuickBooksInvoiceBatch batch = new QuickBooksInvoiceBatch(new Set<Id>{ invoiceId }, isInitialSync(item));
+            batch.execute(null, new List<SObject>{ scopeRecord });
+        }
     }
 
     private static Boolean isInitialSync(Integration_Work_Item__c item) {

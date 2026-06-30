@@ -21,6 +21,12 @@ private class QuickBooksAuthHandlerTest {
         }
     }
 
+    private class QBAuthExceptionMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest req) {
+            throw new CalloutException('Forced callout exception');
+        }
+    }
+
     @testSetup
     static void setupData() {
         insert new Account(Name = 'Auth Handler Seed');
@@ -28,15 +34,21 @@ private class QuickBooksAuthHandlerTest {
 
     @isTest
     static void testMakeApiCall() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
         Test.setMock(HttpCalloutMock.class, new QBAuthMock());
-
         Test.startTest();
-        try {
-            HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', null);
-            System.assertEquals(200, res.getStatusCode());
-        } catch (Exception e) {
-            System.assert(e.getMessage() != null);
-        }
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', '{"body":true}');
+        System.assertEquals(200, res.getStatusCode());
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testMakeApiCallWithNullBody() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
+        Test.setMock(HttpCalloutMock.class, new QBAuthMock());
+        Test.startTest();
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', null);
+        System.assertEquals(200, res.getStatusCode());
         Test.stopTest();
     }
 
@@ -48,7 +60,6 @@ private class QuickBooksAuthHandlerTest {
             'Custom_QB_Named_Credential',
             '70'
         );
-
         System.assertEquals(
             'callout:Custom_QB_Named_Credential/v3/company/12345/customer/1?minorversion=70',
             endpoint
@@ -63,7 +74,6 @@ private class QuickBooksAuthHandlerTest {
             'Custom_QB_Named_Credential',
             null
         );
-
         System.assertEquals(
             'callout:Custom_QB_Named_Credential/v3/company/12345/query?query=select+*+from+Customer&minorversion=65',
             endpoint
@@ -78,7 +88,6 @@ private class QuickBooksAuthHandlerTest {
             'Custom_QB_Named_Credential',
             ''
         );
-
         System.assertEquals(
             'callout:Custom_QB_Named_Credential/v3/company/12345/query?query=select+*+from+Customer',
             endpoint
@@ -89,22 +98,111 @@ private class QuickBooksAuthHandlerTest {
     static void endpointRequiresConfiguredNamedCredential() {
         try {
             QuickBooksAuthHandler.buildEndpointForTest('/customer/1', '12345', null, null);
-            System.assert(false, 'Expected missing Named Credential to be rejected.');
+            System.assert(false);
         } catch (Exception e) {
-            System.assert(e.getMessage().contains('Named Credential'), e.getMessage());
+            System.assert(e.getMessage().contains('Named Credential'));
+        }
+    }
+
+    @isTest
+    static void endpointRequiresConfiguredRealmId() {
+        try {
+            QuickBooksAuthHandler.buildEndpointForTest('/customer/1', null, 'Custom_QB_Named_Credential', null);
+            System.assert(false);
+        } catch (Exception e) {
+            System.assert(e.getMessage().contains('Realm ID'));
         }
     }
 
     @isTest
     static void makeApiCallLogsNonSuccessResponseWithoutThrowing() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
         Test.setMock(HttpCalloutMock.class, new QBAuthFailureMock());
+        Test.startTest();
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', null);
+        System.assertEquals(503, res.getStatusCode());
+        Test.stopTest();
+    }
 
+    @isTest
+    static void makeApiCallThrowsException() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
+        Test.setMock(HttpCalloutMock.class, new QBAuthExceptionMock());
         Test.startTest();
         try {
-            HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', null);
-            System.assertEquals(503, res.getStatusCode());
+            QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', null);
+            System.assert(false);
         } catch (Exception e) {
-            System.assert(e.getMessage() != null);
+            System.assertNotEquals(null, e.getMessage());
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testMakeBinaryApiCallSuccess() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
+        Test.setMock(HttpCalloutMock.class, new QBAuthMock());
+        Test.startTest();
+        HttpResponse res = QuickBooksAuthHandler.makeBinaryApiCall('/customer/1/pdf');
+        System.assertEquals(200, res.getStatusCode());
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testMakeBinaryApiCallFailure() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
+        Test.setMock(HttpCalloutMock.class, new QBAuthFailureMock());
+        Test.startTest();
+        HttpResponse res = QuickBooksAuthHandler.makeBinaryApiCall('/customer/1/pdf');
+        System.assertEquals(503, res.getStatusCode());
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testMakeBinaryApiCallException() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
+        Test.setMock(HttpCalloutMock.class, new QBAuthExceptionMock());
+        Test.startTest();
+        try {
+            QuickBooksAuthHandler.makeBinaryApiCall('/customer/1/pdf');
+            System.assert(false);
+        } catch (Exception e) {
+            System.assertNotEquals(null, e.getMessage());
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testValidateConfigurationWithTestConfig() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'Custom_QB_Named_Credential', '70');
+        Test.startTest();
+        QuickBooksAuthHandler.validateConfiguration();
+        Test.stopTest();
+        System.assert(true);
+    }
+
+    @isTest
+    static void testValidateConfigurationWithoutTestConfig() {
+        QuickBooksAuthHandler.configureConnectionForTest(null, null, null);
+        Test.startTest();
+        try {
+            QuickBooksAuthHandler.validateConfiguration();
+            System.assert(false);
+        } catch (AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage());
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testGetConnectionConfigMissingRecordException() {
+        QuickBooksAuthHandler.configureConnectionForTest(null, null, null);
+        Test.startTest();
+        try {
+            QuickBooksAuthHandler.makeApiCall('GET', '/customer/1', null);
+            System.assert(false);
+        } catch (Exception e) {
+            System.assert(e.getMessage().contains('configuration record was not found'));
         }
         Test.stopTest();
     }

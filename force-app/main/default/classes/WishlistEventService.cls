@@ -50,7 +50,7 @@
 
 @RestResource(urlMapping='/wishlistevent')
 global with sharing class WishlistEventService {
-
+    @TestVisible private static String testOverrideToken;
     global class WishlistEventRequest {
         public CustomerIds customer_ids;
         public Properties properties;
@@ -104,11 +104,13 @@ global with sharing class WishlistEventService {
             String accessToken = accessTokenHeader.trim();
 
             String expectedToken = null;
-            List<Integration__mdt> tokens = [
-                SELECT Access_Token__c FROM Integration__mdt WHERE MasterLabel = 'Swym' LIMIT 1
-            ];
-            if (!tokens.isEmpty()) {
-                expectedToken = tokens[0].Access_Token__c;
+            if (Test.isRunningTest() && testOverrideToken != null) {
+    expectedToken = testOverrideToken;
+            } else {
+                List<Integration__mdt> tokens = [SELECT Access_Token__c FROM Integration__mdt WHERE MasterLabel = 'Swym' LIMIT 1];
+                if (!tokens.isEmpty()) {
+                    expectedToken = tokens[0].Access_Token__c;
+                }
             }
 
             if (String.isBlank(expectedToken) || accessToken != expectedToken) {

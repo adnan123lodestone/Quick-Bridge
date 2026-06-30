@@ -11,7 +11,7 @@ public class QBOItemSalesTaxBatch implements Database.Batchable<Object>, Databas
     
     public void execute(Database.BatchableContext bc, List<Object> scope) {
         List<Error_Log__c> bulkErrorLogsToInsert = new List<Error_Log__c>();
-        List<QuickBridgeTLG__Item_Sales_Tax__c> recordsToUpsert = new List<QuickBridgeTLG__Item_Sales_Tax__c>();
+        List<Item_Sales_Tax__c> recordsToUpsert = new List<Item_Sales_Tax__c>();
         
         try {
             String query = 'SELECT * FROM TaxCode WHERE Active = true STARTPOSITION ' + currentPosition + ' MAXRESULTS 100';
@@ -45,8 +45,8 @@ public class QBOItemSalesTaxBatch implements Database.Batchable<Object>, Databas
                     String taxCodeId = (String) taxCode.get('Id');
                     if (String.isBlank(taxCodeId)) continue;
                     
-                    QuickBridgeTLG__Item_Sales_Tax__c sfTax = new QuickBridgeTLG__Item_Sales_Tax__c();
-                    sfTax.QuickBridgeTLG__External_Id__c = taxCodeId;
+                    Item_Sales_Tax__c sfTax = new Item_Sales_Tax__c();
+                    sfTax.External_Id__c = taxCodeId;
                     
                     for (String qboField : inboundMapping.keySet()) {
                         String sfField = inboundMapping.get(qboField);
@@ -61,19 +61,19 @@ public class QBOItemSalesTaxBatch implements Database.Batchable<Object>, Databas
                         sfTax.Name = (String) taxCode.get('Name');
                     }
                     if (sfTax.get('QuickBridgeTLG__Is_Active__c') == null) {
-                        sfTax.QuickBridgeTLG__Is_Active__c = (Boolean) taxCode.get('Active');
+                        sfTax.Is_Active__c = (Boolean) taxCode.get('Active');
                     }
                     if (sfTax.get('QuickBridgeTLG__Item_Description__c') == null) {
-                        sfTax.QuickBridgeTLG__Item_Description__c = (String) taxCode.get('Description');
+                        sfTax.Item_Description__c = (String) taxCode.get('Description');
                     }
                     if (sfTax.get('QuickBridgeTLG__Tax_Rate_Per__c') == null) {
                         Object rate = getNestedValue(taxCode, 'SalesTaxRateList.TaxRateDetail[0].TaxRateRef.value');
                         if (rate != null) {
-                            sfTax.QuickBridgeTLG__Tax_Rate_Per__c = Decimal.valueOf(String.valueOf(rate));
+                            sfTax.Tax_Rate_Per__c = Decimal.valueOf(String.valueOf(rate));
                         }
                     }
                     
-                    sfTax.QuickBridgeTLG__Is_Synced__c = true;
+                    sfTax.Is_Synced__c = true;
                     recordsToUpsert.add(sfTax);
                     successCount++;
                     
@@ -107,19 +107,19 @@ public class QBOItemSalesTaxBatch implements Database.Batchable<Object>, Databas
         } finally {
             if (!recordsToUpsert.isEmpty()) {
                 Database.UpsertResult[] results = Database.upsert(recordsToUpsert,
-                QuickBridgeTLG__Item_Sales_Tax__c.QuickBridgeTLG__External_Id__c, false);
+                Item_Sales_Tax__c.External_Id__c, false);
                 
                 for (Integer i = 0; i < results.size(); i++) {
                     if (!results[i].isSuccess()) {
                         errorCount++;
                         successCount--;
                         String errorMsg = results[i].getErrors()[0].getMessage();
-                        System.debug('Upsert failed for record ID: ' + recordsToUpsert[i].QuickBridgeTLG__External_Id__c + ' Error: ' + errorMsg);
+                        System.debug('Upsert failed for record ID: ' + recordsToUpsert[i].External_Id__c + ' Error: ' + errorMsg);
                         // Log as an error record
                         ErrorLogUtility.logCalloutFailure(
                             'QuickBooks',
                         'QBOItemSalesTaxBatch.execute.upsert',
-                        'Upsert failed for External_Id__c ' + recordsToUpsert[i].QuickBridgeTLG__External_Id__c + ': ' + errorMsg,
+                        'Upsert failed for External_Id__c ' + recordsToUpsert[i].External_Id__c + ': ' + errorMsg,
                         null,
                         'Item_Sales_Tax__c',
                         null

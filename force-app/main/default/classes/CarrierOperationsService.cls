@@ -1289,7 +1289,14 @@ public with sharing class CarrierOperationsService {
     if (!hasCity && !hasPostal) missing.add(label + ' City or Postal Code');
 
     Object countryVal = addr.get('countryCode');
-    if (countryVal == null || String.isBlank(String.valueOf(countryVal))) missing.add(label + ' Country');
+    if (countryVal == null || String.isBlank(String.valueOf(countryVal))) {
+      missing.add(label + ' Country');
+    } else {
+      String cc = String.valueOf(countryVal).trim();
+      if (cc.length() != 2) {
+        missing.add(label + ' Country (must be a 2-letter ISO code e.g. US, CA, GB — got: "' + cc + '")');
+      }
+    }
     return missing;
   }
 

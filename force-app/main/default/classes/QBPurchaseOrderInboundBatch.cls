@@ -305,12 +305,12 @@ public class QBPurchaseOrderInboundBatch implements Database.Batchable<String>, 
       return;
     }
     Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
-    // fields.getMap() keys are fully-qualified lowercased API names (e.g. quickbridgetlg__quantity__c).
+    // fields.getMap() keys are fully-qualified lowercased API names (e.g. quantity__c).
     // The mapping values may omit the namespace prefix (e.g. Quantity__c) — try both forms.
     String keyLower = fieldName.toLowerCase();
     Schema.SObjectField fieldToken = fields.get(keyLower);
     if (fieldToken == null) {
-      fieldToken = fields.get('quickbridgetlg__' + keyLower);
+      fieldToken = fields.get('QuickBridgeTLG__' + keyLower);
     }
     if (fieldToken == null) {
       return;

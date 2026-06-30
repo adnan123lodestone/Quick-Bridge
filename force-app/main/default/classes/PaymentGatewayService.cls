@@ -1,8 +1,16 @@
 public with sharing class PaymentGatewayService {
+  @TestVisible private static Boolean forceExceptionForTest = false;
+  @TestVisible private static Boolean forceBlankMessageForTest = false;
+
   @AuraEnabled
   public static String getActiveGatewaysForCheckout() {
     try {
       IntegrationEntitlementService.EntitlementResult entitlement = IntegrationEntitlementService.getCheckoutEntitlement();
+      
+      if (Test.isRunningTest() && forceBlankMessageForTest) {
+          entitlement = null;
+      }
+
       if (
         entitlement != null &&
         entitlement.active == true &&
@@ -30,6 +38,9 @@ public with sharing class PaymentGatewayService {
   @AuraEnabled
   public static Boolean isClientAuthorized(String gatewayName) {
     try {
+      if (Test.isRunningTest() && forceExceptionForTest) {
+          throw new IllegalArgumentException('Forced Exception');
+      }
       return IntegrationEntitlementService.isGatewayAuthorized(gatewayName);
     } catch (Exception e) {
       System.debug(

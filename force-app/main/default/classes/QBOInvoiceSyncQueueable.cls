@@ -78,7 +78,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                 String qboCustomerId = (String)customerRef.get('value');
                 String customerName = (String)customerRef.get('name');
                 if(String.isNotBlank(qboCustomerId) && !accountsToUpsert.containsKey(qboCustomerId)) {
-                    accountsToUpsert.put(qboCustomerId, new Account(Name = customerName, QuickBridgeTLG__QuickbookID__c = qboCustomerId));
+                    accountsToUpsert.put(qboCustomerId, new Account(Name = customerName, QuickbookID__c = qboCustomerId));
                 }
             }
 
@@ -97,7 +97,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                             if(String.isNotBlank(itemId) && !productsToUpsert.containsKey(itemId)) {
                                 productsToUpsert.put(itemId, new Product2(
                                     Name = itemName,
-                                    QuickBridgeTLG__External_Id__c = itemId,
+                                    External_Id__c = itemId,
                                     IsActive = true
                                 ));
                             }
@@ -118,9 +118,9 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         QBTriggerHandler.isAccountProcessing = true;
         QBTriggerHandler.isProductProcessing = true;
         try {
-            Database.UpsertResult[] accountResults = Database.upsert(accountRecords, Account.Fields.QuickBridgeTLG__QuickbookID__c, false);
+            Database.UpsertResult[] accountResults = Database.upsert(accountRecords, Account.Fields.QuickbookID__c, false);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertAccounts', 'upsert', accountRecords, accountResults, null, null);
-            Database.UpsertResult[] productResults = Database.upsert(productRecords, Product2.Fields.QuickBridgeTLG__External_Id__c, false);
+            Database.UpsertResult[] productResults = Database.upsert(productRecords, Product2.Fields.External_Id__c, false);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertProducts', 'upsert', productRecords, productResults, null, null);
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
@@ -129,7 +129,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         
         Map<String, Id> qboCustomerToSfAccountIdMap = new Map<String, Id>();
         for(Account acc : accountsToUpsert.values()) {
-            if(acc.Id != null) qboCustomerToSfAccountIdMap.put(acc.QuickBridgeTLG__QuickbookID__c, acc.Id);
+            if(acc.Id != null) qboCustomerToSfAccountIdMap.put(acc.QuickbookID__c, acc.Id);
         }
         
         // ---------------------------------------------------------
@@ -138,17 +138,17 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         Map<String, Id> qboItemToPbeId = new Map<String, Id>();
         if(standardPricebookId != null && !productsToUpsert.isEmpty()) {
             // Get existing PBEs
-            List<PricebookEntry> existingPBEs = [SELECT Id, Product2.QuickBridgeTLG__External_Id__c FROM PricebookEntry 
-                                                 WHERE Pricebook2Id = :standardPricebookId AND Product2.QuickBridgeTLG__External_Id__c IN :productsToUpsert.keySet()];
+            List<PricebookEntry> existingPBEs = [SELECT Id, Product2.External_Id__c FROM PricebookEntry 
+                                                 WHERE Pricebook2Id = :standardPricebookId AND Product2.External_Id__c IN :productsToUpsert.keySet()];
             
             for(PricebookEntry pbe : existingPBEs) {
-                qboItemToPbeId.put(pbe.Product2.QuickBridgeTLG__External_Id__c, pbe.Id);
+                qboItemToPbeId.put(pbe.Product2.External_Id__c, pbe.Id);
             }
             
             // Create Missing PBEs
             List<PricebookEntry> pbesToInsert = new List<PricebookEntry>();
             for(Product2 prod : productsToUpsert.values()) {
-                if(!qboItemToPbeId.containsKey(prod.QuickBridgeTLG__External_Id__c) && prod.Id != null) {
+                if(!qboItemToPbeId.containsKey(prod.External_Id__c) && prod.Id != null) {
                     pbesToInsert.add(new PricebookEntry(
                         Pricebook2Id = standardPricebookId,
                         Product2Id = prod.Id,
@@ -161,8 +161,8 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                 Database.SaveResult[] pbeResults = Database.insert(pbesToInsert, false);
                 ErrorLogUtility.logDmlResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.insertPricebookEntries', 'insert', pbesToInsert, pbeResults, null, null);
                 // Add newly created PBEs to Map
-                for(PricebookEntry pbe : [SELECT Id, Product2.QuickBridgeTLG__External_Id__c FROM PricebookEntry WHERE Id IN :pbesToInsert]) {
-                    qboItemToPbeId.put(pbe.Product2.QuickBridgeTLG__External_Id__c, pbe.Id);
+                for(PricebookEntry pbe : [SELECT Id, Product2.External_Id__c FROM PricebookEntry WHERE Id IN :pbesToInsert]) {
+                    qboItemToPbeId.put(pbe.Product2.External_Id__c, pbe.Id);
                 }
             }
         }
@@ -181,7 +181,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
             if (sfAccountId != null) {
                 Order newOrder = new Order(
                     AccountId = sfAccountId,
-                    QuickBridgeTLG__QuickbookID__c = qboInvoiceId,
+                    QuickbookID__c = qboInvoiceId,
                     Status = 'Draft',
                     Pricebook2Id = standardPricebookId // MUST assign Pricebook to add products
                 );
@@ -194,7 +194,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
             List<Order> orderRecords = ordersToUpsert.values();
             QBTriggerHandler.isOrderProcessing = true;
             try {
-                Database.UpsertResult[] orderResults = Database.upsert(orderRecords, Order.Fields.QuickBridgeTLG__QuickbookID__c, false);
+                Database.UpsertResult[] orderResults = Database.upsert(orderRecords, Order.Fields.QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertOrders', 'upsert', orderRecords, orderResults, null, null);
             } finally {
                 QBTriggerHandler.isOrderProcessing = false;
@@ -263,7 +263,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         // ---------------------------------------------------------
         // PHASE 6: UPSERT INVOICE__C
         // ---------------------------------------------------------
-        List<QuickBridgeTLG__Invoice__c> invoicesToUpsert = new List<QuickBridgeTLG__Invoice__c>();
+        List<Invoice__c> invoicesToUpsert = new List<Invoice__c>();
         for (Map<String, Object> invoiceData : parsedInvoices) {
             String qboInvoiceId = (String)invoiceData.get('Id');
             Order relatedOrder = ordersToUpsert.get(qboInvoiceId);
@@ -273,10 +273,10 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
             Id sfAccountId = (qboCustomerId != null) ? qboCustomerToSfAccountIdMap.get(qboCustomerId) : null;
             
             if(relatedOrder != null && relatedOrder.Id != null) {
-                QuickBridgeTLG__Invoice__c newInv = new QuickBridgeTLG__Invoice__c(
-                    QuickBridgeTLG__Order__c = relatedOrder.Id,
-                    QuickBridgeTLG__Related_Account__c = sfAccountId,
-                    QuickBridgeTLG__External_Id__c = qboInvoiceId
+                Invoice__c newInv = new Invoice__c(
+                    Order__c = relatedOrder.Id,
+                    Related_Account__c = sfAccountId,
+                    External_Id__c = qboInvoiceId
                 );
                 applyDynamicMapping(newInv, invoiceData, qboToSfInvoiceMap);
                 invoicesToUpsert.add(newInv);
@@ -284,7 +284,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         }
         
         if (!invoicesToUpsert.isEmpty()) {
-            Database.UpsertResult[] invoiceResults = Database.upsert(invoicesToUpsert, QuickBridgeTLG__Invoice__c.Fields.QuickBridgeTLG__External_Id__c, false);
+            Database.UpsertResult[] invoiceResults = Database.upsert(invoicesToUpsert, Invoice__c.Fields.External_Id__c, false);
             ErrorLogUtility.logUpsertResults('QuickBooks', 'QBOInvoiceSyncQueueable.execute.upsertInvoices', 'upsert', invoicesToUpsert, invoiceResults, null, null);
         }
     }

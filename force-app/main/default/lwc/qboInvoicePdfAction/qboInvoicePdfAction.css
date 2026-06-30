@@ -1,74 +1,76 @@
 /* ── Main panel ────────────────────────────────────────── */
 .qbo-pdf-panel {
-    padding: 0.25rem 0;
+  padding: 0.25rem 0;
 }
 
 .qbo-pdf-loading {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem 0;
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0;
 }
 
 .qbo-pdf-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 0.45rem 0.75rem;
-    min-height: 44px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.45rem 0.75rem;
+  min-height: 44px;
 }
 
 /* ── Actions ─────────────────────────────────────────── */
 .qbo-pdf-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .qbo-pdf-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.9rem;
-    border: 1.5px solid transparent;
-    border-radius: 6px;
-    background: #1877f2;
-    color: #fff;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
-    min-height: 30px;
-    white-space: nowrap;
-    letter-spacing: 0.01em;
-    transition: background 0.12s ease, box-shadow 0.12s ease;
-    box-shadow: 0 1px 2px rgba(24, 119, 242, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.9rem;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  background: #1877f2;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 30px;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+  box-shadow: 0 1px 2px rgba(24, 119, 242, 0.18);
 }
 
 .qbo-pdf-btn:hover:not(:disabled) {
-    background: #1461c8;
-    box-shadow: 0 2px 6px rgba(24, 119, 242, 0.28);
+  background: #1461c8;
+  box-shadow: 0 2px 6px rgba(24, 119, 242, 0.28);
 }
 
 .qbo-pdf-btn:active:not(:disabled) {
-    background: #1050a8;
-    box-shadow: none;
+  background: #1050a8;
+  box-shadow: none;
 }
 
 .qbo-pdf-btn:disabled {
-    background: #bfdbfe;
-    color: #93c5fd;
-    cursor: not-allowed;
-    box-shadow: none;
+  background: #bfdbfe;
+  color: #93c5fd;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* ── Status message ──────────────────────────────────── */
 .qbo-pdf-no-actions {
-    font-size: 0.8rem;
-    color: #94a3b8;
-    font-style: italic;
-    padding: 0.1rem 0;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 0.1rem 0;
 }

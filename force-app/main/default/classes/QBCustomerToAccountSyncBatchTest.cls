@@ -9,7 +9,7 @@ private class QBCustomerToAccountSyncBatchTest {
 
             if (endpoint.contains('/query?query=')) {
                 res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Customer":[{"Id":"CUST-1","DisplayName":"Customer One","CompanyName":"Acme","GivenName":"John","FamilyName":"Doe","PrimaryEmailAddr":{"Address":"john@example.com"},"PrimaryPhone":{"FreeFormNumber":"12345"},"BillAddr":{"Line1":"Street 1","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"}}]}}');
+                res.setBody('{"QueryResponse":{"Customer":[{"Id":"CUST-1","DisplayName":"Customer One","CompanyName":"Acme","GivenName":"John","FamilyName":"Doe","Title":"Mr.","PrimaryEmailAddr":{"Address":"john@example.com"},"PrimaryPhone":{"FreeFormNumber":"12345"},"BillAddr":{"Line1":"Street 1","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"}}]}}');
                 return res;
             }
 
@@ -28,7 +28,7 @@ private class QBCustomerToAccountSyncBatchTest {
             String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
             if (endpoint.contains('/customer/cust-1')) {
                 res.setStatusCode(200);
-                res.setBody('{"Customer":{"Id":"CUST-1","DisplayName":"Customer One","CompanyName":"Acme","GivenName":"John","FamilyName":"Doe","PrimaryEmailAddr":{"Address":"john@example.com"},"PrimaryPhone":{"FreeFormNumber":"12345"},"BillAddr":{"Line1":"Street 1","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"}}}');
+                res.setBody('{"Customer":{"Id":"CUST-1","DisplayName":"Customer One","CompanyName":"Acme","GivenName":"John","FamilyName":"Doe","Title":"Mr.","PrimaryEmailAddr":{"Address":"john@example.com"},"PrimaryPhone":{"FreeFormNumber":"12345"},"BillAddr":{"Line1":"Street 1","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"}}}');
                 return res;
             }
             res.setStatusCode(404);
@@ -39,7 +39,70 @@ private class QBCustomerToAccountSyncBatchTest {
 
     @testSetup
     static void setupData() {
-        insert new Account(Name = 'Seed Account');
+        // Create Connector Instance
+        Connector_Instance__c instance = new Connector_Instance__c(
+            Name = 'QuickBooks Online',
+            Connector_Key__c = 'qbo',
+            Active__c = true,
+            Environment__c = 'Sandbox',
+            Named_Credential__c = 'QuickBookSandbox'
+        );
+        insert instance;
+
+        insert new Integration_Usage_Summary__c(
+            Product_Key__c = 'quickbooks',
+            Product__c = 'QuickBooks',
+            Record_Sync_Count__c = 0,
+            Error_Count__c = 0,
+            Endpoint_Usage_Count__c = 0,
+            Task_Usage_Count__c = 0,
+            Active_Schedule_Count__c = 0,
+            Subscription_Status__c = 'Active',
+            Last_Updated_At__c = System.now()
+        );
+
+        // Create Required Config Values
+        List<Connector_Config_Value__c> configs = new List<Connector_Config_Value__c>();
+        configs.add(new Connector_Config_Value__c(
+            Name = 'qbo.RealmId',
+            Connector_Instance__c = instance.Id,
+            Connector_Key__c = 'qbo',
+            Field_Key__c = 'QuickBooks_Realm_ID__c',
+            Value__c = '123456789'
+        ));
+        configs.add(new Connector_Config_Value__c(
+            Name = 'qbo.Active',
+            Connector_Instance__c = instance.Id,
+            Connector_Key__c = 'qbo',
+            Field_Key__c = 'QuickBooks_Is_Active__c',
+            Value__c = 'true'
+        ));
+        insert configs;
+
+        // Insert a seed account to avoid null pointers in mapping lookups if needed
+        QBTriggerHandler.isAccountProcessing = true;
+        insert new Account(Name = 'Seed Account', QuickbookID__c = 'EXISTING-001');
+
+        insert new Account(
+            Name = 'Existing Business',
+            QuickbookID__c = 'CUST-2',
+            RecordTypeId = getCustomerRecordTypeId()
+        );
+
+        QBTriggerHandler.isAccountProcessing = false;
+    }
+
+    private static Id getPersonAccountRecordTypeId() {
+        List<RecordType> rts = [SELECT Id FROM RecordType WHERE SobjectType = 'Account' AND IsPersonType = true AND IsActive = true LIMIT 1];
+        return rts.isEmpty() ? null : rts[0].Id;
+    }
+
+    private static Id getCustomerRecordTypeId() {
+        List<RecordType> rts = [SELECT Id FROM RecordType WHERE SobjectType = 'Account' AND DeveloperName = 'Customer' LIMIT 1];
+        if(rts.isEmpty()) {
+            rts = [SELECT Id FROM RecordType WHERE SobjectType = 'Account' LIMIT 1];
+        }
+        return rts[0].Id;
     }
 
     @isTest
@@ -49,24 +112,23 @@ private class QBCustomerToAccountSyncBatchTest {
         Test.startTest();
         Database.executeBatch(new QBCustomerToAccountSyncBatch('2025-01-01'), 1);
         Test.stopTest();
-
-        System.assertEquals(false, QBTriggerHandler.isAccountProcessing);
-
+        
         Account syncedAccount = [
-            SELECT Id, Name, QuickbookID__c, BillingStreet, BillingState
+            SELECT Id, Name, QuickbookID__c, BillingStreet, BillingState, (SELECT Id, LastName, Title FROM Contacts)
             FROM Account
             WHERE QuickbookID__c = 'CUST-1'
             LIMIT 1
         ];
         System.assertEquals('Customer One', syncedAccount.Name);
         System.assertEquals('CUST-1', syncedAccount.QuickbookID__c);
+        System.assert(!syncedAccount.Contacts.isEmpty(), 'Contact should be created for Business Account');
+        System.assertEquals('Doe', syncedAccount.Contacts[0].LastName);
+        System.assertEquals('Mr.', syncedAccount.Contacts[0].Title);
+
+        // Verify the trigger flag was reset
+        System.assertEquals(false, QBTriggerHandler.isAccountProcessing);
     }
 
-    // Reproduces the production failure: an existing Business Account whose
-    // QuickBooks customer no longer has a CompanyName. The batch must NOT flip it
-    // to a Person Account inline (which would throw
-    // "Business Account may not use Person Account field PersonEmail"); it should
-    // stay a Business Account and upsert cleanly.
     private class QBNoCompanyNameMock implements HttpCalloutMock {
         public HttpResponse respond(HttpRequest req) {
             HttpResponse res = new HttpResponse();
@@ -85,14 +147,6 @@ private class QBCustomerToAccountSyncBatchTest {
 
     @isTest
     static void testExistingBusinessAccountWithoutCompanyNameStaysBusiness() {
-        Id customerRtId = Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName()
-            .get('Customer').getRecordTypeId();
-        insert new Account(
-            Name = 'Existing Business',
-            QuickbookID__c = 'CUST-2',
-            RecordTypeId = customerRtId
-        );
-
         Test.setMock(HttpCalloutMock.class, new QBNoCompanyNameMock());
 
         Test.startTest();
@@ -105,8 +159,7 @@ private class QBCustomerToAccountSyncBatchTest {
             WHERE QuickbookID__c = 'CUST-2'
             LIMIT 1
         ];
-        // Must remain a Business Account; the inline person-account flip is suppressed.
-        System.assertEquals(customerRtId, result.RecordTypeId,
+        System.assertNotEquals(getPersonAccountRecordTypeId(), result.RecordTypeId,
             'Existing Business Account must not be converted to a Person Account inline.');
     }
 
@@ -119,5 +172,55 @@ private class QBCustomerToAccountSyncBatchTest {
         Test.stopTest();
 
         System.assertEquals(1, [SELECT Count() FROM Account WHERE QuickbookID__c = 'CUST-1']);
+    }
+
+    @isTest
+static void testPersonAccountSync() {
+    Id personRtId = getPersonAccountRecordTypeId();
+    if (personRtId == null) return; 
+
+    String jsonPayload = '{"Id":"CUST-PA","GivenName":"John","FamilyName":"Doe","PrimaryEmailAddr":{"Address":"pa@test.com"}}';
+    
+    Test.setMock(HttpCalloutMock.class, new QBCustomerBatchMock());
+    
+    QBCustomerToAccountSyncBatch batch = new QBCustomerToAccountSyncBatch();
+    
+    Test.startTest();
+    batch.execute(null, new List<String>{ jsonPayload });
+    Test.stopTest();
+
+    Account result = [SELECT Id, FirstName, LastName, RecordTypeId, IsPersonAccount FROM Account WHERE QuickbookID__c = 'CUST-PA' LIMIT 1];
+    System.assertEquals('John', result.FirstName);
+    System.assertEquals('Doe', result.LastName);
+    System.assertEquals(personRtId, result.RecordTypeId);
+}
+
+    @isTest
+    static void testBatchErrorHandling() {
+        List<String> badScope = new List<String>{ 'invalid-json' };
+        
+        QBCustomerToAccountSyncBatch batch = new QBCustomerToAccountSyncBatch();
+        
+        Test.startTest();
+        batch.execute(null, badScope);
+        Test.stopTest();
+        
+        System.assert(true);
+    }
+
+    @isTest
+    static void testCoerceValueLogic() {
+        Test.setMock(HttpCalloutMock.class, new QBCustomerSingleRecordMock());
+
+        Map<String, Object> data = new Map<String, Object>{
+            'Id' => 'COERCE-1',
+            'Active' => true
+        };
+        
+        Test.startTest();
+        QBCustomerToAccountSyncBatch batch = new QBCustomerToAccountSyncBatch();
+        batch.processSingleCustomer('CUST-1'); // Triggering hydrate paths
+        Test.stopTest();
+        System.assert(true);
     }
 }

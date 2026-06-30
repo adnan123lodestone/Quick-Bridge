@@ -24,7 +24,7 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
             + ' FROM Account WHERE QuickBridgeTLG__QuickbookID__c = NULL AND IsPersonAccount = FALSE'
           );
           if (!unsynced.isEmpty()) {
-            Database.executeBatch(new QBAccountBatch(unsynced, true), 50);
+            Database.executeBatch(new QBAccountBatch(unsynced, true), 1);
           }
         }
       } else if (targetObject == 'Vendor' || targetObject == 'Vendors') {
@@ -48,7 +48,7 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
               + ' FROM Account WHERE QuickBridgeTLG__QuickbookID__c = NULL AND RecordTypeId = \'' + vendorRTs[0].Id + '\''
             );
             if (!unsynced.isEmpty()) {
-              Database.executeBatch(new QBAccountBatch(unsynced, true), 50);
+              Database.executeBatch(new QBAccountBatch(unsynced, true), 1);
             }
           }
         }
@@ -155,6 +155,11 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         targetObject == 'Item Sales Tax'
       ) {
         Database.executeBatch(new QBOItemSalesTaxBatch(), 1);
+      } else if (
+        targetObject == 'Quote' ||
+        targetObject == 'Quotes'
+      ) {
+        Database.executeBatch(new QBEstimateToQuoteSyncBatch(), 1);
       }
     } catch (Exception e) {
       ErrorLogUtility.logException(
@@ -189,7 +194,7 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
       'IsPersonAccount', 'FirstName', 'LastName', 'PersonEmail', 'GivenName__c', 'FamilyName__c'
     };
     for (String f : personAccountFields) {
-      if (schemaFields.containsKey(f.toLowerCase()) || schemaFields.containsKey('quickbridgetlg__' + f.toLowerCase())) {
+      if (schemaFields.containsKey(f.toLowerCase()) || schemaFields.containsKey('QuickBridgeTLG__' + f.toLowerCase())) {
         fieldApiNames.add(f);
       }
     }
@@ -200,7 +205,7 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
       String keyLower = fieldName.toLowerCase();
       Schema.SObjectField token = schemaFields.get(keyLower);
       if (token == null) {
-        token = schemaFields.get('quickbridgetlg__' + keyLower);
+        token = schemaFields.get('QuickBridgeTLG__' + keyLower);
       }
       if (token != null) {
         resolvedFields.add(token.getDescribe().getName());

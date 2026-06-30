@@ -155,7 +155,7 @@ public with sharing class InvoiceMappingController {
         try {
             Set<String> ignoredFields = new Set<String>{'ownerid', 'recordtypeid', 'currencyisocode', 'createdbyid', 'lastmodifiedbyid', 'systemmodstamp'};
             
-            Map<String, Schema.SObjectField> fieldMap = Schema.getGlobalDescribe().get('Invoice__c').getDescribe().fields.getMap();
+            Map<String, Schema.SObjectField> fieldMap = Invoice__c.SObjectType.getDescribe().fields.getMap();
             
             for (String fieldName : fieldMap.keySet()) {
                 Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName).getDescribe();

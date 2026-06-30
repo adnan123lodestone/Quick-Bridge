@@ -31,31 +31,206 @@ private class QBSchedulerControllerTest {
     upsert settings;
   }
 
+  // =========================================================================
+  // TESTS FOR QBSchedulerController (QuickBooks part)
+  // =========================================================================
+
   @isTest
-  static void testScheduleJobMinutesAndDeleteSpecificJob() {
+  static void testQbGetScheduledJobs() {
+    configureQuickBooksAuth();
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    // Create a job so there is something to return
+    String jobId = GenericSchedulerController.scheduleJob('qbo', '15', 'Minutes', 'Account', 'Out');
+    Test.startTest();
+    List<Map<String, Object>> jobs = QBSchedulerController.getScheduledJobs();
+    Test.stopTest();
+    System.assertNotEquals(null, jobs);
+    System.assert(jobs.size() >= 1);
+    GenericSchedulerController.deleteJob('QBO Sync - Account');
+  }
+
+  @isTest
+  static void testQbScheduleJob() {
     configureQuickBooksAuth();
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String jobId = GenericSchedulerController.scheduleJob(
-      'qbo',
-      '15',
-      'Minutes',
-      'Account',
-      'Out'
-    );
+    String result = QBSchedulerController.scheduleJob('30', 'Minutes', 'Order', true); // true = Out
     Test.stopTest();
+    System.assertNotEquals(null, result);
+    // Clean up
+    GenericSchedulerController.deleteJob('QBO Sync - Order');
+  }
 
-    System.assertNotEquals(null, jobId);
+  @isTest
+  static void testQbScheduleJobInvalid() {
+    configureQuickBooksAuth();
+    Boolean threw = false;
+    try {
+      QBSchedulerController.scheduleJob('abc', 'Minutes', 'Account', true);
+    } catch (AuraHandledException e) {
+      threw = true;
+    }
+    System.assert(threw);
+  }
 
-    List<Map<String, Object>> jobs = GenericSchedulerController.getScheduledJobs('qbo');
+  @isTest
+  static void testQbStopJob() {
+    configureQuickBooksAuth();
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    // Create a job first
+    String jobId = GenericSchedulerController.scheduleJob('qbo', '15', 'Minutes', 'Account', 'Out');
+    Test.startTest();
+    String result = QBSchedulerController.stopJob();
+    Test.stopTest();
+    System.assert(result.contains('Success') || result.contains('Notice'));
+    GenericSchedulerController.deleteJob('QBO Sync - Account');
+  }
+
+  @isTest
+  static void testQbGetSyncSettingsSummary() {
+    Test.startTest();
+    Map<String, String> summary = QBSchedulerController.getSyncSettingsSummary();
+    Test.stopTest();
+    System.assertNotEquals(null, summary);
+    System.assertEquals('Salesforce ↔ QuickBooks Online', summary.get('direction'));
+  }
+
+  @isTest
+  static void testQbGetRecentRuns() {
+    // Create a dummy CronTrigger record? AsyncApexJob requires a real scheduled job.
+    // We can pass a dummy jobId and expect empty list.
+    Test.startTest();
+    List<Map<String, Object>> runs = QBSchedulerController.getRecentRuns('08e000000000000AAA');
+    Test.stopTest();
+    System.assertEquals(0, runs.size());
+  }
+
+  @isTest
+  static void testQbTogglePauseStatus() {
+    Test.startTest();
+    QBSchedulerController.togglePauseStatus(true);
+    System.assertEquals(true, QBSchedulerController.getPauseStatus());
+    QBSchedulerController.togglePauseStatus(false);
+    System.assertEquals(false, QBSchedulerController.getPauseStatus());
+    Test.stopTest();
+  }
+
+  @isTest
+  static void testQbDeleteSpecificJob() {
+    configureQuickBooksAuth();
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    // Create a job
+    String jobId = GenericSchedulerController.scheduleJob('qbo', '15', 'Minutes', 'Account', 'Out');
+    Test.startTest();
+    QBSchedulerController.deleteSpecificJob('QBO Sync - Account');
+    Test.stopTest();
+    // Verify job is deleted
+    List<Scheduled_Integration_Job__c> jobs = [
+      SELECT Id FROM Scheduled_Integration_Job__c
+      WHERE Logical_Job_Key__c LIKE 'QBO Sync - Account%' AND Status__c != 'Deleted'
+    ];
+    System.assertEquals(0, jobs.size());
+  }
+
+  @isTest
+  static void testQbEditSpecificJob() {
+    configureQuickBooksAuth();
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    // Create a job
+    String jobId = GenericSchedulerController.scheduleJob('qbo', '15', 'Minutes', 'Account', 'Out');
+    Test.startTest();
+    String result = QBSchedulerController.editSpecificJob('QBO Sync - Account', '10', 'Minutes');
+    Test.stopTest();
+    System.assert(result.contains('Success'));
+    GenericSchedulerController.deleteJob('QBO Sync - Account');
+  }
+
+  // =========================================================================
+  // TESTS FOR QBSchedulerController (Shopify part)
+  // =========================================================================
+
+  @isTest
+  static void testShopifyGetScheduledJobs() {
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    String jobId = GenericSchedulerController.scheduleJob('shopify', '15', 'Minutes', 'Customers', 'In');
+    Test.startTest();
+    List<Map<String, Object>> jobs = QBSchedulerController.getShopifyScheduledJobs();
+    Test.stopTest();
     System.assertNotEquals(null, jobs);
-    System.assertEquals(
-      1,
-      jobs.size(),
-      'New Ready schedules should be listed as active schedules.'
-    );
-    System.assertEquals('Ready', (String) jobs[0].get('status'));
+    GenericSchedulerController.deleteJob('Shopify Sync - Customers [In]');
+  }
 
+  @isTest
+  static void testShopifyScheduleJob() {
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    Test.startTest();
+    String result = QBSchedulerController.scheduleShopifyJob('30', 'Minutes', 'Customers', false); // false = In
+    Test.stopTest();
+    System.assertNotEquals(null, result);
+    GenericSchedulerController.deleteJob('Shopify Sync - Customers [In]');
+  }
+
+  @isTest
+  static void testShopifyStopJob() {
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    String jobId = GenericSchedulerController.scheduleJob('shopify', '15', 'Minutes', 'Customers', 'In');
+    Test.startTest();
+    String result = QBSchedulerController.stopShopifyJob();
+    Test.stopTest();
+    System.assert(result.contains('Success') || result.contains('Notice'));
+    GenericSchedulerController.deleteJob('Shopify Sync - Customers [In]');
+  }
+
+  @isTest
+  static void testShopifyDeleteJob() {
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    String jobId = GenericSchedulerController.scheduleJob('shopify', '15', 'Minutes', 'Customers', 'In');
+    Test.startTest();
+    QBSchedulerController.deleteShopifyJob('Shopify Sync - Customers [In]');
+    Test.stopTest();
+    List<Scheduled_Integration_Job__c> jobs = [
+      SELECT Id FROM Scheduled_Integration_Job__c
+      WHERE Logical_Job_Key__c LIKE 'Shopify Sync - Customers [In]%' AND Status__c != 'Deleted'
+    ];
+    System.assertEquals(0, jobs.size());
+  }
+
+  @isTest
+  static void testShopifyEditJob() {
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    String jobId = GenericSchedulerController.scheduleJob('shopify', '15', 'Minutes', 'Customers', 'In');
+    Test.startTest();
+    String result = QBSchedulerController.editShopifyJob('Shopify Sync - Customers [In]', '10', 'Minutes');
+    Test.stopTest();
+    System.assert(result.contains('Success'));
+    GenericSchedulerController.deleteJob('Shopify Sync - Customers [In]');
+  }
+
+  @isTest
+  static void testShopifyGetSyncSettingsSummary() {
+    Test.startTest();
+    Map<String, String> summary = QBSchedulerController.getShopifySyncSettingsSummary();
+    Test.stopTest();
+    System.assertNotEquals(null, summary);
+    System.assertEquals('Salesforce ↔ Shopify', summary.get('direction'));
+  }
+
+  // =========================================================================
+  // EXISTING TESTS FOR GENERIC SCHEDULER AND SUPPORTING CLASSES
+  // (Keep all existing tests for GenericSchedulerController, etc. unchanged)
+  // =========================================================================
+
+  @isTest
+  static void testScheduleJobMinutesAndDeleteSpecificJob_Generic() {
+    configureQuickBooksAuth();
+    Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
+    Test.startTest();
+    String jobId = GenericSchedulerController.scheduleJob('qbo', '15', 'Minutes', 'Account', 'Out');
+    Test.stopTest();
+    System.assertNotEquals(null, jobId);
+    List<Map<String, Object>> jobs = GenericSchedulerController.getScheduledJobs('qbo');
+    System.assertEquals(1, jobs.size());
+    System.assertEquals('Ready', (String) jobs[0].get('status'));
     GenericSchedulerController.deleteJob('QBO Sync - Account');
   }
 
@@ -64,24 +239,11 @@ private class QBSchedulerControllerTest {
     configureQuickBooksAuth();
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String hoursJob = GenericSchedulerController.scheduleJob(
-      'qbo',
-      '2',
-      'Hours',
-      'Contact',
-      'Out'
-    );
+    String hoursJob = GenericSchedulerController.scheduleJob('qbo', '2', 'Hours', 'Contact', 'Out');
     String daysJob = GenericSchedulerController.scheduleJob('qbo', '3', 'Days', 'Product2', 'Out');
     String weeksJob = GenericSchedulerController.scheduleJob('qbo', '1', 'Weeks', 'Order', 'In');
-    String monthsJob = GenericSchedulerController.scheduleJob(
-      'qbo',
-      '1',
-      'Months',
-      'Invoice__c',
-      'Out'
-    );
+    String monthsJob = GenericSchedulerController.scheduleJob('qbo', '1', 'Months', 'Invoice__c', 'Out');
     Test.stopTest();
-
     System.assertNotEquals(null, hoursJob);
     System.assertNotEquals(null, daysJob);
     System.assertNotEquals(null, weeksJob);
@@ -89,7 +251,7 @@ private class QBSchedulerControllerTest {
   }
 
   @isTest
-  static void testScheduleJobInvalidInputThrowsHandledException() {
+  static void testScheduleJobInvalidInputThrowsHandledException_Generic() {
     configureQuickBooksAuth();
     Boolean didThrow = false;
     try {
@@ -101,22 +263,19 @@ private class QBSchedulerControllerTest {
   }
 
   @isTest
-  static void testStopJobNoMatchNoticePath() {
+  static void testStopJobNoMatchNoticePath_Generic() {
     String result = GenericSchedulerController.stopConnectorSchedules('qbo');
     System.assert(result != null);
   }
 
   @isTest
-  static void testSummaryPauseAndRecentRunsBlankPath() {
+  static void testSummaryPauseAndRecentRunsBlankPath_Generic() {
     Map<String, String> summary = GenericSchedulerController.getSyncSettingsSummary('qbo');
     System.assertEquals('Salesforce <-> QuickBooks', summary.get('direction'));
-
     GenericSchedulerController.togglePauseStatus('qbo', true);
     System.assertEquals(true, GenericSchedulerController.getPauseStatus('qbo'));
-
     GenericSchedulerController.togglePauseStatus('qbo', false);
     System.assertEquals(false, GenericSchedulerController.getPauseStatus('qbo'));
-
     List<Map<String, Object>> runs = GenericSchedulerController.getRecentRuns(null);
     System.assertEquals(0, runs.size());
   }
@@ -124,144 +283,65 @@ private class QBSchedulerControllerTest {
   @isTest
   static void testSchedulerNextRunCalculationPaths() {
     Datetime baseTime = Datetime.newInstance(2026, 5, 20, 12, 0, 0);
-
-    System.assertEquals(
-      baseTime.addMinutes(5),
-      SchedulerEntitlementService.calculateNextRun(5, 'Minutes', baseTime)
-    );
-    System.assertEquals(
-      baseTime.addHours(2),
-      SchedulerEntitlementService.calculateNextRun(2, 'Hours', baseTime)
-    );
-    System.assertEquals(
-      baseTime.addDays(3),
-      SchedulerEntitlementService.calculateNextRun(3, 'Days', baseTime)
-    );
-    System.assertEquals(
-      baseTime.addDays(14),
-      SchedulerEntitlementService.calculateNextRun(2, 'Weeks', baseTime)
-    );
-    System.assertEquals(
-      baseTime.addMonths(1),
-      SchedulerEntitlementService.calculateNextRun(1, 'Months', baseTime)
-    );
-    System.assertEquals(
-      baseTime.addHours(1),
-      SchedulerEntitlementService.calculateNextRun(null, null, baseTime)
-    );
+    System.assertEquals(baseTime.addMinutes(5), SchedulerEntitlementService.calculateNextRun(5, 'Minutes', baseTime));
+    System.assertEquals(baseTime.addHours(2), SchedulerEntitlementService.calculateNextRun(2, 'Hours', baseTime));
+    System.assertEquals(baseTime.addDays(3), SchedulerEntitlementService.calculateNextRun(3, 'Days', baseTime));
+    System.assertEquals(baseTime.addDays(14), SchedulerEntitlementService.calculateNextRun(2, 'Weeks', baseTime));
+    System.assertEquals(baseTime.addMonths(1), SchedulerEntitlementService.calculateNextRun(1, 'Months', baseTime));
+    System.assertEquals(baseTime.addHours(1), SchedulerEntitlementService.calculateNextRun(null, null, baseTime));
   }
 
   @isTest
   static void testSchedulerEntitlementCreateCountAndDeletePaths() {
     Test.startTest();
     SchedulerEntitlementService.assertCanCreateSchedule();
-    SchedulerEntitlementService.recordScheduleCreated(
-      'QuickBooks',
-      'Account',
-      '30',
-      'Minutes',
-      'QBO Sync - Direct Service Account',
-      new List<Id>()
-    );
-    SchedulerEntitlementService.recordScheduleCreated(
-      null,
-      null,
-      null,
-      null,
-      null,
-      null
-    );
+    SchedulerEntitlementService.recordScheduleCreated('QuickBooks', 'Account', '30', 'Minutes', 'QBO Sync - Direct Service Account', new List<Id>());
+    SchedulerEntitlementService.recordScheduleCreated(null, null, null, null, null, null);
     SchedulerEntitlementService.UsageSummary activeSummary = SchedulerEntitlementService.getUsageSummary();
-    SchedulerEntitlementService.markScheduleDeleted(
-      'QBO Sync - Direct Service Account'
-    );
+    SchedulerEntitlementService.markScheduleDeleted('QBO Sync - Direct Service Account');
     SchedulerEntitlementService.markScheduleDeleted(null);
     Test.stopTest();
-
-    System.assert(
-      activeSummary.activeCount >= 1,
-      'Directly recorded Ready schedules should be counted as active.'
-    );
-    System.assertEquals(
-      0,
-      [
-        SELECT COUNT()
-        FROM Scheduled_Integration_Job__c
-        WHERE
-          Logical_Job_Key__c = 'QBO Sync - Direct Service Account'
-          AND Status__c IN ('Ready', 'Active', 'Claimed', 'Running')
-      ]
-    );
+    System.assert(activeSummary.activeCount >= 1);
+    System.assertEquals(0, [SELECT COUNT() FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'QBO Sync - Direct Service Account' AND Status__c IN ('Ready', 'Active', 'Claimed', 'Running')]);
   }
 
   @isTest
-  static void testEditSpecificJobAndDeleteJob() {
+  static void testEditSpecificJobAndDeleteJob_Generic() {
     configureQuickBooksAuth();
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String msg = GenericSchedulerController.editJob(
-      'qbo',
-      'QBO Sync - Account',
-      '10',
-      'Minutes'
-    );
+    String msg = GenericSchedulerController.editJob('qbo', 'QBO Sync - Account', '10', 'Minutes');
     Test.stopTest();
-
     System.assert(msg != null);
     GenericSchedulerController.deleteJob('QBO Sync - Account');
   }
 
   @isTest
-  static void testShopifyLogicalScheduleLifecycle() {
+  static void testShopifyLogicalScheduleLifecycle_Generic() {
     Test.setMock(HttpCalloutMock.class, new QBSchedulerMock());
     Test.startTest();
-    String jobId = GenericSchedulerController.scheduleJob(
-      'shopify',
-      '15',
-      'Minutes',
-      'Customers',
-      'In'
-    );
-    String editMessage = GenericSchedulerController.editJob(
-      'shopify',
-      'Shopify Sync - Customers [In]',
-      '1',
-      'Hours'
-    );
+    String jobId = GenericSchedulerController.scheduleJob('shopify', '15', 'Minutes', 'Customers', 'In');
+    String editMessage = GenericSchedulerController.editJob('shopify', 'Shopify Sync - Customers [In]', '1', 'Hours');
     Test.stopTest();
-
     System.assertNotEquals(null, jobId);
     System.assert(editMessage.contains('Success'));
-    System.assertNotEquals(
-      null,
-      GenericSchedulerController.getScheduledJobs('shopify')
-    );
+    System.assertNotEquals(null, GenericSchedulerController.getScheduledJobs('shopify'));
     GenericSchedulerController.deleteJob('Shopify Sync - Customers [In]');
     System.assertNotEquals(null, GenericSchedulerController.stopConnectorSchedules('shopify'));
   }
 
   @isTest
-  static void testShopifySummaryAndInvalidSchedulePaths() {
+  static void testShopifySummaryAndInvalidSchedulePaths_Generic() {
     Map<String, String> summary = GenericSchedulerController.getSyncSettingsSummary('shopify');
     System.assertEquals('Incremental Sync', summary.get('type'));
-
     Boolean didThrow = false;
     try {
-      GenericSchedulerController.scheduleJob(
-        'shopify',
-        'abc',
-        'Hours',
-        'Customers',
-        'In'
-      );
+      GenericSchedulerController.scheduleJob('shopify', 'abc', 'Hours', 'Customers', 'In');
     } catch (Exception e) {
       didThrow = true;
     }
     System.assertEquals(true, didThrow);
-
-    List<Map<String, Object>> runs = GenericSchedulerController.getRecentRuns(
-      '08e000000000000AAA'
-    );
+    List<Map<String, Object>> runs = GenericSchedulerController.getRecentRuns('08e000000000000AAA');
     System.assertEquals(0, runs.size());
   }
 
@@ -277,25 +357,10 @@ private class QBSchedulerControllerTest {
       Status__c = 'Ready',
       Next_Run_At__c = System.now().addMinutes(-1)
     );
-
     Test.startTest();
     ScheduledIntegrationHeartbeat.dispatchDueSchedules();
     Test.stopTest();
-
-    Scheduled_Integration_Job__c afterRun = [
-      SELECT
-        Last_Run_At__c,
-        Last_Claimed_At__c,
-        Last_Dispatched_At__c,
-        Next_Run_At__c,
-        Processor_Job_Id__c,
-        Status__c,
-        Lease_Token__c,
-        Lease_Expires_At__c
-      FROM Scheduled_Integration_Job__c
-      WHERE Logical_Job_Key__c = 'Noop Sync - Account'
-      LIMIT 1
-    ];
+    Scheduled_Integration_Job__c afterRun = [SELECT Last_Run_At__c, Last_Claimed_At__c, Last_Dispatched_At__c, Next_Run_At__c, Processor_Job_Id__c, Status__c, Lease_Token__c, Lease_Expires_At__c FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'Noop Sync - Account' LIMIT 1];
     System.assertNotEquals(null, afterRun.Last_Run_At__c);
     System.assertNotEquals(null, afterRun.Last_Claimed_At__c);
     System.assertNotEquals(null, afterRun.Last_Dispatched_At__c);
@@ -309,132 +374,44 @@ private class QBSchedulerControllerTest {
   @isTest
   static void testReadyClaimedAndRunningSchedulesAreVisibleAndCounted() {
     insert new List<Scheduled_Integration_Job__c>{
-      new Scheduled_Integration_Job__c(
-        Logical_Job_Key__c = 'QBO Sync - Ready Account',
-        Scheduler_Name__c = 'QBO Sync - Ready Account',
-        Integration_Type__c = 'QuickBooks',
-        Source_Object__c = 'Account',
-        Frequency_Value__c = 10,
-        Frequency_Type__c = 'Minutes',
-        Status__c = 'Ready',
-        Created_DateTime__c = System.now()
-      ),
-      new Scheduled_Integration_Job__c(
-        Logical_Job_Key__c = 'QBO Sync - Claimed Account',
-        Scheduler_Name__c = 'QBO Sync - Claimed Account',
-        Integration_Type__c = 'QuickBooks',
-        Source_Object__c = 'Account',
-        Frequency_Value__c = 10,
-        Frequency_Type__c = 'Minutes',
-        Status__c = 'Claimed',
-        Lease_Token__c = 'test-token',
-        Lease_Expires_At__c = System.now().addMinutes(5),
-        Created_DateTime__c = System.now()
-      ),
-      new Scheduled_Integration_Job__c(
-        Logical_Job_Key__c = 'QBO Sync - Running Account',
-        Scheduler_Name__c = 'QBO Sync - Running Account',
-        Integration_Type__c = 'QuickBooks',
-        Source_Object__c = 'Account',
-        Frequency_Value__c = 10,
-        Frequency_Type__c = 'Minutes',
-        Status__c = 'Running',
-        Created_DateTime__c = System.now()
-      )
+      new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'QBO Sync - Ready Account', Scheduler_Name__c = 'QBO Sync - Ready Account', Integration_Type__c = 'QuickBooks', Source_Object__c = 'Account', Frequency_Value__c = 10, Frequency_Type__c = 'Minutes', Status__c = 'Ready', Created_DateTime__c = System.now()),
+      new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'QBO Sync - Claimed Account', Scheduler_Name__c = 'QBO Sync - Claimed Account', Integration_Type__c = 'QuickBooks', Source_Object__c = 'Account', Frequency_Value__c = 10, Frequency_Type__c = 'Minutes', Status__c = 'Claimed', Lease_Token__c = 'test-token', Lease_Expires_At__c = System.now().addMinutes(5), Created_DateTime__c = System.now()),
+      new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'QBO Sync - Running Account', Scheduler_Name__c = 'QBO Sync - Running Account', Integration_Type__c = 'QuickBooks', Source_Object__c = 'Account', Frequency_Value__c = 10, Frequency_Type__c = 'Minutes', Status__c = 'Running', Created_DateTime__c = System.now())
     };
-
     Test.startTest();
     List<Map<String, Object>> jobs = GenericSchedulerController.getScheduledJobs('qbo');
     SchedulerEntitlementService.UsageSummary usage = SchedulerEntitlementService.getUsageSummary();
     Test.stopTest();
-
-    System.assertEquals(
-      3,
-      jobs.size(),
-      'Live scheduler statuses should be visible in the scheduler UI.'
-    );
-    System.assertEquals(
-      3,
-      usage.activeCount,
-      'Live scheduler statuses should count against active schedule limits.'
-    );
+    System.assertEquals(3, jobs.size());
+    System.assertEquals(3, usage.activeCount);
   }
 
   @isTest
   static void testDispatcherClaimsDueScheduleBeforeWorkerRunsAndSkipsDuplicates() {
-    insert new Scheduled_Integration_Job__c(
-      Logical_Job_Key__c = 'Noop Claim - Account',
-      Scheduler_Name__c = 'Noop Claim - Account',
-      Integration_Type__c = 'Noop',
-      Source_Object__c = 'Account',
-      Frequency_Value__c = 5,
-      Frequency_Type__c = 'Minutes',
-      Status__c = 'Ready',
-      Next_Run_At__c = System.now().addMinutes(-1)
-    );
-
+    insert new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'Noop Claim - Account', Scheduler_Name__c = 'Noop Claim - Account', Integration_Type__c = 'Noop', Source_Object__c = 'Account', Frequency_Value__c = 5, Frequency_Type__c = 'Minutes', Status__c = 'Ready', Next_Run_At__c = System.now().addMinutes(-1));
     Test.startTest();
     GenericScheduleDispatcher.dispatchDue();
-    Scheduled_Integration_Job__c claimed = [
-      SELECT
-        Status__c,
-        Lease_Token__c,
-        Lease_Expires_At__c,
-        Last_Claimed_At__c,
-        Processor_Job_Id__c
-      FROM Scheduled_Integration_Job__c
-      WHERE Logical_Job_Key__c = 'Noop Claim - Account'
-      LIMIT 1
-    ];
+    Scheduled_Integration_Job__c claimed = [SELECT Status__c, Lease_Token__c, Lease_Expires_At__c, Last_Claimed_At__c, Processor_Job_Id__c FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'Noop Claim - Account' LIMIT 1];
     System.assertEquals('Claimed', claimed.Status__c);
     System.assertNotEquals(null, claimed.Lease_Token__c);
     System.assertNotEquals(null, claimed.Lease_Expires_At__c);
     System.assertNotEquals(null, claimed.Last_Claimed_At__c);
     String firstProcessorId = claimed.Processor_Job_Id__c;
-
     GenericScheduleDispatcher.dispatchDue();
-    Scheduled_Integration_Job__c stillClaimed = [
-      SELECT Status__c, Lease_Token__c, Processor_Job_Id__c
-      FROM Scheduled_Integration_Job__c
-      WHERE Logical_Job_Key__c = 'Noop Claim - Account'
-      LIMIT 1
-    ];
+    Scheduled_Integration_Job__c stillClaimed = [SELECT Status__c, Lease_Token__c, Processor_Job_Id__c FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'Noop Claim - Account' LIMIT 1];
     Test.stopTest();
-
-    System.assertEquals(
-      'Claimed',
-      stillClaimed.Status__c,
-      'A second dispatcher pass must not reclaim a fresh lease.'
-    );
+    System.assertEquals('Claimed', stillClaimed.Status__c);
     System.assertEquals(claimed.Lease_Token__c, stillClaimed.Lease_Token__c);
     System.assertEquals(firstProcessorId, stillClaimed.Processor_Job_Id__c);
   }
 
   @isTest
   static void testDispatcherReclaimsStaleClaim() {
-    insert new Scheduled_Integration_Job__c(
-      Logical_Job_Key__c = 'Noop Stale Claim - Account',
-      Scheduler_Name__c = 'Noop Stale Claim - Account',
-      Integration_Type__c = 'Noop',
-      Source_Object__c = 'Account',
-      Frequency_Value__c = 5,
-      Frequency_Type__c = 'Minutes',
-      Status__c = 'Claimed',
-      Lease_Token__c = 'stale-token',
-      Lease_Expires_At__c = System.now().addMinutes(-10),
-      Next_Run_At__c = System.now().addMinutes(-20)
-    );
-
+    insert new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'Noop Stale Claim - Account', Scheduler_Name__c = 'Noop Stale Claim - Account', Integration_Type__c = 'Noop', Source_Object__c = 'Account', Frequency_Value__c = 5, Frequency_Type__c = 'Minutes', Status__c = 'Claimed', Lease_Token__c = 'stale-token', Lease_Expires_At__c = System.now().addMinutes(-10), Next_Run_At__c = System.now().addMinutes(-20));
     Test.startTest();
     GenericScheduleDispatcher.dispatchDue();
-    Scheduled_Integration_Job__c reclaimed = [
-      SELECT Status__c, Lease_Token__c, Lease_Expires_At__c
-      FROM Scheduled_Integration_Job__c
-      WHERE Logical_Job_Key__c = 'Noop Stale Claim - Account'
-      LIMIT 1
-    ];
+    Scheduled_Integration_Job__c reclaimed = [SELECT Status__c, Lease_Token__c, Lease_Expires_At__c FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'Noop Stale Claim - Account' LIMIT 1];
     Test.stopTest();
-
     System.assertEquals('Claimed', reclaimed.Status__c);
     System.assertNotEquals('stale-token', reclaimed.Lease_Token__c);
     System.assert(reclaimed.Lease_Expires_At__c > System.now());
@@ -442,31 +419,12 @@ private class QBSchedulerControllerTest {
 
   @isTest
   static void testProcessorWithWrongLeaseTokenExitsSafely() {
-    Scheduled_Integration_Job__c job = new Scheduled_Integration_Job__c(
-      Logical_Job_Key__c = 'Noop Wrong Token - Account',
-      Scheduler_Name__c = 'Noop Wrong Token - Account',
-      Integration_Type__c = 'Noop',
-      Source_Object__c = 'Account',
-      Frequency_Value__c = 5,
-      Frequency_Type__c = 'Minutes',
-      Status__c = 'Claimed',
-      Lease_Token__c = 'correct-token',
-      Lease_Expires_At__c = System.now().addMinutes(5),
-      Next_Run_At__c = System.now().addMinutes(-1)
-    );
+    Scheduled_Integration_Job__c job = new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'Noop Wrong Token - Account', Scheduler_Name__c = 'Noop Wrong Token - Account', Integration_Type__c = 'Noop', Source_Object__c = 'Account', Frequency_Value__c = 5, Frequency_Type__c = 'Minutes', Status__c = 'Claimed', Lease_Token__c = 'correct-token', Lease_Expires_At__c = System.now().addMinutes(5), Next_Run_At__c = System.now().addMinutes(-1));
     insert job;
-
     Test.startTest();
-    System.enqueueJob(
-      new ScheduledIntegrationJobProcessor(job.Id, 'wrong-token')
-    );
+    System.enqueueJob(new ScheduledIntegrationJobProcessor(job.Id, 'wrong-token'));
     Test.stopTest();
-
-    Scheduled_Integration_Job__c afterRun = [
-      SELECT Status__c, Lease_Token__c, Last_Dispatched_At__c
-      FROM Scheduled_Integration_Job__c
-      WHERE Id = :job.Id
-    ];
+    Scheduled_Integration_Job__c afterRun = [SELECT Status__c, Lease_Token__c, Last_Dispatched_At__c FROM Scheduled_Integration_Job__c WHERE Id = :job.Id];
     System.assertEquals('Claimed', afterRun.Status__c);
     System.assertEquals('correct-token', afterRun.Lease_Token__c);
     System.assertEquals(null, afterRun.Last_Dispatched_At__c);
@@ -474,40 +432,14 @@ private class QBSchedulerControllerTest {
 
   @isTest
   static void testScheduledProcessorCompatibilityBranches() {
-    Scheduled_Integration_Job__c qbJob = new Scheduled_Integration_Job__c(
-      Logical_Job_Key__c = 'QBO Sync - Unknown',
-      Scheduler_Name__c = 'QBO Sync - Unknown',
-      Integration_Type__c = 'QuickBooks',
-      Source_Object__c = 'Unknown',
-      Frequency_Value__c = 1,
-      Frequency_Type__c = 'Hours',
-      Status__c = 'Active'
-    );
-    Scheduled_Integration_Job__c shopifyJob = new Scheduled_Integration_Job__c(
-      Logical_Job_Key__c = 'Shopify Sync - Unknown [Out]',
-      Scheduler_Name__c = 'Shopify Sync - Unknown [Out]',
-      Integration_Type__c = 'Shopify',
-      Source_Object__c = 'Unknown',
-      Direction__c = 'Out',
-      Frequency_Value__c = 1,
-      Frequency_Type__c = 'Hours',
-      Status__c = 'Active'
-    );
+    Scheduled_Integration_Job__c qbJob = new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'QBO Sync - Unknown', Scheduler_Name__c = 'QBO Sync - Unknown', Integration_Type__c = 'QuickBooks', Source_Object__c = 'Unknown', Frequency_Value__c = 1, Frequency_Type__c = 'Hours', Status__c = 'Active');
+    Scheduled_Integration_Job__c shopifyJob = new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'Shopify Sync - Unknown [Out]', Scheduler_Name__c = 'Shopify Sync - Unknown [Out]', Integration_Type__c = 'Shopify', Source_Object__c = 'Unknown', Direction__c = 'Out', Frequency_Value__c = 1, Frequency_Type__c = 'Hours', Status__c = 'Active');
     insert new List<Scheduled_Integration_Job__c>{ qbJob, shopifyJob };
-
     Test.startTest();
-    new ScheduledIntegrationHeartbeat().execute(null);
+    ScheduledIntegrationHeartbeat.dispatchDueSchedules();
     System.enqueueJob(new ScheduledIntegrationJobProcessor(qbJob.Id));
     System.enqueueJob(new ScheduledIntegrationJobProcessor(shopifyJob.Id));
     Test.stopTest();
-
-    System.assertEquals(
-      2,
-      [
-        SELECT COUNT()
-        FROM Scheduled_Integration_Job__c
-        WHERE Integration_Type__c IN ('QuickBooks', 'Shopify')
-      ]
-    );
+    System.assertEquals(2, [SELECT COUNT() FROM Scheduled_Integration_Job__c WHERE Integration_Type__c IN ('QuickBooks', 'Shopify')]);
   }
 }

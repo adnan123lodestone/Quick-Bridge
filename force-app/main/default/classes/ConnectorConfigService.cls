@@ -41,13 +41,6 @@ public without sharing class ConnectorConfigService {
   }
 
   public static ConnectorConfig getConfig(String connectorKey) {
-    return getConfig(connectorKey, false);
-  }
-
-  public static ConnectorConfig getConfig(
-    String connectorKey,
-    Boolean includeLegacyForMigration
-  ) {
     ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
       connectorKey
     );
@@ -62,33 +55,11 @@ public without sharing class ConnectorConfigService {
     config.label = descriptor.label;
     config.values = new Map<String, String>();
     hydrateFromNormalizedConfig(config, descriptor);
-    if (
-      includeLegacyForMigration == true &&
-      config.fromNormalizedConfig != true
-    ) {
-      hydrateFromLegacyConfig(config, descriptor);
-    }
     return config;
   }
 
   public static ConnectorConfig getAuthoritativeConfig(String connectorKey) {
     return getConfig(connectorKey);
-  }
-
-  public static ConnectorConfig getConfigForMigration(String connectorKey) {
-    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
-      connectorKey
-    );
-    if (descriptor == null) {
-      throw new AuraHandledException(
-        'Unsupported QuickBridge connector: ' + connectorKey
-      );
-    }
-    ConnectorConfig config = new ConnectorConfig();
-    config.connectorKey = descriptor.connectorKey;
-    config.label = descriptor.label;
-    config.values = new Map<String, String>();
-    return getConfig(connectorKey, true);
   }
 
   private static void redactSecretFields(ConnectorConfig cfg) {
@@ -106,22 +77,25 @@ public without sharing class ConnectorConfigService {
     String connectorKey,
     String fieldKeyOrLegacyName
   ) {
+    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
+      connectorKey
+    );
+    // Connectors not in the registry (e.g. Enabled__c = false internal connectors)
+    // are not accessible via getConfig() — query Connector_Config_Value__c directly.
+    if (descriptor == null) {
+      return queryDirectValue(connectorKey, fieldKeyOrLegacyName);
+    }
     ConnectorConfig config = getConfig(connectorKey);
     if (config.values == null) {
       return null;
     }
-    ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(
-      connectorKey
-    );
     if (
-      descriptor != null &&
       String.isNotBlank(descriptor.activeField) &&
       descriptor.activeField == fieldKeyOrLegacyName
     ) {
       return String.valueOf(config.active == true);
     }
     if (
-      descriptor != null &&
       String.isNotBlank(descriptor.expiryField) &&
       descriptor.expiryField == fieldKeyOrLegacyName
     ) {
@@ -148,6 +122,19 @@ public without sharing class ConnectorConfigService {
       }
     }
     return null;
+  }
+
+  private static String queryDirectValue(
+    String connectorKey,
+    String fieldKey
+  ) {
+    List<Connector_Config_Value__c> rows = [
+      SELECT Value__c
+      FROM Connector_Config_Value__c
+      WHERE Connector_Key__c = :connectorKey AND Field_Key__c = :fieldKey
+      LIMIT 1
+    ];
+    return rows.isEmpty() ? null : rows[0].Value__c;
   }
 
   public static Boolean isActive(String connectorKey) {
@@ -321,49 +308,6 @@ public without sharing class ConnectorConfigService {
     }
   }
 
-  private static void hydrateFromLegacyConfig(
-    ConnectorConfig config,
-    ConnectorRegistryService.ConnectorDescriptor descriptor
-  ) {
-    // Deprecated compatibility path for the legacy wide Quickbridge_Config__mdt model.
-    // New connector config should use Connector_Instance__c, Connector_Config_Value__c,
-    // and Named/External Credential references for secret material.
-    Quickbridge_Config__mdt legacy = legacyConfig(descriptor.configRecordName);
-    if (legacy == null) {
-      config.active = false;
-      config.fromNormalizedConfig = false;
-      return;
-    }
-    Map<String, Object> raw = legacy.getPopulatedFieldsAsMap();
-    config.active = getBoolean(raw, descriptor.activeField);
-    config.expiryDate = getDate(raw, descriptor.expiryField);
-    config.environment = String.valueOf(raw.get('Environment__c'));
-    config.entitlementStatus = config.active == true ? 'Active' : 'Inactive';
-    config.healthStatus = 'Legacy';
-    config.fromNormalizedConfig = false;
-
-    for (
-      ConnectorRegistryService.ConfigFieldDescriptor field : ConnectorRegistryService.configFieldsFor(
-        descriptor.connectorKey
-      )
-    ) {
-      String fieldName = String.isBlank(field.legacyFieldApiName)
-        ? field.fieldKey
-        : field.legacyFieldApiName;
-      if (
-        String.isBlank(fieldName) ||
-        field.secret == true ||
-        isSecretField(fieldName)
-      ) {
-        continue;
-      }
-      if (raw.containsKey(fieldName) && raw.get(fieldName) != null) {
-        config.values.put(field.fieldKey, String.valueOf(raw.get(fieldName)));
-        config.values.put(fieldName, String.valueOf(raw.get(fieldName)));
-      }
-    }
-  }
-
   private static Connector_Instance__c ensureInstance(
     ConnectorRegistryService.ConnectorDescriptor descriptor
   ) {
@@ -386,73 +330,6 @@ public without sharing class ConnectorConfigService {
     );
     insert instanceRecord;
     return instanceRecord;
-  }
-
-  private static Quickbridge_Config__mdt legacyConfig(String recordName) {
-    if (String.isBlank(recordName)) {
-      recordName = 'Default';
-    }
-    try {
-      List<Quickbridge_Config__mdt> rows = [
-        SELECT
-          QualifiedApiName,
-          Company_Name__c,
-          QuickBooks_Realm_ID__c,
-          QuickBooks_Is_Active__c,
-          QuickBooks_Start_Date__c,
-          QuickBooks_End_Date__c,
-          Shopify_Store_URL__c,
-          Shopify_Is_Active__c,
-          Shopify_Start_Date__c,
-          Shopify_End_Date__c,
-          Stripe_Publishable_Key__c,
-          Stripe_Active__c,
-          Stripe_Use_Sandbox__c,
-          Stripe_Start_Date__c,
-          Stripe_End_Date__c,
-          AuthorizeNet_API_Login_ID__c,
-          AuthorizeNet_Public_Client_Key__c,
-          AuthorizeNet_Active__c,
-          AuthorizeNet_Use_Sandbox__c,
-          AuthorizeNet_Start_Date__c,
-          AuthorizeNet_End_Date__c,
-          PayPal_ClientId__c,
-          PayPal_Active__c,
-          PayPal_UseSandbox__c,
-          PayPal_StartDate__c,
-          PayPal_EndDate__c,
-          FedEx_Account_Number__c,
-          FedEx_Environment__c,
-          FedEx_Active__c,
-          FedEx_Start_Date__c,
-          FedEx_End_Date__c,
-          UPS_Account_Number__c,
-          UPS_Environment__c,
-          UPS_Active__c,
-          UPS_Start_Date__c,
-          UPS_End_Date__c
-        FROM Quickbridge_Config__mdt
-        WHERE QualifiedApiName = :recordName
-        LIMIT 1
-      ];
-      return rows.isEmpty() ? null : rows[0];
-    } catch (Exception ignored) {
-      return null;
-    }
-  }
-
-  private static Boolean getBoolean(Map<String, Object> raw, String fieldName) {
-    Object value = raw == null || String.isBlank(fieldName)
-      ? null
-      : raw.get(fieldName);
-    return value instanceof Boolean ? (Boolean) value : false;
-  }
-
-  private static Date getDate(Map<String, Object> raw, String fieldName) {
-    Object value = raw == null || String.isBlank(fieldName)
-      ? null
-      : raw.get(fieldName);
-    return value instanceof Date ? (Date) value : null;
   }
 
   private static Boolean parseBoolean(String value) {

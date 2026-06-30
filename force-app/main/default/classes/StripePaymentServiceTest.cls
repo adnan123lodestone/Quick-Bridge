@@ -293,7 +293,7 @@ private class StripePaymentServiceTest {
         System.assertEquals(false, response.success);
     }
 
-    @IsTest
+        @IsTest
     static void processPayment_errorLogsAgainstOrder() {
         Account account = new Account(Name = 'Stripe Error Account', Stripe_Customer_Id__c = 'cus_existing_error');
         insert account;
@@ -315,7 +315,7 @@ private class StripePaymentServiceTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Order__c = :orderRecord.Id
+            WHERE Source_Record_Id__c = :orderRecord.Id
             AND Gateway_Name__c = 'Stripe'
             AND Error_Category__c = 'Callout Failure'
         ]);

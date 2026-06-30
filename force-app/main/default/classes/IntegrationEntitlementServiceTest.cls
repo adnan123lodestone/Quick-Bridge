@@ -128,6 +128,26 @@ private class IntegrationEntitlementServiceTest {
 
   @IsTest
   static void refreshPreservesExistingFailPolicy() {
+    List<Connector_Config_Value__c> configs = new List<Connector_Config_Value__c>();
+    configs.add(new Connector_Config_Value__c(
+        Name = 'serverorg:Company_Name__c',
+        Connector_Key__c = 'serverorg',
+        Field_Key__c = 'Company_Name__c',
+        Value__c = 'TestCompany'
+    ));
+    configs.add(new Connector_Config_Value__c(
+        Name = 'serverorg:Username__c',
+        Connector_Key__c = 'serverorg',
+        Field_Key__c = 'Username__c',
+        Value__c = 'testuser'
+    ));
+    configs.add(new Connector_Config_Value__c(
+        Name = 'serverorg:Password__c',
+        Connector_Key__c = 'serverorg',
+        Field_Key__c = 'Password__c',
+        Value__c = 'testpass'
+    ));
+    insert configs;
     insert new Integration_Entitlement__c(
       Name = 'Checkout Entitlement',
       Cache_Key__c = 'checkout',

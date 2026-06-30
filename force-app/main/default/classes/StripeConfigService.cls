@@ -10,15 +10,10 @@ public with sharing class StripeConfigService {
     public Date startDate;
     public Date endDate;
     public Boolean fromNormalizedConfig;
-    public Boolean fromLegacyConfig;
   }
 
   @TestVisible
   static Config testConfig;
-  @TestVisible
-  static Boolean useLegacyFallbackInTests = false;
-  @TestVisible
-  static Boolean skipQuickbridgeLegacyInTests = false;
 
   public static Config getConfig() {
     if (Test.isRunningTest() && testConfig != null) {
@@ -30,20 +25,8 @@ public with sharing class StripeConfigService {
       return normalizedConfig;
     }
 
-    if (Test.isRunningTest() && useLegacyFallbackInTests != true) {
+    if (Test.isRunningTest()) {
       return getDefaultTestConfig();
-    }
-
-    Config quickbridgeConfig = Test.isRunningTest() && skipQuickbridgeLegacyInTests == true
-      ? null
-      : getQuickbridgeLegacyConfig();
-    if (quickbridgeConfig != null) {
-      return quickbridgeConfig;
-    }
-
-    Config stripeConfig = getStripeLegacyConfig();
-    if (stripeConfig != null) {
-      return stripeConfig;
     }
 
     throw new AuraHandledException('Stripe configuration record was not found.');
@@ -68,7 +51,6 @@ public with sharing class StripeConfigService {
 
     Config config = new Config();
     config.fromNormalizedConfig = true;
-    config.fromLegacyConfig = false;
     config.active =
       rawConfig.active == true &&
       (rawConfig.expiryDate == null || rawConfig.expiryDate >= Date.today());
@@ -95,52 +77,6 @@ public with sharing class StripeConfigService {
     return config;
   }
 
-  private static Config getQuickbridgeLegacyConfig() {
-    Quickbridge_Config__mdt legacy;
-    try {
-      legacy = Quickbridge_Config__mdt.getInstance('Stripe');
-    } catch (Exception e) {
-      legacy = null;
-    }
-    if (legacy == null) {
-      return null;
-    }
-
-    Config config = new Config();
-    config.fromNormalizedConfig = false;
-    config.fromLegacyConfig = true;
-    config.active = legacy.Stripe_Active__c;
-    config.publishableKey = legacy.Stripe_Publishable_Key__c;
-    config.webhookSigningSecret = legacy.Stripe_Webhook_Signing_Secret__c;
-    config.useSandbox = legacy.Stripe_Use_Sandbox__c;
-    config.startDate = legacy.Stripe_Start_Date__c;
-    config.endDate = legacy.Stripe_End_Date__c;
-    return config;
-  }
-
-  private static Config getStripeLegacyConfig() {
-    Stripe_Config__mdt legacy;
-    try {
-      legacy = Stripe_Config__mdt.getInstance('Default');
-    } catch (Exception e) {
-      legacy = null;
-    }
-    if (legacy == null) {
-      return null;
-    }
-
-    Config config = new Config();
-    config.fromNormalizedConfig = false;
-    config.fromLegacyConfig = true;
-    config.active = legacy.Active__c;
-    config.publishableKey = legacy.PublishableKey__c;
-    config.webhookSigningSecret = legacy.WebhookSigningSecret__c;
-    config.useSandbox = legacy.UseSandbox__c;
-    config.startDate = legacy.StartDate__c;
-    config.endDate = legacy.EndDate__c;
-    return config;
-  }
-
   private static Config getDefaultTestConfig() {
     Config config = new Config();
     config.active = true;
@@ -148,7 +84,6 @@ public with sharing class StripeConfigService {
     config.webhookSigningSecret = TEST_WEBHOOK_SIGNING_SECRET;
     config.useSandbox = true;
     config.fromNormalizedConfig = false;
-    config.fromLegacyConfig = false;
     return config;
   }
 
@@ -164,7 +99,6 @@ public with sharing class StripeConfigService {
     copy.startDate = source.startDate;
     copy.endDate = source.endDate;
     copy.fromNormalizedConfig = source.fromNormalizedConfig;
-    copy.fromLegacyConfig = source.fromLegacyConfig;
     return copy;
   }
 

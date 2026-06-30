@@ -148,7 +148,7 @@ private class AuthorizeNetPaymentServiceTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Order__c = :orderRecord.Id
+            WHERE Order_Id__c  = :orderRecord.Id
             AND Gateway_Name__c = 'Authorize.Net'
             AND Error_Category__c = 'Payment Error'
         ]);
@@ -173,7 +173,7 @@ private class AuthorizeNetPaymentServiceTest {
         System.assertEquals(1, [
             SELECT Count()
             FROM Error_Log__c
-            WHERE Order__c = :orderRecord.Id
+            WHERE Order_Id__c  = :orderRecord.Id
             AND Gateway_Name__c = 'Authorize.Net'
             AND Error_Category__c = 'Callout Failure'
             AND Http_Status_Code__c = 503

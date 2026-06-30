@@ -5,6 +5,7 @@ import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFi
 import getShopifyFields from "@salesforce/apex/FieldMappingController.getShopifyFields";
 import getExistingMappings from "@salesforce/apex/FieldMappingController.getExistingMappings";
 import saveFieldMappings from "@salesforce/apex/FieldMappingController.saveFieldMappings";
+import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
 
 export default class ShopifyFieldMappingComponent extends LightningElement {
   @track selectedIntegration = "shopify";
@@ -16,6 +17,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   @track sfFieldOptions = [];
   @track shopifyFieldOptions = [];
   @track isLoading = true;
+  @track showResetConfirm = false;
 
   @track syncDirectionBaseOptions = [
     { label: "SF to Shopify", value: "SF to Shopify" },
@@ -162,16 +164,21 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
       selected: opt.value === objectName
     }));
 
-    Promise.all([
-      this.loadObjectFields(objectName),
-      this.loadShopifyFields(),
-      getExistingMappings({
-        integration: this.selectedIntegration,
-        sfObject: objectName,
-        qbObject: null
-      })
-    ])
-      .then(([, , savedMappings]) => {
+    // loadShopifyFields must complete first so this.shopifyFieldOptions is set
+    // before buildMappingRows reads it. loadObjectFields and getExistingMappings
+    // don't depend on shopifyFieldOptions, so they run in parallel after.
+    this.loadShopifyFields()
+      .then(() =>
+        Promise.all([
+          this.loadObjectFields(objectName),
+          getExistingMappings({
+            integration: this.selectedIntegration,
+            sfObject: objectName,
+            qbObject: null
+          })
+        ])
+      )
+      .then(([, savedMappings]) => {
         this.buildMappingRows(savedMappings || []);
         this.isLoading = false;
       })
@@ -189,15 +196,17 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
     }));
     this.isLoading = true;
 
-    Promise.all([
-      this.loadShopifyFields(),
-      getExistingMappings({
-        integration: this.selectedIntegration,
-        sfObject: this.selectedSFObject,
-        qbObject: null
-      })
-    ])
-      .then(([, savedMappings]) => {
+    // loadShopifyFields must complete first so this.shopifyFieldOptions is set
+    // before buildMappingRows reads it.
+    this.loadShopifyFields()
+      .then(() =>
+        getExistingMappings({
+          integration: this.selectedIntegration,
+          sfObject: this.selectedSFObject,
+          qbObject: null
+        })
+      )
+      .then((savedMappings) => {
         this.buildMappingRows(savedMappings || []);
         this.isLoading = false;
       })
@@ -368,10 +377,64 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
       });
   }
 
-  handleReset() {
-    this.handleSalesforceObjectChange({
-      target: { value: this.selectedSFObject }
-    });
+  handleResetClick() {
+    this.showResetConfirm = true;
+  }
+
+  handleResetCancel() {
+    this.showResetConfirm = false;
+  }
+
+  handleResetConfirm() {
+    this.showResetConfirm = false;
+    this.isLoading = true;
+    clearFieldMappings({
+      integration: this.selectedIntegration,
+      sfObject: this.selectedSFObject
+    })
+      .then(() => {
+        this.showToast(
+          "Success",
+          "Mappings cleared. Changes will be fully reflected after the metadata deployment completes.",
+          "success"
+        );
+        this.resetMappingRows();
+        this.isLoading = false;
+      })
+      .catch((error) => {
+        this.showToast("Error", error.body?.message || error.message, "error");
+        this.isLoading = false;
+      });
+  }
+
+  resetMappingRows() {
+    const requiredShopifyFields = this.shopifyFieldOptions.filter(
+      (field) => field.required
+    );
+    let counter = 1;
+
+    const rows = requiredShopifyFields.map((field) => ({
+      id: counter++,
+      sfField: "",
+      externalField: field.value,
+      syncDirection: "Two-Way",
+      isMandatory: true
+    }));
+
+    if (rows.length === 0) {
+      rows.push({
+        id: counter++,
+        sfField: "",
+        externalField: "",
+        syncDirection: "Two-Way",
+        isMandatory: false
+      });
+    }
+
+    this.mappingRows = rows;
+    this.rowCounter = counter;
+    this.updateRowDropdowns();
+    this.notifyMappingContextChange();
   }
 
   @api

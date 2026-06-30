@@ -322,7 +322,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         String keyLower = fieldName.toLowerCase();
         Schema.SObjectField fieldToken = fields.get(keyLower);
         if (fieldToken == null) {
-            fieldToken = fields.get('quickbridgetlg__' + keyLower);
+            fieldToken = fields.get('QuickBridgeTLG__' + keyLower);
         }
         if (fieldToken == null) {
             return;

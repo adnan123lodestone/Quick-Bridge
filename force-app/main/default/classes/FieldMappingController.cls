@@ -484,6 +484,8 @@ public with sharing class FieldMappingController {
       'Contact',
       'Order',
       'OrderItem',
+      'Quote',
+      'QuoteLineItem',
       'Invoice__c',
       'Product2',
       'Credit_Memo__c',
@@ -1394,6 +1396,19 @@ public with sharing class FieldMappingController {
         'STRING',
         false
       );
+    } else if (qbEntity == 'Estimate') {
+      addQBFieldDefinition(qbFields, 'QB - CustomerRef.value', 'CustomerRef.value', 'STRING', true);
+      addQBFieldDefinition(qbFields, 'QB - DocNumber', 'DocNumber', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - TotalAmt', 'TotalAmt', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - TxnDate', 'TxnDate', 'DATE', false);
+      addQBFieldDefinition(qbFields, 'QB - ExpirationDate', 'ExpirationDate', 'DATE', false);
+      addQBFieldDefinition(qbFields, 'QB - Customer Memo', 'CustomerMemo.value', 'STRING', false);
+    } else if (qbEntity == 'EstimateLine') {
+      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.SalesItemLineDetail.ItemRef.value', 'STRING', true);
+      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
+      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.SalesItemLineDetail.Qty', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.SalesItemLineDetail.UnitPrice', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
     }
 
     return qbFields;
@@ -1438,19 +1453,11 @@ public with sharing class FieldMappingController {
   ) {
     List<Map<String, Object>> qbFields = new List<Map<String, Object>>();
 
-    List<Quickbridge_Config__mdt> configs = [
-      SELECT QuickBooks_Realm_ID__c
-      FROM Quickbridge_Config__mdt
-      WHERE QuickBooks_Realm_ID__c != NULL
-      LIMIT 1
-    ];
-    if (
-      configs.isEmpty() || String.isBlank(configs[0].QuickBooks_Realm_ID__c)
-    ) {
+    String realmId = ConnectorConfigResolver.getValue('qbo', 'QuickBooks_Realm_ID__c');
+    if (String.isBlank(realmId)) {
       throw new CalloutException('Realm ID is missing in configuration.');
     }
-
-    String realmId = configs[0].QuickBooks_Realm_ID__c.trim();
+    realmId = realmId.trim();
 
     HttpRequest req = new HttpRequest();
     String query = EncodingUtil.urlEncode(
@@ -3241,62 +3248,23 @@ public with sharing class FieldMappingController {
     }
   }
 
-  // Get the current value of Map Draft Orders as Estimates for QuickBooks config
   @AuraEnabled(cacheable=true)
   public static Boolean getDraftOrderSetting() {
     try {
-      Quickbridge_Config__mdt config = [
-        SELECT QuickBridgeTLG__Map_Draft_Orders_as_Estimates__c
-        FROM QuickBridgeTLG__Quickbridge_Config__mdt
-        WHERE DeveloperName = 'QuickBooks'
-        LIMIT 1
-      ];
-      return config != null ? config.Map_Draft_Orders_as_Estimates__c : false;
+      return ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
     } catch (Exception e) {
       return false;
     }
   }
 
-  // Save the value using Metadata API deployment
   @AuraEnabled
   public static void saveDraftOrderSetting(Boolean value) {
     try {
-      // Fetch the existing custom metadata record to get its full name
-      Quickbridge_Config__mdt config = [
-        SELECT Id, DeveloperName
-        FROM QuickBridgeTLG__Quickbridge_Config__mdt
-        WHERE DeveloperName = 'QuickBooks'
-        LIMIT 1
-      ];
-      if (config == null) {
-        throw new AuraHandledException(
-          'QuickBooks configuration record not found.'
-        );
-      }
-
-      String nsPrefix = getNamespacePrefix();
-      String fullRecordName =
-        nsPrefix +
-        'Quickbridge_Config__mdt.' +
-        config.DeveloperName;
-
-      Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
-      customMetadata.fullName = fullRecordName;
-      customMetadata.label = 'QuickBooks';
-
-      // Add the field value (boolean)
-      Metadata.CustomMetadataValue fieldValue = new Metadata.CustomMetadataValue();
-      fieldValue.field = nsPrefix + 'Map_Draft_Orders_as_Estimates__c';
-      fieldValue.value = value;
-      customMetadata.values.add(fieldValue);
-
-      Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
-      mdContainer.addMetadata(customMetadata);
-
-      if (!Test.isRunningTest()) {
-        Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, null);
-        System.debug('Deployment started for draft order setting: ' + jobId);
-      }
+      ConnectorConfigService.upsertNonSecretValue(
+        'qbo',
+        'Map_Draft_Orders_as_Estimates__c',
+        String.valueOf(value)
+      );
     } catch (Exception e) {
       throw new AuraHandledException(e.getMessage());
     }

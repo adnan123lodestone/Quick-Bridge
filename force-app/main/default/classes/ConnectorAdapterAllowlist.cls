@@ -35,7 +35,7 @@ public with sharing class ConnectorAdapterAllowlist {
     if (String.isBlank(className)) {
       return;
     }
-    // Strip namespace prefix if present, for example QuickBridgeTLG.StripePaymentAdapter.
+    // Strip namespace prefix if present, for example QuickBridge_Int.StripePaymentAdapter.
     String unqualified = className.contains('.')
       ? className.substringAfterLast('.')
       : className;

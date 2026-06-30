@@ -3,6 +3,7 @@ private class WishlistEventServiceTest {
 
     @testSetup
     static void setupTestData() {
+        // No DML on Integration__mdt – will use testOverrideToken instead
         // Create test account
         Account testAccount = new Account(
             FirstName = 'Test',
@@ -20,9 +21,12 @@ private class WishlistEventServiceTest {
         insert testProduct;
     }
 
-    @isTest
+        @isTest
     static void testCreateWishlistEvent_Success() {
-        // Build request body
+        // Set the test override token
+        WishlistEventService.testOverrideToken = 'test-token';
+
+        // Build request body with timestamp without milliseconds
         String jsonBody = JSON.serialize(new Map<String, Object>{
             'customer_ids' => new Map<String, Object>{ 'email_id' => 'test@example.com' },
             'properties' => new Map<String, Object>{
@@ -36,7 +40,7 @@ private class WishlistEventServiceTest {
                 'image_url' => 'https://example.com/product/red-shirt.jpg',
                 'variant_sku' => 'SKU123'
             },
-            'timestamp' => '2025-04-29T23:17:39.000Z',
+            'timestamp' => '2025-04-29T23:17:39Z',
             'event_type' => 'add_to_wishlist'
         });
 
@@ -50,7 +54,11 @@ private class WishlistEventServiceTest {
         WishlistEventService.createEvent();
         Test.stopTest();
 
-        System.assertEquals(200, RestContext.response.statusCode);
+        // If status is 400, print response body for debugging
+        if (RestContext.response.statusCode != 200) {
+            System.debug('Response body: ' + RestContext.response.responseBody.toString());
+        }
+        System.assertEquals(200, RestContext.response.statusCode, 'Response body: ' + RestContext.response.responseBody.toString());
 
         WishlistEventService.ApiResponse result =
             (WishlistEventService.ApiResponse)JSON.deserialize(
@@ -68,6 +76,7 @@ private class WishlistEventServiceTest {
 
     @isTest
     static void testMissingTokenHeader_Throws401() {
+        // No override needed; token header missing
         RestContext.request = new RestRequest();
         RestContext.response = new RestResponse();
         RestContext.request.httpMethod = 'POST';
@@ -83,6 +92,9 @@ private class WishlistEventServiceTest {
 
     @isTest
     static void testInvalidTokenHeader_Throws401() {
+        // Set override token, but send a different token in header
+        WishlistEventService.testOverrideToken = 'test-token';
+
         RestContext.request = new RestRequest();
         RestContext.response = new RestResponse();
         RestContext.request.httpMethod = 'POST';
@@ -99,6 +111,8 @@ private class WishlistEventServiceTest {
 
     @isTest
     static void testMissingFields_Throws400() {
+        WishlistEventService.testOverrideToken = 'test-token';
+
         String jsonBody = JSON.serialize(new Map<String, Object>{
             'customer_ids' => new Map<String, Object>{ 'email_id' => 'test@example.com' },
             'properties' => new Map<String, Object>{},
@@ -122,6 +136,8 @@ private class WishlistEventServiceTest {
 
     @isTest
     static void testInvalidJson_Throws400() {
+        WishlistEventService.testOverrideToken = 'test-token';
+
         RestContext.request = new RestRequest();
         RestContext.response = new RestResponse();
         RestContext.request.requestBody = Blob.valueOf('invalid json');

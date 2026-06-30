@@ -30,20 +30,24 @@ public without sharing class QuickBooksAuthHandler {
             return result;
         }
 
-        List<QuickBooks_Config__mdt> rows = [
-            SELECT Realm_ID__c, Named_Credential__c, Minor_Version__c
-            FROM QuickBooks_Config__mdt
-            LIMIT 1
-        ];
-        if (rows.isEmpty()) {
+        ConnectorConfigService.ConnectorConfig cfg;
+        try {
+            cfg = ConnectorConfigService.getAuthoritativeConfig('qbo');
+        } catch (Exception e) {
+            cfg = null;
+        }
+        if (cfg == null || cfg.fromNormalizedConfig != true) {
             throw new ConfigurationException('QuickBooks configuration record was not found.');
         }
 
-        QuickBooks_Config__mdt config = rows[0];
-        result.realmId = config.Realm_ID__c;
-        result.namedCredential = config.Named_Credential__c;
-        if (String.isNotBlank(config.Minor_Version__c)) {
-            result.minorVersion = config.Minor_Version__c.trim();
+        result.realmId = ConnectorConfigResolver.getValue('qbo', 'QuickBooks_Realm_ID__c');
+        result.namedCredential = cfg.namedCredential;
+        String minorVersion = ConnectorConfigResolver.getValue('qbo', 'Minor_Version__c');
+        if (String.isBlank(minorVersion)) {
+            minorVersion = ConnectorConfigResolver.getValue('qbo', 'QuickBooks_Minor_Version__c');
+        }
+        if (String.isNotBlank(minorVersion)) {
+            result.minorVersion = minorVersion.trim();
         }
 
         if (String.isBlank(result.realmId)) {

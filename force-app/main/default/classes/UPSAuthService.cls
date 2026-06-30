@@ -69,22 +69,11 @@ public with sharing class UPSAuthService {
     }
 
     public static UPSCredentialConfig getCredentialConfig() {
-        UPSCredentialConfig config = new UPSCredentialConfig();
-
-        Quickbridge_Config__mdt qbConfig = Quickbridge_Config__mdt.getInstance('UPS');
-        if (qbConfig != null && (
-            String.isNotBlank(qbConfig.UPS_Client_Id__c) ||
-            String.isNotBlank(qbConfig.UPS_Client_Secret__c)
-        )) {
-            config.clientId = qbConfig.UPS_Client_Id__c;
-            config.clientSecret = qbConfig.UPS_Client_Secret__c;
-            config.environment = String.isBlank(qbConfig.UPS_Environment__c) ? 'Sandbox' : qbConfig.UPS_Environment__c;
-            config.accountNumber = qbConfig.UPS_Account_Number__c;
-            config.defaultServiceCode = String.isBlank(qbConfig.UPS_Default_Service_Code__c) ? '03' : qbConfig.UPS_Default_Service_Code__c;
-            config.isActive = qbConfig.UPS_Active__c == true;
-            return config;
+        UPSCredentialConfig normalized = getNormalizedCredentialConfig();
+        if (normalized != null) {
+            return normalized;
         }
-
+        UPSCredentialConfig config = new UPSCredentialConfig();
         config.clientId = '';
         config.clientSecret = '';
         config.environment = 'Sandbox';
@@ -92,6 +81,49 @@ public with sharing class UPSAuthService {
         config.defaultServiceCode = '03';
         config.isActive = false;
         return config;
+    }
+
+    private static UPSCredentialConfig getNormalizedCredentialConfig() {
+        ConnectorConfigService.ConnectorConfig raw;
+        try {
+            raw = ConnectorConfigService.getConfig('ups');
+        } catch (Exception ignored) {
+            return null;
+        }
+        if (raw == null || raw.fromNormalizedConfig != true) {
+            return null;
+        }
+
+        UPSCredentialConfig config = new UPSCredentialConfig();
+        config.clientId = firstNonBlank(
+            ConnectorConfigResolver.getValue('ups', 'UPS_Client_Id__c'),
+            ConnectorConfigResolver.getValue('ups', 'clientId')
+        );
+        config.clientSecret = firstNonBlank(
+            ConnectorConfigResolver.getValue('ups', 'UPS_Client_Secret__c'),
+            ConnectorConfigResolver.getValue('ups', 'clientSecretRef')
+        );
+        config.environment = firstNonBlank(
+            ConnectorConfigResolver.getValue('ups', 'UPS_Environment__c'),
+            raw.environment
+        );
+        config.accountNumber = ConnectorConfigResolver.getValue('ups', 'UPS_Account_Number__c');
+        config.defaultServiceCode = ConnectorConfigResolver.getValue('ups', 'UPS_Default_Service_Code__c');
+        config.isActive = ConnectorConfigService.isActive('ups');
+        if (String.isBlank(config.environment)) {
+            config.environment = 'Sandbox';
+        }
+        if (String.isBlank(config.defaultServiceCode)) {
+            config.defaultServiceCode = '03';
+        }
+        if (String.isNotBlank(config.clientId) || String.isNotBlank(config.clientSecret) || String.isNotBlank(config.accountNumber)) {
+            return config;
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        return String.isNotBlank(a) ? a : b;
     }
 
     private static void validateConfig(UPSCredentialConfig config) {

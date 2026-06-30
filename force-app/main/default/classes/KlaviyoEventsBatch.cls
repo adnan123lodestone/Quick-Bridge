@@ -1,7 +1,7 @@
 public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database.AllowsCallouts, Database.Stateful {
     
     private String endpoint;
-    private String nextUrl;
+    private String nextUrl; 
 
     public KlaviyoEventsBatch(String endpoint) {
         this.endpoint = endpoint;

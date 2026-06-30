@@ -77,6 +77,38 @@ public class QBObjectMappings {
         'QuickBridgeTLG__Item_Description__c' => 'Description'
     };
     
+    private static final Map<String, String> QUOTE_FALLBACK = new Map<String, String>{
+        'Name' => 'DocNumber',
+        'ExpirationDate' => 'ExpirationDate',
+        'Description' => 'CustomerMemo.value'
+    };
+    
+    private static final Map<String, String> QUOTE_LINE_ITEM_FALLBACK = new Map<String, String>{
+        'Quantity' => 'Qty',
+        'UnitPrice' => 'UnitPrice',
+        'Description' => 'Description'
+    };
+
+    public static Map<String, String> getQuoteMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('Quote', 'QBO to SF');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) { 
+            return reverseMapping(dynamicMap); 
+        }
+        
+        // Return fallback if no metadata found
+        return reverseMapping(new Map<String, String>(QUOTE_FALLBACK));
+    }
+    
+    public static Map<String, String> getQuoteLineItemMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('QuoteLineItem', 'QBO to SF');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) { 
+            return reverseMapping(dynamicMap); 
+        }
+        
+        // Return fallback if no metadata found
+        return reverseMapping(new Map<String, String>(QUOTE_LINE_ITEM_FALLBACK));
+    }
+
     public static Map<String, String> getTaxCodeInboundMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('Item_Sales_Tax__c', 'QBO to SF');
         if (dynamicMap != null && !dynamicMap.isEmpty()) {

@@ -20,18 +20,23 @@ public with sharing class ShopifyConfigService {
             return mockConfig;
         }
 
-        Quickbridge_Config__mdt metadata = Quickbridge_Config__mdt.getInstance('Shopify');
-        if (metadata == null) {
-            ErrorLogUtility.logError(buildConfigLog('Shopify configuration metadata record is missing.'));
-            throw new ShopifyConfigException('Shopify configuration metadata record is missing.');
+        ConnectorConfigService.ConnectorConfig raw;
+        try {
+            raw = ConnectorConfigService.getAuthoritativeConfig('shopify');
+        } catch (Exception e) {
+            raw = null;
+        }
+        if (raw == null || raw.fromNormalizedConfig != true) {
+            ErrorLogUtility.logError(buildConfigLog('Shopify configuration not found in connector store.'));
+            throw new ShopifyConfigException('Shopify configuration not found.');
         }
 
         Config config = new Config();
-        config.storeUrl = normalizeStoreUrl(metadata.Shopify_Store_URL__c);
-        config.accessToken = metadata.Shopify_Access_Token__c;
-        config.apiKey = metadata.Shopify_API_Key__c;
-        config.apiSecret = metadata.Shopify_API_Secret__c;
-        config.isActive = metadata.Shopify_Is_Active__c == true;
+        config.storeUrl = normalizeStoreUrl(ConnectorConfigResolver.getValue('shopify', 'Shopify_Store_URL__c'));
+        config.accessToken = ConnectorConfigResolver.getValue('shopify', 'Shopify_Access_Token__c');
+        config.apiKey = ConnectorConfigResolver.getValue('shopify', 'Shopify_API_Key__c');
+        config.apiSecret = ConnectorConfigResolver.getValue('shopify', 'Shopify_API_Secret__c');
+        config.isActive = ConnectorConfigResolver.isActive('shopify');
 
         if (!config.isActive) {
             ErrorLogUtility.logError(buildConfigLog('Shopify configuration is inactive.'));

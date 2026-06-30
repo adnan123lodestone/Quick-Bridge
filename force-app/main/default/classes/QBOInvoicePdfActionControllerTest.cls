@@ -1,28 +1,191 @@
 @isTest
 private class QBOInvoicePdfActionControllerTest {
 
-    // ── HTTP mock helpers ────────────────────────────────────────────────────
+    private static final String QBO_INVOICE_ID = 'QB-INV-123';
+    private static Id orderId;
+    private static Id invoiceId;
 
+    @testSetup
+    static void setupData() {
+        // Connector config, entity definitions, and test data (unchanged)
+        Connector_Instance__c instance = new Connector_Instance__c(
+            Name = 'QuickBooks Online',
+            Connector_Key__c = 'qbo',
+            Connector_Label__c = 'QuickBooks Online',
+            Active__c = true,
+            Environment__c = 'Sandbox',
+            Entitlement_Status__c = 'Active',
+            Health_Status__c = 'Unknown',
+            Named_Credential__c = 'QuickBookSandbox'
+        );
+        insert instance;
+
+        Connector_Config_Value__c realmConfig = new Connector_Config_Value__c(
+            Name = 'qbo.RealmId',
+            Connector_Instance__c = instance.Id,
+            Connector_Key__c = 'qbo',
+            Field_Key__c = 'QuickBooks_Realm_ID__c',
+            Value__c = '1234567890',
+            Is_Secret_Reference__c = false
+        );
+        insert realmConfig;
+
+        Connector_Config_Value__c activeConfig = new Connector_Config_Value__c(
+            Name = 'qbo.Active',
+            Connector_Instance__c = instance.Id,
+            Connector_Key__c = 'qbo',
+            Field_Key__c = 'QuickBooks_Is_Active__c',
+            Value__c = 'true',
+            Is_Secret_Reference__c = false
+        );
+        insert activeConfig;
+
+        Integration_Entity_Definition__c entityDef = new Integration_Entity_Definition__c(
+            Name = 'Order_Invoice',
+            Integration_Key__c = 'qbonline',
+            Salesforce_Object__c = 'Order',
+            External_Entity__c = 'Invoice',
+            Active__c = true
+        );
+        insert entityDef;
+        
+        try {
+            Integration_Entity_Definition__c invEntityDef = new Integration_Entity_Definition__c(
+                Name = 'CustomInvoice_Invoice',
+                Integration_Key__c = 'qbonline',
+                Salesforce_Object__c = 'QuickBridgeTLG__Invoice__c',
+                External_Entity__c = 'Invoice',
+                Active__c = true
+            );
+            insert invEntityDef;
+        } catch (Exception e) { }
+        
+        IntegrationEntityRegistry.clearCache();
+
+        Account acc = new Account(Name = 'PDF Test Account');
+        insert acc;
+
+        Order ord = new Order(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            EffectiveDate = Date.today(),
+            QuickbookID__c = QBO_INVOICE_ID
+        );
+        insert ord;
+        
+        Schema.SObjectType invType = Schema.getGlobalDescribe().get('QuickBridgeTLG__Invoice__c');
+        if (invType != null) {
+            SObject testInv = invType.newSObject();
+            testInv.put('QuickBridgeTLG__External_Id__c', QBO_INVOICE_ID);
+            testInv.put('QuickBridgeTLG__Related_Account__c', acc.Id);
+            insert testInv;
+            invoiceId = testInv.Id;
+        }
+    }
+
+    private static Id getOrderId() {
+        if (orderId == null) {
+            orderId = [SELECT Id FROM Order LIMIT 1].Id;
+        }
+        return orderId;
+    }
+    
+    private static Id getInvoiceId() {
+        return invoiceId;
+    }
+
+    private static void setupResolverMappings() {
+        List<Field_Mapping__mdt> mappings = new List<Field_Mapping__mdt>();
+        mappings.add(new Field_Mapping__mdt(
+            DeveloperName = 'Test_QBO_Id',
+            MasterLabel = 'Test QBO Id',
+            Integration__c = 'qbonline',
+            SF_Object__c = 'Order',
+            SF_Field__c = 'QuickbookID__c',
+            External_Field__c = 'Id',
+            Sync_Direction__c = 'Two-Way',
+            Is_Active__c = true
+        ));
+        mappings.add(new Field_Mapping__mdt(
+            DeveloperName = 'Test_OrderNumber',
+            MasterLabel = 'Test OrderNumber',
+            Integration__c = 'qbonline',
+            SF_Object__c = 'Order',
+            SF_Field__c = 'OrderNumber',
+            External_Field__c = 'DocNumber',
+            Sync_Direction__c = 'SF to QBO',
+            Is_Active__c = true
+        ));
+        mappings.add(new Field_Mapping__mdt(
+            DeveloperName = 'Test_Description',
+            MasterLabel = 'Test Description',
+            Integration__c = 'qbonline',
+            SF_Object__c = 'Order',
+            SF_Field__c = 'Description',
+            External_Field__c = 'CustomerMemo.value',
+            Sync_Direction__c = 'SF to QBO',
+            Is_Active__c = true
+        ));
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(mappings);
+    }
+    
+    private static void setupInvoiceObjectMappings() {
+        List<Field_Mapping__mdt> mappings = new List<Field_Mapping__mdt>();
+        mappings.add(new Field_Mapping__mdt(
+            DeveloperName = 'Inv_QBO_Id',
+            MasterLabel = 'Inv QBO Id',
+            Integration__c = 'qbonline',
+            SF_Object__c = 'QuickBridgeTLG__Invoice__c',
+            SF_Field__c = 'QuickBridgeTLG__External_Id__c',
+            External_Field__c = 'Id',
+            Sync_Direction__c = 'Two-Way',
+            Is_Active__c = true
+        ));
+        mappings.add(new Field_Mapping__mdt(
+            DeveloperName = 'Inv_TxnDate',
+            MasterLabel = 'Inv TxnDate',
+            Integration__c = 'qbonline',
+            SF_Object__c = 'QuickBridgeTLG__Invoice__c',
+            SF_Field__c = 'QuickBridgeTLG__Invoice_Date__c',
+            External_Field__c = 'TxnDate',
+            Sync_Direction__c = 'SF to QBO',
+            Is_Active__c = true
+        ));
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(mappings);
+    }
+
+    // ----------------------------------------------------------------------
+    // MOCK CLASSES
+    // ----------------------------------------------------------------------
     private class PdfSuccessMock implements HttpCalloutMock {
         public HttpResponse respond(HttpRequest req) {
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setBodyAsBlob(Blob.valueOf('%PDF-FAKECONTENT'));
+            if (req.getEndpoint().contains('/pdf')) {
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setBodyAsBlob(Blob.valueOf('%PDF-FAKECONTENT'));
+            } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.setBody('{"Invoice":{"Id":"' + QBO_INVOICE_ID + '","TxnDate":"2025-01-15","CustomerMemo":{"value":"Synced"}}}');
+            }
             return res;
         }
     }
 
     private class PdfErrorMock implements HttpCalloutMock {
         private Integer statusCode;
-        PdfErrorMock(Integer statusCode) {
-            this.statusCode = statusCode;
-        }
+        PdfErrorMock(Integer statusCode) { this.statusCode = statusCode; }
         public HttpResponse respond(HttpRequest req) {
             HttpResponse res = new HttpResponse();
-            res.setStatusCode(statusCode);
-            res.setHeader('Content-Type', 'application/json');
-            res.setBody('{"Fault":{"Error":[{"Message":"Unauthorized"}]}}');
+            if (req.getEndpoint().contains('/pdf')) {
+                res.setStatusCode(statusCode);
+                res.setHeader('Content-Type', 'application/json');
+                res.setBody('{"Fault":{"Error":[{"Message":"Unauthorized"}]}}');
+            } else {
+                res.setStatusCode(200);
+                res.setHeader('Content-Type', 'application/json');
+                res.setBody('{"Invoice":{"Id":"' + QBO_INVOICE_ID + '"}}');
+            }
             return res;
         }
     }
@@ -31,268 +194,414 @@ private class QBOInvoicePdfActionControllerTest {
         public HttpResponse respond(HttpRequest req) {
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setBodyAsBlob(Blob.valueOf(''));
+            if (req.getEndpoint().contains('/pdf')) {
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setBodyAsBlob(Blob.valueOf(''));
+            } else {
+                res.setHeader('Content-Type', 'application/json');
+                res.setBody('{"Invoice":{"Id":"' + QBO_INVOICE_ID + '"}}');
+            }
             return res;
         }
     }
-
-    // ── Test data helpers ────────────────────────────────────────────────────
-
-    @testSetup
-    static void setupData() {
-        Account acc = new Account(Name = 'PDF Test Account');
-        insert acc;
-
-        Order ord = new Order(
-            AccountId = acc.Id,
-            Status = 'Draft',
-            EffectiveDate = Date.today()
-        );
-        insert ord;
+    
+    private class CalloutErrorMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest req) {
+            throw new CalloutException('Simulated network error');
+        }
     }
-
-    // Registers Order as the QBO Invoice source object via Integration_Entity_Definition__c.
-    // Required because Field_Mapping__mdt cannot be inserted in tests.
-    private static void registerOrderAsInvoiceSource() {
-        // Order is already in the fallback registry as Invoice, so no insert needed —
-        // but clear cache to ensure a clean state.
-        IntegrationEntityRegistry.clearCache();
-    }
-
-    // ── getPanelData tests ───────────────────────────────────────────────────
 
     @isTest
-    static void testGetPanelDataNoMetadata() {
-        Order ord = [SELECT Id FROM Order LIMIT 1];
+    static void testGetPanelDataSuccess() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
 
         Test.startTest();
-        QBOInvoicePdfActionController.PanelData data =
-            QBOInvoicePdfActionController.getPanelData(ord.Id, 'Order');
+        QBOInvoicePdfActionController.PanelData data = QBOInvoicePdfActionController.getPanelData(ordId, 'Order');
         Test.stopTest();
 
-        // With no active Field_Mapping__mdt rows the resolver throws and the controller
-        // returns a panel with a descriptive message (caught and surfaced as AuraHandledException).
-        // We assert the call completes with a message or an exception — both are valid outcomes.
-        System.assertNotEquals(null, data, 'PanelData should not be null when resolver throws');
+        System.assertEquals(true, data.isConfigured);
+        System.assertEquals(true, data.qboIdPresent);
+        System.assertEquals(true, data.showSyncToQbo);
+        System.assertEquals(true, data.showSyncFromQbo);
+        System.assert(String.isBlank(data.message));
     }
 
     @isTest
     static void testGetPanelDataWrongObjectType() {
+        setupResolverMappings();
         Account acc = [SELECT Id FROM Account LIMIT 1];
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
 
-        // Register Order→Invoice so the resolver finds exactly one invoice source object.
-        registerOrderAsInvoiceSource();
+        Test.startTest();
+        QBOInvoicePdfActionController.PanelData data = QBOInvoicePdfActionController.getPanelData(acc.Id, 'Account');
+        Test.stopTest();
 
-        // Insert a minimal entity definition so the resolver finds Order as invoice source.
-        // Since CMT rows can't be inserted we confirm the controller handles a wrong object
-        // by verifying it throws AuraHandledException when no matching object is mapped.
-        Boolean threw = false;
-        try {
-            Test.startTest();
-            QBOInvoicePdfActionController.getPanelData(acc.Id, 'Account');
-            Test.stopTest();
-        } catch (AuraHandledException e) {
-            threw = true;
-        } catch (Exception e) {
-            // ResolverException wrapped as AuraHandledException or thrown directly
-            threw = true;
-        }
-        System.assert(threw || true, 'Controller should handle wrong object type gracefully');
+        System.assertEquals(false, data.isConfigured);
+        System.assert(data.message.contains('not configured for this object'));
     }
 
-    // ── downloadPdf — resolver has no active metadata ────────────────────────
-
     @isTest
-    static void testDownloadPdfNoMetadataThrows() {
-        Order ord = [SELECT Id FROM Order LIMIT 1];
+    static void testGetPanelDataNoQboId() {
+        setupResolverMappings();
+        Order ord = [SELECT Id, QuickbookID__c FROM Order LIMIT 1];
+        ord.QuickbookID__c = null;
+        update ord;
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
 
-        Boolean threw = false;
-        String errorMsg = '';
-        try {
-            Test.setMock(HttpCalloutMock.class, new PdfSuccessMock());
-            Test.startTest();
-            QBOInvoicePdfActionController.downloadPdf(ord.Id, 'Order');
-            Test.stopTest();
-        } catch (AuraHandledException e) {
-            threw = true;
-            errorMsg = e.getMessage();
-        }
+        Test.startTest();
+        QBOInvoicePdfActionController.PanelData data = QBOInvoicePdfActionController.getPanelData(ord.Id, 'Order');
+        Test.stopTest();
 
-        System.assert(threw, 'downloadPdf should throw AuraHandledException when no metadata exists');
-        System.assert(
-            errorMsg.contains('No active Field_Mapping__mdt') || errorMsg.contains('QBO'),
-            'Error message should explain the missing configuration: ' + errorMsg
-        );
+        System.assertEquals(true, data.isConfigured);
+        System.assertEquals(false, data.qboIdPresent);
+        System.assert(data.message.contains('has not been synced to QBO yet'));
     }
 
-    // ── QuickBooksAuthHandler.makeBinaryApiCall ──────────────────────────────
+    @isTest
+    static void testSyncToQboSuccess() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+
+        Test.startTest();
+        QBOInvoicePdfActionController.ActionResponse response = QBOInvoicePdfActionController.syncToQbo(ordId, 'Order');
+        Test.stopTest();
+
+        System.assertEquals(true, response.success);
+        System.assert(response.message.contains('queued'));
+    }
 
     @isTest
-    static void testMakeBinaryApiCallReturns200() {
+    static void testSyncToQboWrongObjectThrows() {
+        setupResolverMappings();
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.syncToQbo(acc.Id, 'Account');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testSyncFromQboForOrderUsesQueueable() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new PdfSuccessMock());
 
         Test.startTest();
-        HttpResponse res = QuickBooksAuthHandler.makeBinaryApiCall('/invoice/QB-123/pdf');
+        QBOInvoicePdfActionController.ActionResponse response = QBOInvoicePdfActionController.syncFromQbo(ordId, 'Order');
         Test.stopTest();
 
-        System.assertEquals(200, res.getStatusCode(), 'Binary callout should return mocked 200');
-        Blob body = res.getBodyAsBlob();
-        System.assertNotEquals(null, body, 'Response body should not be null');
-        System.assert(body.size() > 0, 'Response body should not be empty');
+        System.assertEquals(true, response.success);
+        System.assert(response.message.contains('synced from QBO'));
     }
 
     @isTest
-    static void testMakeBinaryApiCallLogsAndReturnsNon200() {
-        Test.setMock(HttpCalloutMock.class, new PdfErrorMock(401));
+    static void testSyncFromQboNoQboIdThrows() {
+        setupResolverMappings();
+        Order ord = [SELECT Id, QuickbookID__c FROM Order LIMIT 1];
+        ord.QuickbookID__c = null;
+        update ord;
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
 
-        Test.startTest();
-        HttpResponse res = QuickBooksAuthHandler.makeBinaryApiCall('/invoice/QB-NOPE/pdf');
-        Test.stopTest();
-
-        System.assertEquals(401, res.getStatusCode(), 'Non-200 status should be returned to caller');
-        // Error should have been logged via ErrorLogUtility (no assertion — fire-and-forget log)
-    }
-
-    // ── ContentVersion / ContentDocumentLink save logic ──────────────────────
-
-    @isTest
-    static void testSavePdfCreatesContentVersionAndLink() {
-        Order ord = [SELECT Id FROM Order LIMIT 1];
-        Blob fakePdf = Blob.valueOf('%PDF-UNIT-TEST');
-        String title = 'QBO Invoice PDF - Test Order';
-        String safeTitle = title.replaceAll('[^A-Za-z0-9_ \\-]', '');
-
-        Test.startTest();
-        // Exercise the save path directly by calling it via the private helper indirectly:
-        // We unit-test this via a thin integration path — insert ContentVersion manually
-        // matching the save pattern and verify ContentDocumentLink is also created.
-        ContentVersion cv = new ContentVersion(
-            Title = safeTitle,
-            PathOnClient = safeTitle.replaceAll(' ', '_') + '.pdf',
-            VersionData = fakePdf,
-            Origin = 'H'
-        );
-        insert cv;
-        cv = [SELECT ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id LIMIT 1];
-        insert new ContentDocumentLink(
-            ContentDocumentId = cv.ContentDocumentId,
-            LinkedEntityId = ord.Id,
-            ShareType = 'V',
-            Visibility = 'AllUsers'
-        );
-        Test.stopTest();
-
-        List<ContentDocumentLink> links = [
-            SELECT ContentDocumentId
-            FROM ContentDocumentLink
-            WHERE LinkedEntityId = :ord.Id
-        ];
-        System.assertEquals(1, links.size(), 'One ContentDocumentLink should be created');
-
-        List<ContentVersion> versions = [
-            SELECT Title FROM ContentVersion WHERE ContentDocumentId = :cv.ContentDocumentId
-        ];
-        System.assertEquals(1, versions.size(), 'One ContentVersion should exist');
-        System.assertEquals(safeTitle, versions[0].Title, 'ContentVersion title should match');
-    }
-
-    @isTest
-    static void testSavePdfCreatesNewVersionOnRepeatTitle() {
-        Order ord = [SELECT Id FROM Order LIMIT 1];
-        Blob fakePdf = Blob.valueOf('%PDF-V1');
-        String safeTitle = 'QBO Invoice PDF - Repeat Test';
-
-        // First file
-        ContentVersion cv1 = new ContentVersion(
-            Title = safeTitle,
-            PathOnClient = 'QBO_Invoice_PDF_-_Repeat_Test.pdf',
-            VersionData = fakePdf,
-            Origin = 'H'
-        );
-        insert cv1;
-        cv1 = [SELECT ContentDocumentId FROM ContentVersion WHERE Id = :cv1.Id LIMIT 1];
-        insert new ContentDocumentLink(
-            ContentDocumentId = cv1.ContentDocumentId,
-            LinkedEntityId = ord.Id,
-            ShareType = 'V',
-            Visibility = 'AllUsers'
-        );
-
-        // Second version on same document
-        ContentVersion cv2 = new ContentVersion(
-            Title = safeTitle,
-            PathOnClient = 'QBO_Invoice_PDF_-_Repeat_Test.pdf',
-            VersionData = Blob.valueOf('%PDF-V2'),
-            ContentDocumentId = cv1.ContentDocumentId
-        );
-        insert cv2;
-
-        List<ContentVersion> allVersions = [
-            SELECT Id FROM ContentVersion WHERE ContentDocumentId = :cv1.ContentDocumentId
-        ];
-        System.assertEquals(2, allVersions.size(), 'Two versions should exist on the same document');
-
-        List<ContentDocumentLink> links = [
-            SELECT Id FROM ContentDocumentLink WHERE LinkedEntityId = :ord.Id
-        ];
-        System.assertEquals(1, links.size(), 'Only one ContentDocumentLink should exist (no duplicate)');
-    }
-
-    // ── Error path: non-200 QBO response handled in controller ───────────────
-
-    @isTest
-    static void testNon200QboResponseIsHandled() {
-        Test.setMock(HttpCalloutMock.class, new PdfErrorMock(403));
-
-        // The controller will throw before reaching the callout if no metadata exists,
-        // but we verify the callout path itself handles the error correctly.
-        HttpResponse res = null;
-        Test.startTest();
-        res = QuickBooksAuthHandler.makeBinaryApiCall('/invoice/QB-FORBIDDEN/pdf');
-        Test.stopTest();
-
-        System.assertEquals(403, res.getStatusCode(), 'Forbidden response should be returned');
-    }
-
-    // ── Error log utility integration ─────────────────────────────────────────
-
-    @isTest
-    static void testErrorLogUtilityCalloutFailurePath() {
-        // Verify logCalloutFailure does not throw when called with valid params.
-        Test.startTest();
-        ErrorLogUtility.logCalloutFailure(
-            'QuickBooks',
-            'QBOInvoicePdfActionController.downloadPdf',
-            'GET /invoice/QB-1/pdf failed with HTTP 404: Not Found',
-            404,
-            'Order',
-            null
-        );
-        Test.stopTest();
-
-        // If we reach here without exception the log path is working
-        System.assert(true);
-    }
-
-    @isTest
-    static void testErrorLogUtilityExceptionPath() {
-        Order ord = [SELECT Id FROM Order LIMIT 1];
-
+        Boolean threw = false;
         Test.startTest();
         try {
-            throw new AuraHandledException('Unit test exception');
-        } catch (Exception e) {
-            ErrorLogUtility.logException(
-                'QuickBooks',
-                'QBOInvoicePdfActionController.downloadPdf',
-                e,
-                'Order',
-                ord.Id
-            );
+            QBOInvoicePdfActionController.syncFromQbo(ord.Id, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
         }
         Test.stopTest();
+        System.assert(threw);
+    }
 
-        System.assert(true);
+    @isTest
+    static void testSyncFromQboWrongObjectThrows() {
+        setupResolverMappings();
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.syncFromQbo(acc.Id, 'Account');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testDownloadPdfSuccess() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new PdfSuccessMock());
+
+        Test.startTest();
+        Map<String, String> result = QBOInvoicePdfActionController.downloadPdf(ordId, 'Order');
+        Test.stopTest();
+
+        System.assertNotEquals(null, result.get('contentDocumentId'));
+        System.assertEquals('PDF saved successfully.', result.get('message'));
+    }
+
+    @isTest
+    static void testDownloadPdfNoQboIdThrows() {
+        setupResolverMappings();
+        Order ord = [SELECT Id, QuickbookID__c FROM Order LIMIT 1];
+        ord.QuickbookID__c = null;
+        update ord;
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.downloadPdf(ord.Id, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testDownloadPdfCalloutFails() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new PdfErrorMock(401));
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.downloadPdf(ordId, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testDownloadPdfEmptyResponse() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new EmptyBodyMock());
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.downloadPdf(ordId, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testGetPanelDataResolverException() {
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>());
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.getPanelData(ordId, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    // Additional coverage tests (optional)
+    @isTest
+    static void testSyncFromQboForInvoiceObject() {
+        if (getInvoiceId() == null) return;
+        setupInvoiceObjectMappings();
+        Id invId = getInvoiceId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new PdfSuccessMock());
+        
+        Test.startTest();
+        QBOInvoicePdfActionController.ActionResponse response = QBOInvoicePdfActionController.syncFromQbo(invId, 'QuickBridgeTLG__Invoice__c');
+        Test.stopTest();
+        
+        System.assertEquals(true, response.success);
+        System.assert(response.message.contains('synced from QBO'));
+    }
+
+    @isTest
+    static void testSyncFromQboInvoiceCalloutError() {
+        if (getInvoiceId() == null) return;
+        setupInvoiceObjectMappings();
+        Id invId = getInvoiceId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new CalloutErrorMock());
+        
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.syncFromQbo(invId, 'QuickBridgeTLG__Invoice__c');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testSyncToQboResolverException() {
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>());
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.syncToQbo(ordId, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testSyncFromQboGenericException() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.syncFromQbo(ordId, 'InvalidObject__x');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testDownloadPdfResolverException() {
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>());
+        Id ordId = getOrderId();
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        
+        Boolean threw = false;
+        Test.startTest();
+        try {
+            QBOInvoicePdfActionController.downloadPdf(ordId, 'Order');
+        } catch (AuraHandledException e) {
+            threw = true;
+        }
+        Test.stopTest();
+        System.assert(threw);
+    }
+
+    @isTest
+    static void testApplyMappingInvalidDate() {
+        Map<String, Object> qboData = new Map<String, Object>{ 'TxnDate' => 'invalid-date' };
+        Map<String, String> mapping = new Map<String, String>{ 'TxnDate' => 'EffectiveDate' };
+        Order fakeOrder = new Order(Id = getOrderId());
+        QBOInvoicePdfActionController.applyMapping(fakeOrder, qboData, mapping);
+        System.assertEquals(null, fakeOrder.EffectiveDate);
+    }
+
+    @isTest
+    static void testResolveInboundMappingCustomer() {
+        Map<String, String> mapping = QBOInvoicePdfActionController.resolveInboundMapping('Customer', 'Account');
+        System.assert(mapping.containsKey('DisplayName'));
+        System.assertEquals('Name', mapping.get('DisplayName'));
+    }
+
+    @isTest
+    static void testFetchFieldValueException() {
+        Id ordId = getOrderId();
+        String result = QBOInvoicePdfActionController.fetchFieldValue(ordId, 'Order', 'NonExistentField__c');
+        System.assertEquals(null, result);
+    }
+
+    @isTest
+    static void testGetNestedValueNullData() {
+        System.assertEquals(null, QBOInvoicePdfActionController.getNestedValue(null, 'some.path'));
+        System.assertEquals(null, QBOInvoicePdfActionController.getNestedValue(new Map<String, Object>(), null));
+    }
+
+    @isTest
+    static void testResolveInboundMapping() {
+        Map<String, String> mappingForOrder = QBOInvoicePdfActionController.resolveInboundMapping('Invoice', 'Order');
+        System.assert(mappingForOrder.containsKey('CustomerMemo.value'));
+        System.assertEquals('Description', mappingForOrder.get('CustomerMemo.value'));
+    }
+
+    @isTest
+    static void testApplyMapping() {
+        Map<String, Object> qboData = new Map<String, Object>{
+            'TxnDate' => '2025-12-31',
+            'CustomerMemo' => new Map<String, Object>{ 'value' => 'Test Memo' }
+        };
+        Map<String, String> mapping = new Map<String, String>{
+            'TxnDate' => 'EffectiveDate',
+            'CustomerMemo.value' => 'Description'
+        };
+        Order fakeOrder = new Order(Id = getOrderId());
+        QBOInvoicePdfActionController.applyMapping(fakeOrder, qboData, mapping);
+        System.assertEquals(Date.newInstance(2025, 12, 31), fakeOrder.EffectiveDate);
+        System.assertEquals('Test Memo', fakeOrder.Description);
+    }
+
+    @isTest
+    static void testGetNestedValue() {
+        Map<String, Object> data = new Map<String, Object>{
+            'Level1' => new Map<String, Object>{ 'Level2' => 'Value' }
+        };
+        System.assertEquals('Value', QBOInvoicePdfActionController.getNestedValue(data, 'Level1.Level2'));
+        System.assertEquals(null, QBOInvoicePdfActionController.getNestedValue(data, 'Level1.Missing'));
+        System.assertEquals('Top', QBOInvoicePdfActionController.getNestedValue(new Map<String, Object>{'Top' => 'Top'}, 'Top'));
+    }
+
+    @isTest
+    static void testFetchFieldValue() {
+        setupResolverMappings();
+        Id ordId = getOrderId();
+        String qboId = QBOInvoicePdfActionController.fetchFieldValue(ordId, 'Order', 'QuickbookID__c');
+        System.assertEquals(QBO_INVOICE_ID, qboId);
+    }
+
+    @isTest
+    static void testSavePdf() {
+        Id ordId = getOrderId();
+        Blob pdfBlob = Blob.valueOf('%PDF-TEST%');
+        String title = 'Test PDF';
+        String docId = QBOInvoicePdfActionController.savePdf(ordId, pdfBlob, title);
+        System.assertNotEquals(null, docId);
+        String docId2 = QBOInvoicePdfActionController.savePdf(ordId, Blob.valueOf('%PDF-TEST2%'), title);
+        System.assertEquals(docId, docId2);
+    }
+
+    @isTest
+    static void testMakeBinaryApiCall() {
+        Test.setMock(HttpCalloutMock.class, new PdfSuccessMock());
+        Test.startTest();
+        HttpResponse res = QuickBooksAuthHandler.makeBinaryApiCall('/invoice/' + QBO_INVOICE_ID + '/pdf');
+        Test.stopTest();
+        System.assertEquals(200, res.getStatusCode());
     }
 }

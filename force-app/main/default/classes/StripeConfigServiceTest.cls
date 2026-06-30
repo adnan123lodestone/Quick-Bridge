@@ -111,29 +111,6 @@ private class StripeConfigServiceTest {
     System.assertEquals(false, response.recordCreated);
   }
 
-  @IsTest
-  static void legacyFallbackCanBeExercisedWhenNoNormalizedConfigExists() {
-    StripeConfigService.useLegacyFallbackInTests = true;
-
-    StripeConfigService.Config config = StripeConfigService.getConfig();
-
-    System.assertNotEquals(null, config);
-    System.assertEquals(false, config.fromNormalizedConfig);
-    System.assertEquals(true, config.fromLegacyConfig);
-  }
-
-  @IsTest
-  static void stripeLegacyFallbackCanBeExercisedWhenQuickbridgeIsSkipped() {
-    StripeConfigService.useLegacyFallbackInTests = true;
-    StripeConfigService.skipQuickbridgeLegacyInTests = true;
-
-    StripeConfigService.Config config = StripeConfigService.getConfig();
-
-    System.assertNotEquals(null, config);
-    System.assertEquals(false, config.fromNormalizedConfig);
-    System.assertEquals(true, config.fromLegacyConfig);
-  }
-
   private static Connector_Instance__c createStripeInstance(Boolean active, Date expiryDate) {
     Connector_Instance__c instanceRecord = new Connector_Instance__c(
       Name = 'Stripe',

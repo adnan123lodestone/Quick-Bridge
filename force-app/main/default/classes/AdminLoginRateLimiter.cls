@@ -7,8 +7,14 @@ public with sharing class AdminLoginRateLimiter {
     private static final Integer MAX_ATTEMPTS = 5;
     private static final Integer WINDOW_SECONDS = 15 * 60; // 15 minutes
 
+    @TestVisible
+    private static Boolean disableForTests = true;
+
+    @TestVisible
+    private static Map<String, Integer> testCache = new Map<String, Integer>();
+
     /**
-        * @description Checks the default login bucket for the user and increments the attempt count.
+     * @description Checks the default login bucket for the user and increments the attempt count.
      * @param username Admin username being protected.
      */
     public static void checkAndIncrement(String username) {
@@ -16,42 +22,57 @@ public with sharing class AdminLoginRateLimiter {
     }
 
     /**
-        * @description Checks the named bucket for the user and increments the attempt count.
+     * @description Checks the named bucket for the user and increments the attempt count.
      * @param username Admin username being protected.
      * @param bucketName Rate-limit bucket name.
      */
     public static void checkAndIncrement(String username, String bucketName) {
-        if (String.isBlank(username) || Test.isRunningTest()) {
+        if (String.isBlank(username) || (Test.isRunningTest() && disableForTests)) {
             return;
         }
         String resolvedBucket = normalizeBucketName(bucketName);
         String key = buildKey(username, resolvedBucket);
         try {
-            Integer attempts = (Integer) Cache.Org.get(key);
-            if (attempts == null) {
-                attempts = 0;
+            Integer attempts;
+            if (Test.isRunningTest() && !disableForTests) {
+                // Use test cache when rate limiter is explicitly enabled in tests
+                attempts = testCache.get(key);
+                if (attempts == null) attempts = 0;
+                if (attempts >= MAX_ATTEMPTS) {
+                    String attemptLabel = resolvedBucket == PIN_RECOVERY_BUCKET
+                        ? 'PIN recovery attempts'
+                        : 'login attempts';
+                    String msg = 'Too many ' + attemptLabel + '. Please wait 15 minutes before trying again.';
+                    AuraHandledException ex = new AuraHandledException(msg);
+                    ex.setMessage(msg);
+                    throw ex;
+                }
+                testCache.put(key, attempts + 1);
+            } else {
+                // Real Platform Cache
+                attempts = (Integer) Cache.Org.get(key);
+                if (attempts == null) attempts = 0;
+                if (attempts >= MAX_ATTEMPTS) {
+                    String attemptLabel = resolvedBucket == PIN_RECOVERY_BUCKET
+                        ? 'PIN recovery attempts'
+                        : 'login attempts';
+                    String msg = 'Too many ' + attemptLabel + '. Please wait 15 minutes before trying again.';
+                    AuraHandledException ex = new AuraHandledException(msg);
+                    ex.setMessage(msg);
+                    throw ex;
+                }
+                Cache.Org.put(key, attempts + 1, WINDOW_SECONDS);
             }
-            if (attempts >= MAX_ATTEMPTS) {
-                String attemptLabel = resolvedBucket == PIN_RECOVERY_BUCKET
-                    ? 'PIN recovery attempts'
-                    : 'login attempts';
-                throw new AuraHandledException(
-                    'Too many ' + attemptLabel + '. Please wait 15 minutes before trying again.'
-                );
-            }
-            Cache.Org.put(key, attempts + 1, WINDOW_SECONDS);
         } catch (AuraHandledException e) {
             throw e;
         } catch (Exception e) {
-            // Platform Cache not provisioned or unavailable; allow through without DML.
-            // Do NOT call ErrorLogUtility here: it performs DML (inserts Error_Log__c),
-            // which would cause "uncommitted work pending" when the callout follows in the same transaction.
+            // Platform Cache not provisioned or unavailable; allow through.
             System.debug(LoggingLevel.DEBUG, 'AdminLoginRateLimiter unavailable: ' + e.getMessage());
         }
     }
 
     /**
-        * @description Clears the default login bucket after successful authentication.
+     * @description Clears the default login bucket after successful authentication.
      * @param username Admin username that authenticated successfully.
      */
     public static void clearOnSuccess(String username) {
@@ -59,7 +80,7 @@ public with sharing class AdminLoginRateLimiter {
     }
 
     /**
-        * @description Clears the named bucket after a successful protected action.
+     * @description Clears the named bucket after a successful protected action.
      * @param username Admin username that completed the protected action.
      * @param bucketName Rate-limit bucket name.
      */
@@ -68,9 +89,13 @@ public with sharing class AdminLoginRateLimiter {
             return;
         }
         try {
-            Cache.Org.remove(buildKey(username, bucketName));
+            if (Test.isRunningTest() && !disableForTests) {
+                String key = buildKey(username, bucketName);
+                testCache.remove(key);
+            } else {
+                Cache.Org.remove(buildKey(username, bucketName));
+            }
         } catch (Exception e) {
-            // Platform Cache not provisioned; safe to ignore on success path.
             System.debug(LoggingLevel.DEBUG, 'AdminLoginRateLimiter clear skipped: ' + e.getMessage());
         }
     }

@@ -4,6 +4,7 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
     private String nextUrl;
     
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
+    @TestVisible private static Boolean suppressFinishEnqueue = false;
     
     public ShopifyCustomersBatch(String endpoint) {
         this.endpoint = endpoint;
@@ -214,7 +215,7 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
     }
     
     global void finish(Database.BatchableContext BC) {
-        if (String.isNotBlank(this.nextUrl)) {
+        if (String.isNotBlank(this.nextUrl) && !suppressFinishEnqueue) {
             Database.executeBatch(new ShopifyCustomersBatch(this.nextUrl), 1);
         } else {
             System.debug('No nextUrl. All Shopify customers processed.');
@@ -347,5 +348,10 @@ global class ShopifyCustomersBatch implements Database.Batchable<Integer>, Datab
 
     private static Id getPersonAccountRecordTypeIdStatic() {
         return [SELECT Id FROM RecordType WHERE SObjectType = 'Account' AND DeveloperName = 'PersonAccount' LIMIT 1].Id;
+    }
+
+    @TestVisible
+    private static Account testBuildAccountFromShopifyCustomer(Map<String, Object> customer) {
+        return buildAccountFromShopifyCustomer(customer);
     }
 }

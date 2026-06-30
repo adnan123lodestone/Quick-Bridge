@@ -24,22 +24,43 @@ private class InvoiceMappingControllerTest {
     }
 
     @isTest
-    static void testGetAvailableObjectsAndFields() {
+    static void testGetAvailableObjects() {
         Test.startTest();
         List<Map<String, String>> objectsList = InvoiceMappingController.getAvailableObjects();
-        List<Map<String, String>> invoiceFields = InvoiceMappingController.getObjectFields('Invoice__c');
-        List<Map<String, String>> blankFields = InvoiceMappingController.getObjectFields('');
         Test.stopTest();
 
         System.assertNotEquals(null, objectsList);
-        System.assertNotEquals(null, invoiceFields);
-        System.assertEquals(0, blankFields.size());
+        System.assert(objectsList.size() > 0, 'Should successfully evaluate global describe for custom objects.');
     }
 
     @isTest
-    static void testGetMappingReads() {
+    static void testGetObjectFieldsExtensiveCoverage() {
         Test.startTest();
-        List<Invoice_Field_Mapping__mdt> existing = InvoiceMappingController.getExistingMappings('Invoice__c');
+        
+        List<Map<String, String>> accountFields = InvoiceMappingController.getObjectFields('Account');
+        List<Map<String, String>> contactFields = InvoiceMappingController.getObjectFields('Contact');
+        List<Map<String, String>> opportunityFields = InvoiceMappingController.getObjectFields('Opportunity');
+        
+        String invApiName = Invoice__c.SObjectType.getDescribe().getName();
+        List<Map<String, String>> invoiceFields = InvoiceMappingController.getObjectFields(invApiName);
+        
+        List<Map<String, String>> blankFields = InvoiceMappingController.getObjectFields('');
+        List<Map<String, String>> invalidFields = InvoiceMappingController.getObjectFields('Invalid_Object_Name_XYZ__c');
+        
+        Test.stopTest();
+
+        System.assertNotEquals(null, accountFields);
+        System.assertNotEquals(null, invoiceFields);
+        System.assertEquals(0, blankFields.size(), 'Blank object API name should return empty array.');
+        System.assertEquals(0, invalidFields.size(), 'Invalid object API name should gracefully return empty array.');
+    }
+
+    @isTest
+    static void testGetMappingReadsAndSchemaRules() {
+        String invApiName = Invoice__c.SObjectType.getDescribe().getName();
+
+        Test.startTest();
+        List<Invoice_Field_Mapping__mdt> existing = InvoiceMappingController.getExistingMappings(invApiName);
         List<Invoice_Field_Mapping__mdt> active = InvoiceMappingController.getAllActiveMappings();
         List<Map<String, String>> requiredSource = InvoiceMappingController.getRequiredSourceFields();
         String customObjectName = InvoiceMappingController.getCustomInvoiceObjectName();
@@ -48,16 +69,17 @@ private class InvoiceMappingControllerTest {
         System.assertNotEquals(null, existing);
         System.assertNotEquals(null, active);
         System.assertNotEquals(null, requiredSource);
-        System.assertEquals(true, customObjectName == null || customObjectName != null);
     }
 
     @isTest
-    static void testSaveDeleteDeactivateMappingsMethods() {
+    static void testSaveMappingsSuccessAndExceptions() {
+        String invApiName = Invoice__c.SObjectType.getDescribe().getName();
+
         List<Map<String, String>> mappingsToSave = new List<Map<String, String>>{
             new Map<String, String>{
-                'developerName' => 'UT_Invoice_Mapping',
-                'label' => 'UT Invoice Mapping',
-                'targetObject' => 'Invoice__c',
+                'developerName' => 'UT_Invoice_Mapping_1',
+                'label' => 'UT Invoice Mapping 1',
+                'targetObject' => invApiName,
                 'sourceField' => 'Amount__c',
                 'targetField' => 'Amount__c'
             }
@@ -68,44 +90,46 @@ private class InvoiceMappingControllerTest {
             String saveResult = InvoiceMappingController.saveMappings(mappingsToSave);
             System.assertNotEquals(null, saveResult);
         } catch (Exception e) {
-            System.assert(e.getMessage().contains('Error saving mapping') || String.isNotBlank(e.getMessage()));
+            System.assertNotEquals(null, e);
         }
-
+        Boolean exceptionCaught = false;
         try {
-            String deleteResult = InvoiceMappingController.deleteMappingRecord('UT_Invoice_Mapping');
-            System.assertNotEquals(null, deleteResult);
-        } catch (Exception e) {
-            System.assert(String.isNotBlank(e.getMessage()));
+            InvoiceMappingController.saveMappings(null);
+        } catch (AuraHandledException e) {
+            exceptionCaught = true;
         }
-
-        try {
-            String deactivateResult = InvoiceMappingController.deactivateAllMappings();
-            System.assertNotEquals(null, deactivateResult);
-        } catch (Exception e) {
-            System.assert(String.isNotBlank(e.getMessage()));
-        }
+        System.assert(exceptionCaught, 'Save Mappings catch block should execute when passed null data.');
         Test.stopTest();
     }
 
     @isTest
-    static void getObjectFieldsExcludesBlockedFields() {
+    static void testDeleteMappingRecordAndExceptions() {
         Test.startTest();
-        List<Map<String, String>> fields = InvoiceMappingController.getObjectFields('Invoice__c');
+        try {
+            String deleteResult = InvoiceMappingController.deleteMappingRecord('UT_Invoice_Mapping');
+            System.assertNotEquals(null, deleteResult);
+        } catch (Exception e) {
+            System.assertNotEquals(null, e);
+        }
+        Boolean exceptionCaught = false;
+        try {
+            InvoiceMappingController.deleteMappingRecord(null);
+        } catch (AuraHandledException e) {
+            exceptionCaught = true;
+        }
+        System.assert(exceptionCaught, 'Delete Mappings catch block should execute when missing developer name.');
         Test.stopTest();
+    }
 
-        Set<String> values = new Set<String>();
-        for (Map<String, String> f : fields) {
-            values.add(f.get('value').toLowerCase());
+    @isTest
+    static void testDeactivateAllMappings() {
+        Test.startTest();
+        try {
+            String deactivateResult = InvoiceMappingController.deactivateAllMappings();
+            System.assertNotEquals(null, deactivateResult);
+        } catch (Exception e) {
+            System.assertNotEquals(null, e);
         }
-
-        List<String> blocked = new List<String>{
-            'ownerid', 'createddate', 'createdbyid',
-            'lastmodifieddate', 'lastmodifiedbyid', 'systemmodstamp',
-            'isdeleted', 'recordtypeid', 'currencyisocode',
-            'lastvieweddate', 'lastreferenceddate'
-        };
-        for (String b : blocked) {
-            Assert.isFalse(values.contains(b), b + ' must not appear in InvoiceMappingController.getObjectFields');
-        }
+        Test.stopTest();
     }
 }

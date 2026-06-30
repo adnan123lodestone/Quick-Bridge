@@ -25,6 +25,8 @@ public with sharing class PaymentAdminService {
         AdminLoginRateLimiter.clearOnSuccess(username);
       }
       return responseBody;
+    } catch (AuraHandledException e) {
+      throw e;
     } catch (Exception e) {
       ErrorLogUtility.logException(
         'QuickBridge',
@@ -33,7 +35,10 @@ public with sharing class PaymentAdminService {
         null,
         null
       );
-      throw new AuraHandledException('Connection Error: ' + e.getMessage());
+      String msg = 'Connection Error: ' + e.getMessage();
+      AuraHandledException ex = new AuraHandledException(msg);
+      ex.setMessage(msg);
+      throw ex;
     }
   }
 
@@ -60,7 +65,7 @@ public with sharing class PaymentAdminService {
 
       HttpRequest req = new HttpRequest();
       req.setEndpoint(
-        'callout:Server_Org_API/services/apexrest/v1/recoverPin/'
+        'callout:QuickBridgeTLG__Server_Org_API/services/apexrest/v1/recoverPin/'
       );
       req.setMethod('POST');
       req.setHeader('Content-Type', 'application/json');
@@ -80,6 +85,8 @@ public with sharing class PaymentAdminService {
         );
       }
       return res.getBody();
+    } catch (AuraHandledException e) {
+      throw e;
     } catch (Exception e) {
       ErrorLogUtility.logException(
         'QuickBridge',
@@ -88,29 +95,32 @@ public with sharing class PaymentAdminService {
         null,
         null
       );
-      throw new AuraHandledException('Connection Error: ' + e.getMessage());
+      String msg = 'Connection Error: ' + e.getMessage();
+      AuraHandledException ex = new AuraHandledException(msg);
+      ex.setMessage(msg);
+      throw ex;
     }
   }
 
   @AuraEnabled
   public static String refreshLicenses(String sessionToken) {
-    Quickbridge_Config__mdt config = Quickbridge_Config__mdt.getInstance(
-      'Default'
-    );
-    if (config == null || String.isBlank(config.Username__c)) {
+    String companyName = ConnectorConfigResolver.getValue('serverorg', 'Company_Name__c');
+    String username = ConnectorConfigResolver.getValue('serverorg', 'Username__c');
+    String password = ConnectorConfigResolver.getValue('serverorg', 'Password__c');
+    if (String.isBlank(username)) {
       return 'Error: Missing Server Org credentials.';
     }
 
     HttpRequest req = new HttpRequest();
-    req.setEndpoint('callout:Server_Org_API/services/apexrest/v1/getLicenses');
+    req.setEndpoint('callout:QuickBridgeTLG__Server_Org_API/services/apexrest/v1/getLicenses');
     req.setMethod('POST');
     req.setHeader('Content-Type', 'application/json');
     req.setBody(
       JSON.serialize(
         new Map<String, String>{
-          'companyName' => config.Company_Name__c,
-          'username' => config.Username__c,
-          'password' => config.Password__c
+          'companyName' => companyName,
+          'username' => username,
+          'password' => password
         }
       )
     );
@@ -174,34 +184,31 @@ public with sharing class PaymentAdminService {
     String password,
     Boolean useSuppliedCredentials
   ) {
-    Quickbridge_Config__mdt config = loadServerOrgConfig(
-      useSuppliedCredentials == true
-    );
+    ServerOrgConfig config = loadServerOrgConfig(useSuppliedCredentials == true);
 
     Map<String, String> requestBody = new Map<String, String>();
     requestBody.put(
       'companyName',
-      config != null &&
-        config.Company_Name__c != null
-        ? config.Company_Name__c.trim()
+      config != null && config.companyName != null
+        ? config.companyName.trim()
         : ''
     );
     requestBody.put(
       'username',
       useSuppliedCredentials == true
         ? username.trim()
-        : config.Username__c.trim()
+        : config.username.trim()
     );
     requestBody.put(
       'password',
       useSuppliedCredentials == true
         ? password.trim()
-        : config.Password__c.trim()
+        : config.password.trim()
     );
 
     HttpRequest req = new HttpRequest();
     req.setEndpoint(
-      'callout:Server_Org_API/services/apexrest/v1/validateClient/'
+      'callout:QuickBridgeTLG__Server_Org_API/services/apexrest/v1/validateClient/'
     );
     req.setMethod('POST');
     req.setHeader('Content-Type', 'application/json');
@@ -234,36 +241,29 @@ public with sharing class PaymentAdminService {
     );
   }
 
-  private static Quickbridge_Config__mdt loadServerOrgConfig(
-    Boolean allowCompanyOnly
-  ) {
-    List<Quickbridge_Config__mdt> configs;
-    if (allowCompanyOnly == true) {
-      configs = [
-        SELECT Company_Name__c, Username__c, Password__c
-        FROM Quickbridge_Config__mdt
-        WHERE Company_Name__c != NULL
-        LIMIT 1
-      ];
-    } else {
-      configs = [
-        SELECT Company_Name__c, Username__c, Password__c
-        FROM Quickbridge_Config__mdt
-        WHERE
-          Username__c != NULL
-          AND Password__c != NULL
-          AND Company_Name__c != NULL
-        LIMIT 1
-      ];
+  private class ServerOrgConfig {
+    String companyName;
+    String username;
+    String password;
+  }
+
+  private static ServerOrgConfig loadServerOrgConfig(Boolean allowCompanyOnly) {
+    String companyName = ConnectorConfigResolver.getValue('serverorg', 'Company_Name__c');
+    String username = ConnectorConfigResolver.getValue('serverorg', 'Username__c');
+    String password = ConnectorConfigResolver.getValue('serverorg', 'Password__c');
+
+    if (!allowCompanyOnly && (String.isBlank(username) || String.isBlank(password) || String.isBlank(companyName))) {
+      throw new AuraHandledException('No valid credentials found in QuickBridge Metadata.');
     }
-    if (configs.isEmpty()) {
-      if (allowCompanyOnly == true)
-        return null;
-      throw new AuraHandledException(
-        'No valid credentials found in QuickBridge Metadata.'
-      );
+    if (allowCompanyOnly && String.isBlank(companyName)) {
+      return null;
     }
-    return configs[0];
+
+    ServerOrgConfig cfg = new ServerOrgConfig();
+    cfg.companyName = companyName;
+    cfg.username = username;
+    cfg.password = password;
+    return cfg;
   }
 
   private static String addSessionDetails(

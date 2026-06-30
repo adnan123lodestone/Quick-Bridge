@@ -89,4 +89,64 @@ private class KlaviyoProfilesBatchTest {
         System.assert(true, 'Finish method logic executed with nextUrl');
     }
 
+    @isTest
+    static void testBatchWithDateFilter() {
+        // Set mockDaysAgo to 1 so that filter is added
+        KlaviyoProfilesBatch.mockDaysAgo = 1;
+        
+        // Also need a mock that doesn't fail – reuse existing mock
+        Test.setMock(HttpCalloutMock.class, new KlaviyoMockCallout());
+        
+        Test.startTest();
+        Database.executeBatch(new KlaviyoProfilesBatch(), 1);
+        Test.stopTest();
+        
+        // Verify accounts created
+        System.assertEquals(1, [SELECT COUNT() FROM Account]);
+        
+        // Reset for other tests
+        KlaviyoProfilesBatch.mockDaysAgo = 0;
+    }
+    
+    @isTest
+    static void testBatchWithoutPersonAccounts() {
+        // Force no Person Accounts
+        KlaviyoProfilesBatch.forceBusinessAccountTest = true;
+        
+        Test.setMock(HttpCalloutMock.class, new KlaviyoMockCallout());
+        
+        Test.startTest();
+        Database.executeBatch(new KlaviyoProfilesBatch(), 1);
+        Test.stopTest();
+        
+        // Accounts should be business accounts (no PersonEmail, Name populated)
+        List<Account> accs = [SELECT Id, PersonEmail, Name, Klaviyo_ID__c FROM Account];
+        System.assertEquals(1, accs.size());
+        System.assertEquals(null, accs[0].PersonEmail, 'Should be business account');
+        System.assertNotEquals(null, accs[0].Name, 'Business account should have Name');
+        System.assertEquals('klaviyo-id-1', accs[0].Klaviyo_ID__c);
+        
+        // Reset
+        KlaviyoProfilesBatch.forceBusinessAccountTest = false;
+    }
+    
+    @isTest
+    static void testHelperMethodsDirectly() {
+        // Test buildBusinessAccountName
+        String name = KlaviyoProfilesBatch.buildBusinessAccountName('John', 'Doe', null, null, 'k1');
+        System.assertEquals('John Doe', name);
+        
+        name = KlaviyoProfilesBatch.buildBusinessAccountName('', '', 'TestOrg', '', 'k2');
+        System.assertEquals('TestOrg', name);
+        
+        name = KlaviyoProfilesBatch.buildBusinessAccountName('', '', '', 'test@ex.com', 'k3');
+        System.assertEquals('test@ex.com', name);
+        
+        name = KlaviyoProfilesBatch.buildBusinessAccountName('', '', '', '', 'k4');
+        System.assertEquals('k4', name);
+        
+        // Test getPastDateTimeFormatted
+        String formatted = KlaviyoProfilesBatch.getPastDateTimeFormatted(1);
+        System.assert(formatted.contains('T'), 'Should contain ISO date format');
+    }
 }
