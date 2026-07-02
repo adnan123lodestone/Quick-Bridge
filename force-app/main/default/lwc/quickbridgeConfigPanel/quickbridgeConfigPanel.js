@@ -20,6 +20,7 @@ import Authorize_Net_logo from "@salesforce/resourceUrl/Authorize_Net_logo";
 import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
 import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
 import Klaviyo_Logo from "@salesforce/resourceUrl/Klaviyo_Logo";
+import Meta_Logo from "@salesforce/resourceUrl/Meta_Logo";
 import recoverPin from "@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin";
 import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses";
 
@@ -34,8 +35,29 @@ const BUILT_IN_BRAND_LOGOS = {
   authnet: Authorize_Net_logo,
   fedex: FedEx_Logo,
   ups: UPS_Logo,
-  klaviyo: Klaviyo_Logo
+  klaviyo: Klaviyo_Logo,
+  meta: Meta_Logo,
+  facebook: Meta_Logo,
+  instagram: Meta_Logo,
+  metaads: Meta_Logo
 };
+
+const REQUIRED_CONNECTOR_TILES = [
+  {
+    id: "meta",
+    label: "Facebook / Instagram",
+    logoUrl: Meta_Logo,
+    productKey: "meta",
+    aliases: ["meta", "facebook", "instagram", "metaads", "meta ads"],
+    activeField: null,
+    expiryField: null,
+    startField: null,
+    hasConfig: true,
+    hasReporting: true,
+    hasMapping: true,
+    hasScheduler: true
+  }
+];
 
 export default class QuickbridgeConfigPanel extends LightningElement {
   @track currentScreen = "login";
@@ -57,7 +79,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   @track mappingAssistantContext = {};
   quickBridgeLogo = QuickBridge_Logo;
 
-  allTilesDefinition = [];
+  allTilesDefinition = [...REQUIRED_CONNECTOR_TILES];
 
   @track paymentMetadataConfigs = [];
   metadataFormValues = {};
@@ -408,12 +430,38 @@ export default class QuickbridgeConfigPanel extends LightningElement {
           hasScheduler: connector.hasScheduler
         }))
         .filter((tile) => tile.id && tile.label);
-      if (tiles.length) {
-        this.allTilesDefinition = tiles;
-      }
+      this.allTilesDefinition = this.ensureRequiredTiles(tiles);
     } catch (error) {
       console.error(error);
     }
+  }
+
+  ensureRequiredTiles(tiles) {
+    const result = [...(tiles || [])];
+    for (const requiredTile of REQUIRED_CONNECTOR_TILES) {
+      if (!this.hasMatchingTile(result, requiredTile)) {
+        result.push(requiredTile);
+      }
+    }
+    return result;
+  }
+
+  hasMatchingTile(tiles, requiredTile) {
+    const requiredKeys = this.tileMatchKeys(requiredTile);
+    return (tiles || []).some((tile) =>
+      this.tileMatchKeys(tile).some((key) => requiredKeys.includes(key))
+    );
+  }
+
+  tileMatchKeys(tile) {
+    return [
+      tile?.id,
+      tile?.productKey,
+      tile?.label,
+      ...(tile?.aliases || [])
+    ]
+      .map((value) => this.normalizeBrandKey(value))
+      .filter(Boolean);
   }
 
   resolveTileLogoUrl(connector) {

@@ -9,6 +9,7 @@
     <columns>Product_Type__c</columns>
     <columns>External_Id__c</columns>
     <columns>PRODUCT2.EXTERNAL_ID</columns>
+    <columns>PRODUCT2.CREATED_DATE</columns>
     <filterScope>Everything</filterScope>
     <label>All Products</label>
 </ListView>

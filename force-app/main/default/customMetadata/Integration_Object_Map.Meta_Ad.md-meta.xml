@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Meta Ad</label><protected>false</protected>
+    <values><field>Active__c</field><value xsi:type="xsd:boolean">true</value></values>
+    <values><field>Connector_Key__c</field><value xsi:type="xsd:string">meta</value></values>
+    <values><field>Direction__c</field><value xsi:type="xsd:string">Inbound</value></values>
+    <values><field>External_Object__c</field><value xsi:type="xsd:string">ad</value></values>
+    <values><field>Operation_Key__c</field><value xsi:type="xsd:string">CampaignSync</value></values>
+    <values><field>Salesforce_Object__c</field><value xsi:type="xsd:string">Meta_Ad__c</value></values>
+</CustomMetadata>

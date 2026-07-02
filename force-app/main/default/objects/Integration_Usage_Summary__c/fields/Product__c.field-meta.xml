@@ -52,7 +52,7 @@
             <value>
                 <fullName>klaviyo</fullName>
                 <default>false</default>
-                <label>Klaviyo</label>
+                <label>klaviyo</label>
             </value>
         </valueSetDefinition>
     </valueSet>

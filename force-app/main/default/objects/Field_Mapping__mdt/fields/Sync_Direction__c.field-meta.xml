@@ -64,6 +64,16 @@
                 <default>false</default>
                 <label>Carrier to SF</label>
             </value>
+            <value>
+                <fullName>SF to DHL</fullName>
+                <default>false</default>
+                <label>SF to DHL</label>
+            </value>
+            <value>
+                <fullName>DHL to SF</fullName>
+                <default>false</default>
+                <label>DHL to SF</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

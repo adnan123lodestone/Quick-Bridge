@@ -23,7 +23,8 @@
             <value>
                 <fullName>dhl</fullName>
                 <default>false</default>
-                <label>DHL</label>
+                <isActive>false</isActive>
+                <label>dhl</label>
             </value>
         </valueSetDefinition>
     </valueSet>

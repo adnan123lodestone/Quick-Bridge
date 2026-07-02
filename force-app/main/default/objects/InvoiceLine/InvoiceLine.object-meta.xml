@@ -59,10 +59,5 @@
     <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
     <enableFeeds>false</enableFeeds>
     <externalSharingModel>ControlledByParent</externalSharingModel>
-    <searchLayouts>
-        <searchResultsAdditionalFields>Type</searchResultsAdditionalFields>
-        <searchResultsAdditionalFields>RelatedLine</searchResultsAdditionalFields>
-        <searchResultsAdditionalFields>LineAmount</searchResultsAdditionalFields>
-    </searchLayouts>
     <sharingModel>ControlledByParent</sharingModel>
 </CustomObject>

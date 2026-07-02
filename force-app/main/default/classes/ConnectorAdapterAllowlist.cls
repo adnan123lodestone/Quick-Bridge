@@ -19,6 +19,8 @@ public with sharing class ConnectorAdapterAllowlist {
     'QBCreditMemoWorker',
     'QBPurchaseOrderWorker',
     'ShopifyIntegrationWorker',
+    'MetaIntegrationWorker',
+    'MetaScheduledOperationAdapter',
     'UsageIntegrationWorker',
     'CarrierIntegrationWorker',
     'PaymentIntegrationWorker',

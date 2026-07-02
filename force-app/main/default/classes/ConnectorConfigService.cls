@@ -204,7 +204,10 @@ public without sharing class ConnectorConfigService {
     configValue.Connector_Key__c = descriptor.connectorKey;
     configValue.Field_Key__c = fieldKey;
     configValue.Value__c = value;
-    configValue.Is_Secret_Reference__c = false;
+    configValue.Is_Secret_Reference__c =
+      fieldDescriptor != null &&
+      String.isNotBlank(fieldDescriptor.dataType) &&
+      fieldDescriptor.dataType.equalsIgnoreCase('SecretReference');
     upsert configValue;
     QuickBridgeAdminGuard.audit(
       'CONFIG_VALUE_UPSERT',

@@ -31,7 +31,7 @@ private class IntegrationProductSeedServiceTest {
       LIMIT 1
     ];
     System.assertEquals('ups', ups.Connector_Key__c);
-    System.assertEquals(null, ups.Logo_URL__c);
+    System.assertEquals('/resource/UPS_Logo', ups.Logo_URL__c);
 
     Integration_Product__c klaviyo = [
       SELECT
@@ -56,6 +56,25 @@ private class IntegrationProductSeedServiceTest {
     System.assertEquals('dhl', dhl.Connector_Key__c);
     System.assertEquals('DHL', dhl.Product_Label__c);
     System.assertEquals(true, dhl.Has_Carrier__c);
+
+    Integration_Product__c meta = [
+      SELECT Product_Key__c, Connector_Key__c, Product_Label__c, Category__c,
+        Logo_URL__c,
+        Has_Config__c, Has_Reporting__c, Has_Mapping__c, Has_Scheduler__c,
+        System_Managed__c
+      FROM Integration_Product__c
+      WHERE Product_Key__c = 'meta'
+      LIMIT 1
+    ];
+    System.assertEquals('meta', meta.Connector_Key__c);
+    System.assertEquals('Facebook / Instagram', meta.Product_Label__c);
+    System.assertEquals('Marketing', meta.Category__c);
+    System.assertEquals('/resource/Meta_Logo', meta.Logo_URL__c);
+    System.assertEquals(true, meta.Has_Config__c);
+    System.assertEquals(true, meta.Has_Reporting__c);
+    System.assertEquals(true, meta.Has_Mapping__c);
+    System.assertEquals(true, meta.Has_Scheduler__c);
+    System.assertEquals(true, meta.System_Managed__c);
   }
 
   @IsTest

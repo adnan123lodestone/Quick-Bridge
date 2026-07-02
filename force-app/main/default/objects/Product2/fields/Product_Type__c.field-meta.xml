@@ -24,6 +24,12 @@
                 <default>false</default>
                 <label>Non-Inventory</label>
             </value>
+            <value>
+                <fullName>NonInventory</fullName>
+                <default>false</default>
+                <isActive>false</isActive>
+                <label>NonInventory</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

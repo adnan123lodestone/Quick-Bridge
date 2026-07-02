@@ -51,15 +51,15 @@
     <picklistValues>
         <picklist>Carrier_Type__c</picklist>
         <values>
+            <fullName>DHL</fullName>
+            <default>false</default>
+        </values>
+        <values>
             <fullName>FedEx</fullName>
             <default>false</default>
         </values>
         <values>
             <fullName>UPS</fullName>
-            <default>false</default>
-        </values>
-        <values>
-            <fullName>DHL</fullName>
             <default>false</default>
         </values>
     </picklistValues>

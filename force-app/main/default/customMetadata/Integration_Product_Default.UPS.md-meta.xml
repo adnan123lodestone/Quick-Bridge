@@ -72,7 +72,7 @@
     </values>
     <values>
         <field>Logo_URL__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:string">/resource/UPS_Logo</value>
     </values>
     <values>
         <field>Product_Key__c</field>
