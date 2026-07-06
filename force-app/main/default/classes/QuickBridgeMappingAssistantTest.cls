@@ -143,6 +143,34 @@ private class QuickBridgeMappingAssistantTest {
   }
 
   @IsTest
+  static void metaMappingAssistantSuggestsCampaignAndLeadFields() {
+    Test.startTest();
+    List<QuickBridgeMappingAssistantController.MappingSuggestion> campaignSuggestions =
+      QuickBridgeMappingAssistantController.suggestMappings(
+        'meta',
+        'Campaign',
+        'Campaign'
+      );
+    QuickBridgeMappingAssistantController.MappingReviewResult leadReview =
+      QuickBridgeMappingAssistantController.reviewMappings(
+        'meta',
+        'Lead',
+        'LeadAd',
+        null
+      );
+    Test.stopTest();
+
+    Assert.isTrue(
+      hasExternalSuggestion(campaignSuggestions, 'id'),
+      'Campaign mapping guidance should expose the required Meta campaign id field.'
+    );
+    Assert.isTrue(
+      leadReview.missingRequiredFields.size() > 0,
+      'Lead ad mapping guidance should expose required Meta lead fields.'
+    );
+  }
+
+  @IsTest
   static void reviewMappingsStaysWithinCpuBudgetForLargeObject() {
     // Account/Order resolve to large field sets; this is the path that previously
     // exceeded the Apex CPU limit because tokens were recomputed for every
@@ -199,5 +227,38 @@ private class QuickBridgeMappingAssistantTest {
     Assert.areEqual('Needs Context', summary.status);
     Assert.areEqual(0, suggestions.size());
     Assert.areEqual('Needs Context', review.status);
+  }
+
+  private static Boolean hasSuggestion(
+    List<QuickBridgeMappingAssistantController.MappingSuggestion> suggestions,
+    String salesforceField,
+    String externalField
+  ) {
+    for (
+      QuickBridgeMappingAssistantController.MappingSuggestion suggestion : suggestions
+    ) {
+      if (
+        suggestion.salesforceField != null &&
+        suggestion.salesforceField.endsWith(salesforceField) &&
+        suggestion.externalField == externalField
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Boolean hasExternalSuggestion(
+    List<QuickBridgeMappingAssistantController.MappingSuggestion> suggestions,
+    String externalField
+  ) {
+    for (
+      QuickBridgeMappingAssistantController.MappingSuggestion suggestion : suggestions
+    ) {
+      if (suggestion.externalField == externalField) {
+        return true;
+      }
+    }
+    return false;
   }
 }

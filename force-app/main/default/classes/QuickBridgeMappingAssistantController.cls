@@ -533,7 +533,13 @@ public with sharing class QuickBridgeMappingAssistantController {
       if (!isTypeCompatible(sfField.type, externalField.type)) {
         continue;
       }
-      Decimal confidence = score(sfField, externalField);
+      Decimal confidence = score(
+        connectorKey,
+        salesforceObject,
+        externalObject,
+        sfField,
+        externalField
+      );
       if (externalField.required) {
         confidence += 5;
       }
@@ -572,7 +578,13 @@ public with sharing class QuickBridgeMappingAssistantController {
     return best;
   }
 
-  private static Decimal score(FieldInfo sfField, FieldInfo externalField) {
+  private static Decimal score(
+    String connectorKey,
+    String salesforceObject,
+    String externalObject,
+    FieldInfo sfField,
+    FieldInfo externalField
+  ) {
     String sfNorm = sfField.getNormalized();
     String extNorm = externalField.getNormalized();
     Set<String> sfTokens = sfField.getTokens();
@@ -601,6 +613,20 @@ public with sharing class QuickBridgeMappingAssistantController {
     }
     if (isTypeCompatible(sfField.type, externalField.type)) {
       scoreValue += 8;
+    }
+    if (
+      isConnectorExternalIdField(
+        connectorKey,
+        salesforceObject,
+        externalObject,
+        sfField.value,
+        externalField.value
+      )
+    ) {
+      scoreValue += 30;
+    }
+    if (sfField.value == 'Id' && normalizeForCompare(externalField.value) == 'id') {
+      scoreValue -= 35;
     }
     return Math.min(99, scoreValue);
   }
@@ -694,6 +720,17 @@ public with sharing class QuickBridgeMappingAssistantController {
         ) {
           fields.add(fromExternalMap(row));
         }
+      } else if (connector == 'netsuite') {
+        for (
+          Map<String, Object> row : FieldMappingController.getNetSuiteFields(
+            salesforceObject,
+            externalObject
+          )
+        ) {
+          fields.add(fromExternalMap(row));
+        }
+      } else if (connector == 'meta') {
+        fields.addAll(metaFields(externalObject));
       } else if (isPaymentConnector(connector)) {
         fields.addAll(paymentFields(connector));
       }
@@ -752,6 +789,67 @@ public with sharing class QuickBridgeMappingAssistantController {
     return fields;
   }
 
+  private static List<FieldInfo> metaFields(String externalObject) {
+    List<FieldInfo> fields = new List<FieldInfo>();
+    String entity = String.isBlank(externalObject)
+      ? ''
+      : externalObject.toLowerCase().replaceAll('[^a-z0-9]', '');
+    if (entity == 'campaign') {
+      fields.add(new FieldInfo('Meta Campaign ID', 'id', 'STRING', true));
+      fields.add(new FieldInfo('Campaign Name', 'name', 'STRING', true));
+      fields.add(new FieldInfo('Ad Account ID', 'account_id', 'STRING', false));
+      fields.add(new FieldInfo('Objective', 'objective', 'STRING', false));
+      fields.add(new FieldInfo('Status', 'status', 'STRING', false));
+      fields.add(new FieldInfo('Daily Budget', 'daily_budget', 'NUMBER', false));
+      fields.add(new FieldInfo('Lifetime Budget', 'lifetime_budget', 'NUMBER', false));
+    } else if (entity == 'adset') {
+      fields.add(new FieldInfo('Meta Ad Set ID', 'id', 'STRING', true));
+      fields.add(new FieldInfo('Ad Set Name', 'name', 'STRING', true));
+      fields.add(new FieldInfo('Meta Campaign ID', 'campaign_id', 'STRING', true));
+      fields.add(new FieldInfo('Status', 'status', 'STRING', false));
+      fields.add(new FieldInfo('Optimization Goal', 'optimization_goal', 'STRING', false));
+      fields.add(new FieldInfo('Daily Budget', 'daily_budget', 'NUMBER', false));
+      fields.add(new FieldInfo('Lifetime Budget', 'lifetime_budget', 'NUMBER', false));
+    } else if (entity == 'ad') {
+      fields.add(new FieldInfo('Meta Ad ID', 'id', 'STRING', true));
+      fields.add(new FieldInfo('Ad Name', 'name', 'STRING', true));
+      fields.add(new FieldInfo('Meta Campaign ID', 'campaign_id', 'STRING', true));
+      fields.add(new FieldInfo('Meta Ad Set ID', 'adset_id', 'STRING', true));
+      fields.add(new FieldInfo('Status', 'status', 'STRING', false));
+      fields.add(new FieldInfo('Creative ID', 'creative.id', 'STRING', false));
+      fields.add(new FieldInfo('Preview Link', 'preview_shareable_link', 'STRING', false));
+    } else if (entity == 'leadad' || entity == 'leadads' || entity == 'lead') {
+      fields.add(new FieldInfo('Meta Leadgen ID', 'id', 'STRING', true));
+      fields.add(new FieldInfo('Meta Campaign ID', 'campaign_id', 'STRING', false));
+      fields.add(new FieldInfo('Meta Ad Set ID', 'adset_id', 'STRING', false));
+      fields.add(new FieldInfo('Meta Ad ID', 'ad_id', 'STRING', false));
+      fields.add(new FieldInfo('Form ID', 'form_id', 'STRING', false));
+      fields.add(new FieldInfo('Email', 'email', 'STRING', false));
+      fields.add(new FieldInfo('Phone Number', 'phone_number', 'STRING', false));
+      fields.add(new FieldInfo('Full Name', 'full_name', 'STRING', false));
+      fields.add(new FieldInfo('First Name', 'first_name', 'STRING', false));
+      fields.add(new FieldInfo('Last Name', 'last_name', 'STRING', false));
+    } else if (entity == 'campaignmemberattribution') {
+      fields.add(new FieldInfo('Meta Leadgen ID', 'leadgen_id', 'STRING', true));
+      fields.add(new FieldInfo('Meta Campaign ID', 'campaign_id', 'STRING', true));
+      fields.add(new FieldInfo('Campaign Member Status', 'status', 'STRING', false));
+    } else if (entity == 'commentattribution') {
+      fields.add(new FieldInfo('Meta Comment ID', 'comment_id', 'STRING', true));
+      fields.add(new FieldInfo('Meta Post ID', 'post_id', 'STRING', false));
+      fields.add(new FieldInfo('Meta Campaign ID', 'campaign_id', 'STRING', false));
+      fields.add(new FieldInfo('Comment Text', 'comment_text', 'STRING', false));
+      fields.add(new FieldInfo('Commenter Name', 'commenter_name', 'STRING', false));
+    } else if (entity == 'insights') {
+      fields.add(new FieldInfo('Meta Object ID', 'id', 'STRING', true));
+      fields.add(new FieldInfo('Spend', 'spend', 'NUMBER', false));
+      fields.add(new FieldInfo('Impressions', 'impressions', 'NUMBER', false));
+      fields.add(new FieldInfo('Clicks', 'clicks', 'NUMBER', false));
+      fields.add(new FieldInfo('Reach', 'reach', 'NUMBER', false));
+      fields.add(new FieldInfo('Leads', 'actions.lead', 'NUMBER', false));
+    }
+    return fields;
+  }
+
   private static List<MappingRow> loadExistingMappings(
     String connectorKey,
     String salesforceObject,
@@ -785,6 +883,12 @@ public with sharing class QuickBridgeMappingAssistantController {
       } else if (connector == 'qbo' || connector == 'qbonline') {
         existing = FieldMappingController.getExistingMappings(
           'qbonline',
+          salesforceObject,
+          externalObject
+        );
+      } else if (connector == 'netsuite') {
+        existing = FieldMappingController.getExistingMappings(
+          'netsuite',
           salesforceObject,
           externalObject
         );
@@ -889,6 +993,8 @@ public with sharing class QuickBridgeMappingAssistantController {
       connector == 'fedex' ||
       connector == 'ups' ||
       connector == 'dhl' ||
+      connector == 'netsuite' ||
+      connector == 'meta' ||
       isPaymentConnector(connector);
   }
 
@@ -916,6 +1022,12 @@ public with sharing class QuickBridgeMappingAssistantController {
     }
     if (connectorKey == 'shopify') {
       return 'Two-Way';
+    }
+    if (connectorKey == 'netsuite') {
+      return 'NetSuite to SF';
+    }
+    if (connectorKey == 'meta') {
+      return 'Meta to SF';
     }
     return 'Two-Way';
   }
@@ -986,7 +1098,9 @@ public with sharing class QuickBridgeMappingAssistantController {
         part != 'fedex' &&
         part != 'ups' &&
         part != 'dhl' &&
-        part != 'shopify'
+        part != 'shopify' &&
+        part != 'netsuite' &&
+        part != 'meta'
       ) {
         result.add(part);
       }
@@ -1126,6 +1240,39 @@ public with sharing class QuickBridgeMappingAssistantController {
       return true;
     }
     return false;
+  }
+
+  private static Boolean isConnectorExternalIdField(
+    String connectorKey,
+    String salesforceObject,
+    String externalObject,
+    String salesforceField,
+    String externalField
+  ) {
+    String connector = normalizeConnector(connectorKey);
+    String external = compact(externalField);
+    String sfField = compact(salesforceField);
+    String sfObject = compact(salesforceObject);
+    String externalObj = compact(externalObject);
+    if (external != 'id') {
+      return false;
+    }
+    if (connector == 'meta') {
+      if (sfObject == 'campaign') return sfField.endsWith('metacampaignidc');
+      if (sfObject.endsWith('metaadsetc')) return sfField.endsWith('metaadsetidc');
+      if (sfObject.endsWith('metaadc')) return sfField.endsWith('metaadidc');
+      if (sfObject == 'lead' || externalObj == 'leadad') return sfField.endsWith('metaleadgenidc');
+    }
+    if (connector == 'netsuite') {
+      return sfField.endsWith('externalidc') ||
+        sfField.endsWith('externalshipmentidc') ||
+        sfField.endsWith('gatewayeventidc');
+    }
+    return false;
+  }
+
+  private static String compact(String value) {
+    return String.isBlank(value) ? '' : value.toLowerCase().replaceAll('[^a-z0-9]', '');
   }
 
   private static String safe(String value) {

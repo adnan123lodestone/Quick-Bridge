@@ -1,0 +1,224 @@
+<template>
+  <div class="mapping-container">
+    <template if:true={isLoading}>
+      <div class="loading-spinner">
+        <lightning-spinner
+          alternative-text="Loading..."
+          size="medium"
+        ></lightning-spinner>
+      </div>
+    </template>
+
+    <template if:false={isLoading}>
+      <template if:false={hasObjectMaps}>
+        <div class="ui-card empty-state slds-p-around_large">
+          No active object maps are configured for {externalLabel}.
+        </div>
+      </template>
+
+      <template if:true={hasObjectMaps}>
+        <div class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large">
+          <div class="slds-grid slds-grid_vertical-align-end slds-gutters">
+            <div class="slds-col slds-size_3-of-5">
+              <label class="custom-label">Object Map</label>
+              <select
+                class="custom-select"
+                name="objectMap"
+                onchange={handleObjectMapChange}
+              >
+                <template for:each={objectMapOptions} for:item="option">
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    selected={option.selected}
+                  >
+                    {option.label}
+                  </option>
+                </template>
+              </select>
+            </div>
+            <div class="slds-col slds-size_1-of-5">
+              <label class="custom-label">Salesforce</label>
+              <div class="readonly-pill">{selectedSFObject}</div>
+            </div>
+            <div class="slds-col slds-size_1-of-5">
+              <label class="custom-label">{externalLabel}</label>
+              <div class="readonly-pill">{selectedExternalObject}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ui-card table-card slds-p-around_large">
+          <div class="slds-grid slds-grid_align-spread slds-m-bottom_medium">
+            <div>
+              <h3 class="box-title">{tableTitle}</h3>
+              <p class="slds-text-color_weak font-size-sm">{helperText}</p>
+            </div>
+            <button class="btn-primary btn-inline" onclick={handleAddRow}>
+              Add Field
+            </button>
+          </div>
+
+          <div class="slds-scrollable_x">
+            <table class="new-mapping-table fixed-layout">
+              <colgroup>
+                <col style="width: 32%" />
+                <col style="width: 20%" />
+                <col style="width: 32%" />
+                <col style="width: 16%" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>{externalLabel} Field</th>
+                  <th class="text-center">Sync Direction</th>
+                  <th>Salesforce Field</th>
+                  <th class="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template for:each={mappingRows} for:item="row">
+                  <tr key={row.id}>
+                    <td class="input-cell">
+                      <div class="field-with-required">
+                        <select
+                          class="custom-select-table full-width"
+                          name="externalField"
+                          onchange={handleExternalFieldChange}
+                          data-row-id={row.id}
+                          disabled={row.isMandatory}
+                        >
+                          <option value="" selected={row.isExternalFieldBlank}>
+                            -- None --
+                          </option>
+                          <template
+                            for:each={row.externalFieldOptions}
+                            for:item="option"
+                          >
+                            <option
+                              key={option.value}
+                              value={option.value}
+                              selected={option.selected}
+                            >
+                              {option.label}
+                            </option>
+                          </template>
+                        </select>
+                        <template if:true={row.isMandatory}>
+                          <span class="required-star" title={requiredTitle}>*</span>
+                        </template>
+                      </div>
+                    </td>
+                    <td class="text-center">
+                      <select
+                        class={row.fieldBorderClass}
+                        name="syncDirection"
+                        onchange={handleSyncDirectionChange}
+                        data-row-id={row.id}
+                      >
+                        <template
+                          for:each={row.syncDirectionOptions}
+                          for:item="option"
+                        >
+                          <option
+                            key={option.value}
+                            value={option.value}
+                            selected={option.selected}
+                          >
+                            {option.label}
+                          </option>
+                        </template>
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        class="custom-select-table full-width"
+                        name="sfField"
+                        onchange={handleSFFieldChange}
+                        data-row-id={row.id}
+                        disabled={row.isSFFieldDisabled}
+                      >
+                        <option value="" selected={row.isSfFieldBlank}>
+                          -- None --
+                        </option>
+                        <template for:each={row.sfFieldOptions} for:item="option">
+                          <option
+                            key={option.value}
+                            value={option.value}
+                            selected={option.selected}
+                          >
+                            {option.label}
+                          </option>
+                        </template>
+                      </select>
+                    </td>
+                    <td class="text-right">
+                      <template if:false={row.isMandatory}>
+                        <button
+                          class="slds-button slds-button_icon trash-btn"
+                          title="Delete"
+                          onclick={handleRemoveRow}
+                          data-row-id={row.id}
+                        >
+                          <lightning-icon
+                            icon-name="utility:delete"
+                            size="x-small"
+                          ></lightning-icon>
+                        </button>
+                      </template>
+                      <template if:true={row.isMandatory}>
+                        <lightning-icon
+                          icon-name="utility:lock"
+                          size="x-small"
+                          title="Locked"
+                          class="locked-icon"
+                        ></lightning-icon>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="slds-m-top_large slds-grid slds-grid_align-spread footer-actions">
+          <p class="slds-text-color_weak font-size-sm">{footerText}</p>
+          <div class="slds-grid slds-gutters">
+            <div class="slds-col">
+              <button class="btn-secondary" onclick={handleResetClick}>
+                Reset
+              </button>
+            </div>
+            <div class="slds-col">
+              <button class="btn-primary" onclick={handleSave}>
+                Save Mappings
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
+
+    <template if:true={showResetConfirm}>
+      <div class="reset-modal-backdrop" onclick={handleResetCancel}></div>
+      <div class="reset-modal">
+        <h3 class="reset-modal-title">Clear Mappings</h3>
+        <p class="reset-modal-body">
+          Clear saved mappings for this object map? This cannot be undone.
+        </p>
+        <div class="reset-modal-footer">
+          <button
+            type="button"
+            class="btn-secondary"
+            onclick={handleResetCancel}
+          >
+            Cancel
+          </button>
+          <button type="button" class="btn-danger" onclick={handleResetConfirm}>
+            Clear Mappings
+          </button>
+        </div>
+      </div>
+    </template>
+  </div>
+</template>

@@ -558,4 +558,195 @@ public class FieldMappingControllerTest {
 
     Assert.isFalse(threw, 'Salesforce Id should never be blocked by eligibility check');
   }
+
+  @isTest
+  static void getNetSuiteFieldsResolvesSupportedEntities() {
+    List<Map<String, Object>> customerFields = FieldMappingController.getNetSuiteFields(
+      'Account',
+      null
+    );
+    List<Map<String, Object>> itemFields = FieldMappingController.getNetSuiteFields(
+      'Product2',
+      null
+    );
+    List<Map<String, Object>> invoiceFields = FieldMappingController.getNetSuiteFields(
+      'Invoice__c',
+      null
+    );
+
+    Set<String> customerValues = new Set<String>();
+    for (Map<String, Object> fieldInfo : customerFields) {
+      customerValues.add(String.valueOf(fieldInfo.get('value')));
+    }
+
+    Assert.isTrue(customerFields.size() > 0, 'Customer fields should be available.');
+    Assert.isTrue(customerValues.contains('id'), 'Customer fields should include NetSuite id.');
+    Assert.isTrue(itemFields.size() > 0, 'Item fields should be available.');
+    Assert.isTrue(invoiceFields.size() > 0, 'Invoice roadmap fields should be available.');
+  }
+
+  @isTest
+  static void getNetSuiteFieldsResolvesPhaseTwoEntitiesAndDirections() {
+    List<Map<String, Object>> salesOrderLineFields = FieldMappingController.getNetSuiteFields(
+      'OrderItem',
+      null
+    );
+    List<Map<String, Object>> invoiceLineFields = FieldMappingController.getNetSuiteFields(
+      'Invoice_Line__c',
+      null
+    );
+    List<Map<String, Object>> paymentFields = FieldMappingController.getNetSuiteFields(
+      'Portal_Payment_Transaction__c',
+      null
+    );
+    List<Map<String, Object>> fulfillmentFields = FieldMappingController.getNetSuiteFields(
+      'Carrier_Shipment__c',
+      null
+    );
+
+    Assert.isTrue(values(salesOrderLineFields).contains('line'));
+    Assert.isTrue(values(invoiceLineFields).contains('amount'));
+    Assert.isTrue(values(paymentFields).contains('payment'));
+    Assert.isTrue(values(fulfillmentFields).contains('trackingnumbers'));
+
+    FieldMappingController.testActiveMappings = new List<Field_Mapping__mdt>{
+      buildTestMapping('netsuite', 'Account', 'NetSuite to SF')
+    };
+
+    Map<String, Object> availability = FieldMappingController.getMappingDirectionAvailability(
+      'netsuite',
+      'Account'
+    );
+    Assert.areEqual(true, (Boolean) availability.get('inboundAllowed'));
+    Assert.areEqual(true, (Boolean) availability.get('outboundAllowed'));
+  }
+
+  @isTest
+  static void getExternalFieldsRoutesMetaAndNetSuiteDefinitions() {
+    List<Map<String, Object>> metaCampaignFields = FieldMappingController.getExternalFields(
+      'meta',
+      'Campaign',
+      'campaign'
+    );
+    List<Map<String, Object>> netSuiteCustomerFields = FieldMappingController.getExternalFields(
+      'netsuite',
+      'Account',
+      'Customer'
+    );
+
+    Assert.isTrue(values(metaCampaignFields).contains('id'), 'Meta campaign fields should include id.');
+    Assert.isTrue(values(metaCampaignFields).contains('name'), 'Meta campaign fields should include name.');
+    Assert.isTrue(values(netSuiteCustomerFields).contains('companyname'), 'NetSuite customer fields should include companyname.');
+  }
+
+  @isTest
+  static void getExternalFieldsCoversMetaAndNetSuiteObjectFamilies() {
+    Map<String, String> metaObjects = new Map<String, String>{
+      'Meta_Ad_Set__c' => 'adset',
+      'Meta_Ad__c' => 'ad',
+      'Lead' => 'leadad',
+      'CampaignMember' => 'campaignmemberattribution',
+      'Social_Interaction__c' => 'commentattribution',
+      'Meta_Insight__c' => 'insights'
+    };
+    for (String sfObject : metaObjects.keySet()) {
+      List<Map<String, Object>> fields = FieldMappingController.getExternalFields(
+        'meta',
+        sfObject,
+        metaObjects.get(sfObject)
+      );
+      Assert.isFalse(fields.isEmpty(), 'Expected Meta fields for ' + metaObjects.get(sfObject));
+    }
+
+    Map<String, String> netSuiteObjects = new Map<String, String>{
+      'Order' => 'SalesOrder',
+      'OrderItem' => 'SalesOrderLine',
+      'Invoice__c' => 'Invoice',
+      'Invoice_Line__c' => 'InvoiceLine',
+      'Portal_Payment_Transaction__c' => 'Payment',
+      'Carrier_Shipment__c' => 'Fulfillment'
+    };
+    for (String sfObject : netSuiteObjects.keySet()) {
+      List<Map<String, Object>> fields = FieldMappingController.getExternalFields(
+        'netsuite',
+        sfObject,
+        netSuiteObjects.get(sfObject)
+      );
+      Assert.isFalse(fields.isEmpty(), 'Expected NetSuite fields for ' + netSuiteObjects.get(sfObject));
+    }
+
+    String clearResult = FieldMappingController.clearFieldMappingsForTargetObject(
+      'meta',
+      'Campaign',
+      'campaign'
+    );
+    Assert.areEqual('No active mappings to clear.', clearResult);
+  }
+
+  @isTest
+  static void saveMetaMappingsSupportsMetaDirectionsAndValidation() {
+    String validJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Id',
+        'externalField' => 'id',
+        'syncDirection' => 'Meta to SF'
+      },
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'name',
+        'syncDirection' => 'SF to Meta'
+      }
+    });
+
+    Test.startTest();
+    String response = FieldMappingController.saveFieldMappings(
+      'meta',
+      'Campaign',
+      'campaign',
+      validJson
+    );
+    Test.stopTest();
+
+    Assert.isTrue(response.contains('Deployment Started'));
+  }
+
+  @isTest
+  static void saveMetaMappingsRejectsInvalidDirection() {
+    String invalidJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Id',
+        'externalField' => 'id',
+        'syncDirection' => 'QBO to SF'
+      },
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'name',
+        'syncDirection' => 'Meta to SF'
+      }
+    });
+
+    Boolean didThrow = false;
+    Test.startTest();
+    try {
+      FieldMappingController.saveFieldMappings(
+        'meta',
+        'Campaign',
+        'campaign',
+        invalidJson
+      );
+    } catch (AuraHandledException e) {
+      didThrow = true;
+    }
+    Test.stopTest();
+
+    Assert.isTrue(didThrow, 'Meta mappings should reject non-Meta directions.');
+  }
+
+  private static Set<String> values(List<Map<String, Object>> fields) {
+    Set<String> result = new Set<String>();
+    for (Map<String, Object> fieldInfo : fields) {
+      result.add(String.valueOf(fieldInfo.get('value')));
+    }
+    return result;
+  }
 }

@@ -625,6 +625,16 @@
                               >
                                 Edit Settings
                               </button>
+                              <template if:true={config.supportsConnectionValidation}>
+                                <button
+                                  class="qb-action-btn btn-save slds-m-right_small"
+                                  data-provider={config.provider}
+                                  onclick={handleValidateConnector}
+                                  disabled={isValidatingConnection}
+                                >
+                                  Validate Connection
+                                </button>
+                              </template>
                               <template if:true={config.active}>
                                 <button
                                   class="qb-action-btn btn-delete"
@@ -978,6 +988,33 @@
                       </div>
                     </template>
 
+                    <template if:true={usesGenericConnectorMapping}>
+                      <div
+                        class="slds-box"
+                        style="
+                          background: white;
+                          padding: 2rem;
+                          border-radius: 12px;
+                          border: 1px solid #e2e8f0;
+                        "
+                      >
+                        <h2
+                          style="
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            margin-bottom: 1rem;
+                          "
+                        >
+                          {mappingAssistantConnectorLabel} Mapping
+                        </h2>
+                        <c-connector-field-mapping-component
+                          connector-key={selectedConnectorKey}
+                          connector-label={mappingAssistantConnectorLabel}
+                          onmappingcontextchange={handleMappingContextChange}
+                        ></c-connector-field-mapping-component>
+                      </div>
+                    </template>
+
                     <template if:true={tileIs.fedex}>
                       <div
                         class="slds-box"
@@ -1118,6 +1155,147 @@
 
             <div class="dashboard-body dashboard-full-width scheduler-content">
               <template if:true={selectedTile}>
+                <template if:true={supportsOperationalControls}>
+                  <section class="operational-panel">
+                    <div class="operational-header">
+                      <div>
+                        <h2 class="operational-title">
+                          {selectedTileDefinition.label} Operations
+                        </h2>
+                        <p class="operational-subtitle">
+                          Review readiness and run individual sync operations
+                          through the QuickBridge work queue.
+                        </p>
+                      </div>
+                      <div class={operationalReadinessStatusClass}>
+                        <template if:true={hasOperationalReadiness}>
+                          {operationalReadiness.status}
+                        </template>
+                        <template if:false={hasOperationalReadiness}>
+                          Not loaded
+                        </template>
+                      </div>
+                    </div>
+
+                    <template if:true={isLoadingOperationalControls}>
+                      <div class="operational-loading">
+                        <lightning-spinner
+                          size="small"
+                          alternative-text="Loading operational status"
+                        ></lightning-spinner>
+                      </div>
+                    </template>
+
+                    <template if:true={hasOperationalReadiness}>
+                      <div class="readiness-summary">
+                        <span>{operationalReadiness.readyCount} ready</span>
+                        <span>{operationalReadiness.warningCount} warning</span>
+                        <span>{operationalReadiness.blockedCount} blocked</span>
+                      </div>
+
+                      <div class="readiness-grid">
+                        <template for:each={operationalChecks} for:item="check">
+                          <article key={check.label} class={check.statusClass}>
+                            <div class="readiness-check-header">
+                              <span>{check.label}</span>
+                              <strong>{check.status}</strong>
+                            </div>
+                            <p>{check.message}</p>
+                            <template if:true={check.remediation}>
+                              <small>{check.remediation}</small>
+                            </template>
+                          </article>
+                        </template>
+                      </div>
+
+                      <div class="manual-run-toolbar">
+                        <lightning-combobox
+                          label="Run direction"
+                          value={manualRunDirection}
+                          options={manualRunDirectionOptions}
+                          onchange={handleManualRunDirectionChange}
+                          disabled={isEnqueuingManualRun}
+                        ></lightning-combobox>
+                        <button
+                          type="button"
+                          class="section-toggle-button"
+                          onclick={loadOperationalControls}
+                          disabled={isLoadingOperationalControls}
+                        >
+                          <lightning-icon
+                            icon-name="utility:refresh"
+                            size="xx-small"
+                          ></lightning-icon>
+                          <span>Refresh</span>
+                        </button>
+                      </div>
+
+                      <template if:true={hasOperationalSummaries}>
+                        <div class="operation-table">
+                          <div class="operation-row operation-row-header">
+                            <span>Operation</span>
+                            <span>Last Run</span>
+                            <span>Pending</span>
+                            <span>Retry</span>
+                            <span>Failed</span>
+                            <span>Completed</span>
+                            <span></span>
+                          </div>
+                          <template
+                            for:each={operationalSummaries}
+                            for:item="summary"
+                          >
+                            <div key={summary.operationKey} class="operation-row">
+                              <span>{summary.operationLabel}</span>
+                              <span>{summary.lastRunLabel}</span>
+                              <span>{summary.pendingCount}</span>
+                              <span>{summary.retryCount}</span>
+                              <span>{summary.failedCount}</span>
+                              <span>{summary.completedCount}</span>
+                              <span>
+                                <button
+                                  type="button"
+                                  class="operation-run-button"
+                                  data-operation={summary.operationKey}
+                                  onclick={handleManualOperationRun}
+                                  disabled={isEnqueuingManualRun}
+                                >
+                                  Run
+                                </button>
+                              </span>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
+
+                      <template if:true={hasOperationalMappingPresets}>
+                        <div class="mapping-preset-panel">
+                          <h3>Recommended Mapping Guidance</h3>
+                          <div class="mapping-preset-list">
+                            <template
+                              for:each={visibleOperationalMappingPresets}
+                              for:item="preset"
+                            >
+                              <div
+                                key={preset.guidance}
+                                class="mapping-preset-row"
+                              >
+                                <span class={preset.requiredClass}
+                                  >{preset.requiredLabel}</span
+                                >
+                                <span>
+                                  {preset.salesforceObject}.{preset.salesforceField}
+                                  to {preset.externalObject}.{preset.externalField}
+                                </span>
+                                <small>{preset.guidance}</small>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
+                    </template>
+                  </section>
+                </template>
                 <template if:true={tileIs.qbo}>
                   <c-qb-scheduler-component></c-qb-scheduler-component>
                 </template>

@@ -21,6 +21,8 @@ public with sharing class ConnectorAdapterAllowlist {
     'ShopifyIntegrationWorker',
     'MetaIntegrationWorker',
     'MetaScheduledOperationAdapter',
+    'NetSuiteIntegrationWorker',
+    'NetSuiteScheduledOperationAdapter',
     'UsageIntegrationWorker',
     'CarrierIntegrationWorker',
     'PaymentIntegrationWorker',

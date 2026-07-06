@@ -233,6 +233,40 @@ public with sharing class PaymentMetadataService {
         return response;
     }
 
+    @AuraEnabled
+    public static MetadataUpdateResponse validateConnectorConnection(String connectorKey, String sessionToken) {
+        MetadataUpdateResponse response = new MetadataUpdateResponse();
+        try {
+            QuickBridgeAdminSessionService.requireValidSession(sessionToken);
+            QuickBridgeAdminGuard.requireManage();
+            ConnectorRegistryService.ConnectorDescriptor descriptor = ConnectorRegistryService.byKey(connectorKey);
+            if (descriptor == null) {
+                response.success = false;
+                response.message = 'Unsupported connector: ' + connectorKey;
+                return response;
+            }
+            if (descriptor.connectorKey == NetSuiteConfigService.CONNECTOR_KEY) {
+                NetSuiteConnectionValidator.ValidationResult validation = NetSuiteConnectionValidator.validateConnection();
+                response.success = validation.success;
+                response.message = validation.message;
+                return response;
+            }
+            response.success = false;
+            response.message = 'Connection validation is not registered for ' + descriptor.label + '.';
+        } catch (AuraHandledException ahe) {
+            response.success = false;
+            String aheMsg = ahe.getMessage();
+            response.message = (String.isBlank(aheMsg) || aheMsg == 'Script thrown exception')
+                ? 'Connection validation could not be completed.'
+                : aheMsg;
+        } catch (Exception e) {
+            response.success = false;
+            response.message = 'Error validating connector: ' + e.getMessage();
+            ErrorLogUtility.logException('QuickBridge', 'PaymentMetadataService.validateConnectorConnection', e, null, null);
+        }
+        return response;
+    }
+
     private static String deriveStartFieldKey(String expiryFieldKey) {
         if (String.isBlank(expiryFieldKey)) return null;
         if (expiryFieldKey.containsIgnoreCase('End_Date__c')) return expiryFieldKey.replaceAll('(?i)End_Date__c', 'Start_Date__c');

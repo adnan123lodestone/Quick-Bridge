@@ -92,6 +92,11 @@ private class MetaRemainingIntegrationTest {
         } catch (MetaApiClient.MetaApiClientException expected) {
             System.assert(expected.getMessage().contains('Server unavailable'), expected.getMessage());
         }
+        System.assertEquals(
+            1,
+            [SELECT COUNT() FROM Error_Log__c WHERE Gateway_Name__c = 'Meta'],
+            'Meta callout failures should be logged for admin diagnostics.'
+        );
     }
 
     @IsTest

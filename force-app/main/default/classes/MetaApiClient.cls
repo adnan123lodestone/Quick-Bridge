@@ -46,15 +46,26 @@ public with sharing class MetaApiClient {
         request.setEndpoint(toEndpoint(pathOrUrl));
         request.setHeader('Accept', 'application/json');
         request.setTimeout(120000);
-        HttpResponse httpResponse = new Http().send(request);
-        MetaApiResponse response = MetaApiResponse.fromHttpResponse(httpResponse);
-        if (!response.isSuccess()) {
-            String message = String.isBlank(response.errorMessage)
-                ? 'Meta API request failed with status ' + response.statusCode + '.'
-                : response.errorMessage;
-            throw new MetaApiClientException(message);
+        try {
+            HttpResponse httpResponse = new Http().send(request);
+            MetaApiResponse response = MetaApiResponse.fromHttpResponse(httpResponse);
+            if (!response.isSuccess()) {
+                String message = MetaErrorMapper.userMessage(response.statusCode, response.errorMessage);
+                MetaErrorMapper.logCalloutFailure(
+                    'MetaApiClient.sendGet',
+                    message,
+                    response.statusCode,
+                    request.getEndpoint()
+                );
+                throw new MetaApiClientException(message);
+            }
+            return response;
+        } catch (MetaApiClientException e) {
+            throw e;
+        } catch (Exception e) {
+            MetaErrorMapper.logException('MetaApiClient.sendGet', e);
+            throw new MetaApiClientException(MetaErrorMapper.sanitize(e.getMessage()));
         }
-        return response;
     }
 
     private String toEndpoint(String pathOrUrl) {

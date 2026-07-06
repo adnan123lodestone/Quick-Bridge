@@ -74,6 +74,26 @@
                 <default>false</default>
                 <label>DHL to SF</label>
             </value>
+            <value>
+                <fullName>SF to NetSuite</fullName>
+                <default>false</default>
+                <label>SF to NetSuite</label>
+            </value>
+            <value>
+                <fullName>NetSuite to SF</fullName>
+                <default>false</default>
+                <label>NetSuite to SF</label>
+            </value>
+            <value>
+                <fullName>SF to Meta</fullName>
+                <default>false</default>
+                <label>SF to Meta</label>
+            </value>
+            <value>
+                <fullName>Meta to SF</fullName>
+                <default>false</default>
+                <label>Meta to SF</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

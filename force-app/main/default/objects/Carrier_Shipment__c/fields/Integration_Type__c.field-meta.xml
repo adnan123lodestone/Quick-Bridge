@@ -15,6 +15,11 @@
                 <label>FedEx</label>
             </value>
             <value>
+                <fullName>netsuite</fullName>
+                <default>false</default>
+                <label>NetSuite</label>
+            </value>
+            <value>
                 <fullName>ups</fullName>
                 <default>false</default>
                 <label>UPS</label>

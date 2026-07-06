@@ -2,11 +2,15 @@ import { LightningElement, track } from "lwc";
 import verifyCredentialsAndGetGateways from "@salesforce/apex/QuickBridgeAdminControlPlaneService.verifyCredentialsAndGetGateways";
 import getConnectorConfigs from "@salesforce/apex/PaymentMetadataService.getConnectorConfigs";
 import saveConnectorConfig from "@salesforce/apex/PaymentMetadataService.saveConnectorConfig";
+import validateConnectorConnection from "@salesforce/apex/PaymentMetadataService.validateConnectorConnection";
 import getConfigPanelPreferences from "@salesforce/apex/PaymentMetadataService.getConfigPanelPreferences";
 import updateAvailableProductsVisible from "@salesforce/apex/PaymentMetadataService.updateAvailableProductsVisible";
 import checkIntegrationExpiry from "@salesforce/apex/PaymentMetadataService.checkIntegrationExpiry";
 import sendProductRenewalRequest from "@salesforce/apex/PaymentMetadataService.sendProductRenewalRequest";
 import getConnectorDescriptors from "@salesforce/apex/IntegrationConnectorRegistry.getConnectorDescriptors";
+import getOperationalReadiness from "@salesforce/apex/ConnectorOperationalControlService.getReadiness";
+import getOperationalMappingPresets from "@salesforce/apex/ConnectorOperationalControlService.getMappingPresets";
+import enqueueOperationalManualRun from "@salesforce/apex/ConnectorOperationalControlService.enqueueManualRun";
 import revokeAdminSession from "@salesforce/apex/QuickBridgeAdminControlPlaneService.revokeAdminSession";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import LightningConfirm from "lightning/confirm";
@@ -21,6 +25,7 @@ import FedEx_Logo from "@salesforce/resourceUrl/FedEx_Logo";
 import UPS_Logo from "@salesforce/resourceUrl/UPS_Logo";
 import Klaviyo_Logo from "@salesforce/resourceUrl/Klaviyo_Logo";
 import Meta_Logo from "@salesforce/resourceUrl/Meta_Logo";
+import NetSuite_Logo from "@salesforce/resourceUrl/NetSuite_Logo";
 import recoverPin from "@salesforce/apex/QuickBridgeAdminControlPlaneService.recoverPin";
 import refreshLicenses from "@salesforce/apex/QuickBridgeAdminControlPlaneService.refreshLicenses";
 
@@ -39,10 +44,27 @@ const BUILT_IN_BRAND_LOGOS = {
   meta: Meta_Logo,
   facebook: Meta_Logo,
   instagram: Meta_Logo,
-  metaads: Meta_Logo
+  metaads: Meta_Logo,
+  netsuite: NetSuite_Logo,
+  ns: NetSuite_Logo,
+  oraclenetsuite: NetSuite_Logo
 };
 
 const REQUIRED_CONNECTOR_TILES = [
+  {
+    id: "netsuite",
+    label: "NetSuite",
+    logoUrl: NetSuite_Logo,
+    productKey: "netsuite",
+    aliases: ["netsuite", "ns", "oracle_netsuite", "oracle-netsuite"],
+    activeField: null,
+    expiryField: null,
+    startField: null,
+    hasConfig: true,
+    hasReporting: true,
+    hasMapping: true,
+    hasScheduler: true
+  },
   {
     id: "meta",
     label: "Facebook / Instagram",
@@ -63,6 +85,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   @track currentScreen = "login";
   @track isLoggingIn = false;
   @track isSaving = false;
+  @track isValidatingConnection = false;
   @track isRecoveringPin = false;
   @track availableProductsVisible = true;
   @track isSavingAvailableProductsPreference = false;
@@ -70,6 +93,10 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   @track isRenewalModalOpen = false;
   @track isSendingRenewalEmail = false;
   @track renewalProducts = [];
+  @track operationalReadiness = null;
+  @track operationalMappingPresets = [];
+  @track isLoadingOperationalControls = false;
+  @track isEnqueuingManualRun = false;
 
   userId = "";
   recoverUserId = "";
@@ -77,6 +104,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   adminSessionExpiresAt = null;
   @track selectedTile = "";
   @track mappingAssistantContext = {};
+  manualRunDirection = "Manual";
   quickBridgeLogo = QuickBridge_Logo;
 
   allTilesDefinition = [...REQUIRED_CONNECTOR_TILES];
@@ -165,7 +193,61 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     return this.mappingAssistantContext?.allowApply === true;
   }
   get isSchedulerUnavailable() {
-    return this.selectedTileDefinition?.hasScheduler !== true;
+    return (
+      this.selectedTileDefinition?.hasScheduler !== true &&
+      !this.supportsOperationalControls
+    );
+  }
+  get supportsOperationalControls() {
+    const key = this.normalizeBrandKey(this.selectedTile);
+    return key === "netsuite" || key === "meta";
+  }
+  get usesGenericConnectorMapping() {
+    const key = this.normalizeBrandKey(this.selectedTile);
+    return key === "netsuite" || key === "meta";
+  }
+  get hasOperationalReadiness() {
+    return this.operationalReadiness !== null;
+  }
+  get operationalReadinessStatusClass() {
+    const status = this.normalizeCssToken(this.operationalReadiness?.status);
+    return `operational-status operational-status-${status || "unknown"}`;
+  }
+  get operationalChecks() {
+    return (this.operationalReadiness?.checks || []).map((check) => ({
+      ...check,
+      statusClass: `readiness-check readiness-check-${this.normalizeCssToken(check.status)}`
+    }));
+  }
+  get operationalSummaries() {
+    return (this.operationalReadiness?.operationSummaries || []).map(
+      (summary) => ({
+        ...summary,
+        operationLabel: this.formatOperationLabel(summary.operationKey),
+        lastRunLabel: this.formatDateTime(summary.lastRunAt)
+      })
+    );
+  }
+  get hasOperationalSummaries() {
+    return this.operationalSummaries.length > 0;
+  }
+  get hasOperationalMappingPresets() {
+    return this.operationalMappingPresets.length > 0;
+  }
+  get visibleOperationalMappingPresets() {
+    return (this.operationalMappingPresets || []).slice(0, 10).map((preset) => ({
+      ...preset,
+      requiredLabel: preset.required ? "Required" : "Recommended",
+      requiredClass: preset.required ? "preset-required" : "preset-recommended"
+    }));
+  }
+  get manualRunDirectionOptions() {
+    return [
+      { label: "Manual", value: "Manual" },
+      { label: "Inbound", value: "Inbound" },
+      { label: "Outbound", value: "Outbound" },
+      { label: "Replay", value: "Replay" }
+    ];
   }
 
   get navHomeClass() {
@@ -257,9 +339,10 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       .filter(Boolean);
   }
 
-  navigateToScheduler() {
+  async navigateToScheduler() {
     if (this.isLoggedIn) {
       this.currentScreen = "scheduler";
+      await this.loadOperationalControls();
     }
   }
 
@@ -482,6 +565,34 @@ export default class QuickbridgeConfigPanel extends LightningElement {
 
   normalizeBrandKey(value) {
     return (value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  normalizeCssToken(value) {
+    return (value || "unknown").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  }
+
+  formatOperationLabel(value) {
+    return (value || "")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/_/g, " ")
+      .trim();
+  }
+
+  formatDateTime(value) {
+    if (!value) {
+      return "Never";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "Unknown";
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(parsed);
   }
 
   buildTileAliases(connector) {
@@ -720,6 +831,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     const clickedTileId = event.currentTarget.dataset.id;
     this.selectedTile = clickedTileId;
     this.integrationExpiryAlert = null;
+    this.operationalReadiness = null;
+    this.operationalMappingPresets = [];
     const isActiveProduct = this.isSubscribedTile(clickedTileId);
 
     const tileDef = this.allTilesDefinition.find(
@@ -743,6 +856,83 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     this.navigateToHomeResetContext();
   }
 
+  async loadOperationalControls() {
+    if (!this.supportsOperationalControls || !this.selectedTile) {
+      this.operationalReadiness = null;
+      this.operationalMappingPresets = [];
+      return;
+    }
+
+    this.isLoadingOperationalControls = true;
+    try {
+      const [readiness, presets] = await Promise.all([
+        getOperationalReadiness({ connectorKey: this.selectedTile }),
+        getOperationalMappingPresets({ connectorKey: this.selectedTile })
+      ]);
+      this.operationalReadiness = readiness;
+      this.operationalMappingPresets = presets || [];
+    } catch (error) {
+      if (this.handleSessionError(error)) return;
+      this.operationalReadiness = null;
+      this.operationalMappingPresets = [];
+      this.showToast(
+        "Operational Status Unavailable",
+        error.body?.message ||
+          error.message ||
+          "Could not load connector operational status.",
+        "error"
+      );
+    } finally {
+      this.isLoadingOperationalControls = false;
+    }
+  }
+
+  handleManualRunDirectionChange(event) {
+    this.manualRunDirection = event.detail.value;
+  }
+
+  async handleManualOperationRun(event) {
+    const operationKey = event.currentTarget.dataset.operation;
+    if (!operationKey || !this.supportsOperationalControls) {
+      return;
+    }
+
+    this.isEnqueuingManualRun = true;
+    try {
+      const result = await enqueueOperationalManualRun({
+        connectorKey: this.selectedTile,
+        operationKey,
+        direction: this.manualRunDirection,
+        sourceObject: "ManualRun",
+        sourceRecordId: null,
+        payloadJson: "{}"
+      });
+      if (result?.success === true) {
+        this.showToast(
+          "Manual Run Queued",
+          result.message || `${operationKey} was queued.`,
+          "success"
+        );
+        await this.loadOperationalControls();
+      } else {
+        this.showToast(
+          "Manual Run Failed",
+          result?.message || "Could not queue the manual run.",
+          "error"
+        );
+      }
+    } catch (error) {
+      if (this.handleSessionError(error)) return;
+      this.showToast(
+        "Manual Run Failed",
+        error.body?.message || error.message || "Could not queue the manual run.",
+        "error"
+      );
+    } finally {
+      this.isEnqueuingManualRun = false;
+    }
+  }
+
   async loadMetadataConfigs() {
     try {
       const configs = await getConnectorConfigs();
@@ -755,7 +945,10 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         const editableFieldsData = (config.editableFields || []).map(
           (fieldName) => {
             const isCheckbox =
-              fieldName.includes("Active") || fieldName.includes("Sandbox");
+              fieldName.includes("Active") ||
+              fieldName.includes("Sandbox") ||
+              fieldName.startsWith("enable_") ||
+              fieldName === "webhook_enabled";
             const isReadOnlyDate = fieldName.includes("Date");
             const isTrue =
               formValues[fieldName] === "true" ||
@@ -803,6 +996,8 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         }
         return {
           ...config,
+          supportsConnectionValidation:
+            (config.provider || "").toLowerCase() === "netsuite",
           isSelected: false,
           isEditing: false,
           formValues: formValues,
@@ -1085,6 +1280,41 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     }
   }
 
+  async handleValidateConnector(event) {
+    const provider = event.currentTarget.dataset.provider;
+    const sessionToken = this.getSessionToken();
+    if (!sessionToken) {
+      this.showToast("Session Expired", "Please log in again.", "error");
+      return;
+    }
+    this.isValidatingConnection = true;
+    try {
+      const result = await validateConnectorConnection({
+        connectorKey: provider,
+        sessionToken
+      });
+      if (result?.success === true) {
+        this.showToast("Connection Validated", result.message, "success");
+        await this.loadMetadataConfigs();
+      } else {
+        this.showToast(
+          "Validation Failed",
+          result?.message || "Connection validation failed.",
+          "error"
+        );
+      }
+    } catch (error) {
+      if (this.handleSessionError(error)) return;
+      this.showToast(
+        "Validation Failed",
+        error.body?.message || error.message || "Connection validation failed.",
+        "error"
+      );
+    } finally {
+      this.isValidatingConnection = false;
+    }
+  }
+
   isFedExProvider(provider) {
     return (provider || "").toLowerCase() === "fedex";
   }
@@ -1278,7 +1508,12 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       shopify: "c-shopify-field-mapping-component",
       fedex: "c-fedex-field-mapping-component",
       ups: "c-ups-field-mapping-component",
-      dhl: "c-dhl-field-mapping-component"
+      dhl: "c-dhl-field-mapping-component",
+      meta: "c-connector-field-mapping-component",
+      facebook: "c-connector-field-mapping-component",
+      instagram: "c-connector-field-mapping-component",
+      netsuite: "c-connector-field-mapping-component",
+      ns: "c-connector-field-mapping-component"
     };
     const selector = selectorByConnector[connectorKey];
     const target = selector ? this.template.querySelector(selector) : null;
