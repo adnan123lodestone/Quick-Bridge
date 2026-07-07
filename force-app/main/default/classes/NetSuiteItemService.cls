@@ -18,8 +18,10 @@ public with sharing class NetSuiteItemService {
       return summary;
     }
 
-    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildItemQuery(sinceDatetime, batchSize), null);
+    Datetime effectiveSince = NetSuiteSyncStateService.effectiveSince(sinceDatetime, config);
+    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildItemQuery(effectiveSince, batchSize), null);
     List<Product2> products = new List<Product2>();
+    Map<String, Map<String, Object>> sourceByExternalId = new Map<String, Map<String, Object>>();
     for (Map<String, Object> row : rows) {
       String externalId = externalId(row.get('id'));
       if (String.isBlank(externalId)) {
@@ -36,9 +38,25 @@ public with sharing class NetSuiteItemService {
         productRecord.Name = 'NetSuite Item ' + stringValue(row.get('id'));
       }
       products.add(productRecord);
+      sourceByExternalId.put(externalId, row);
     }
 
     if (!products.isEmpty()) {
+      List<SObject> candidates = new List<SObject>();
+      candidates.addAll(products);
+      NetSuiteSyncStateService.FilterResult filtered = NetSuiteSyncStateService.filterInboundConflicts(
+        'Product2',
+        'External_Id__c',
+        candidates,
+        sourceByExternalId,
+        config.lastSuccessfulSyncAt,
+        'NetSuiteItemService.syncItems'
+      );
+      summary.recordsFailed += filtered.conflictCount;
+      products.clear();
+      for (SObject filteredRecord : filtered.records) {
+        products.add((Product2) filteredRecord);
+      }
       Database.UpsertResult[] results = Database.upsert(products, Product2.External_Id__c, false);
       ErrorLogUtility.logUpsertResults('NetSuite', 'NetSuiteItemService.syncItems', 'upsert', products, results, null, null);
       for (Database.UpsertResult result : results) {
@@ -49,6 +67,7 @@ public with sharing class NetSuiteItemService {
         }
       }
     }
+    NetSuiteSyncStateService.advanceWatermarkIfClean(rows, summary.recordsFailed);
     summary.message = 'NetSuite item sync processed ' + summary.recordsProcessed + ' records.';
     return summary;
   }

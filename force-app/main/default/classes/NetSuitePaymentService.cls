@@ -16,8 +16,10 @@ public with sharing class NetSuitePaymentService {
       summary.message = 'NetSuite payment sync is disabled.';
       return summary;
     }
-    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery(sinceDatetime, batchSize), null);
+    Datetime effectiveSince = NetSuiteSyncStateService.effectiveSince(sinceDatetime, config);
+    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery(effectiveSince, batchSize), null);
     List<Portal_Payment_Transaction__c> payments = new List<Portal_Payment_Transaction__c>();
+    Map<String, Map<String, Object>> sourceByExternalId = new Map<String, Map<String, Object>>();
     for (Map<String, Object> row : rows) {
       Portal_Payment_Transaction__c paymentRecord = new Portal_Payment_Transaction__c();
       paymentRecord.Payment_Type__c = 'Unknown';
@@ -25,14 +27,31 @@ public with sharing class NetSuitePaymentService {
       paymentRecord.Gateway_Amount__c = decimalValue(row.get('payment'));
       paymentRecord.Gateway_Event_Id__c = 'netsuite:' + stringValue(row.get('id'));
       payments.add(paymentRecord);
+      sourceByExternalId.put(paymentRecord.Gateway_Event_Id__c, row);
     }
     if (!payments.isEmpty()) {
+      List<SObject> candidates = new List<SObject>();
+      candidates.addAll(payments);
+      NetSuiteSyncStateService.FilterResult filtered = NetSuiteSyncStateService.filterInboundConflicts(
+        'Portal_Payment_Transaction__c',
+        'Gateway_Event_Id__c',
+        candidates,
+        sourceByExternalId,
+        config.lastSuccessfulSyncAt,
+        'NetSuitePaymentService.syncPayments'
+      );
+      summary.recordsFailed += filtered.conflictCount;
+      payments.clear();
+      for (SObject filteredRecord : filtered.records) {
+        payments.add((Portal_Payment_Transaction__c) filteredRecord);
+      }
       Database.SaveResult[] results = Database.insert(payments, false);
       for (Database.SaveResult result : results) {
         if (result.isSuccess()) summary.recordsProcessed++;
         else summary.recordsFailed++;
       }
     }
+    NetSuiteSyncStateService.advanceWatermarkIfClean(rows, summary.recordsFailed);
     summary.message = 'NetSuite payment sync processed ' + summary.recordsProcessed + ' records.';
     return summary;
   }

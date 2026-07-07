@@ -18,7 +18,8 @@ public with sharing class NetSuiteCustomerService {
       return summary;
     }
 
-    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildCustomerQuery(sinceDatetime, batchSize), null);
+    Datetime effectiveSince = NetSuiteSyncStateService.effectiveSince(sinceDatetime, config);
+    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildCustomerQuery(effectiveSince, batchSize), null);
     List<Account> accounts = new List<Account>();
     Map<String, Map<String, Object>> sourceByExternalId = new Map<String, Map<String, Object>>();
     for (Map<String, Object> row : rows) {
@@ -40,6 +41,21 @@ public with sharing class NetSuiteCustomerService {
     }
 
     if (!accounts.isEmpty()) {
+      List<SObject> candidates = new List<SObject>();
+      candidates.addAll(accounts);
+      NetSuiteSyncStateService.FilterResult filtered = NetSuiteSyncStateService.filterInboundConflicts(
+        'Account',
+        'External_Id__c',
+        candidates,
+        sourceByExternalId,
+        config.lastSuccessfulSyncAt,
+        'NetSuiteCustomerService.syncCustomers'
+      );
+      summary.recordsFailed += filtered.conflictCount;
+      accounts.clear();
+      for (SObject filteredRecord : filtered.records) {
+        accounts.add((Account) filteredRecord);
+      }
       Database.UpsertResult[] results = Database.upsert(accounts, Account.External_Id__c, false);
       ErrorLogUtility.logUpsertResults('NetSuite', 'NetSuiteCustomerService.syncCustomers', 'upsert', accounts, results, null, null);
       List<Contact> contacts = new List<Contact>();
@@ -57,6 +73,7 @@ public with sharing class NetSuiteCustomerService {
       }
       upsertContacts(contacts, summary);
     }
+    NetSuiteSyncStateService.advanceWatermarkIfClean(rows, summary.recordsFailed);
     summary.message = 'NetSuite customer sync processed ' + summary.recordsProcessed + ' records.';
     return summary;
   }

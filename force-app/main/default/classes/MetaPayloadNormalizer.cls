@@ -15,6 +15,11 @@ public with sharing class MetaPayloadNormalizer {
         public String commenterName;
         public String commenterProfileId;
         public String commentText;
+        public String messageId;
+        public String senderProfileId;
+        public String recipientPageId;
+        public String messageText;
+        public Datetime messageTimestamp;
         public String email;
         public String phone;
         public String firstName;
@@ -65,9 +70,25 @@ public with sharing class MetaPayloadNormalizer {
                 if (value == null) {
                     continue;
                 }
+                if (!isSupportedWebhookField(objectType, getString(change, 'field'))) {
+                    continue;
+                }
                 NormalizedEvent eventRecord = normalizeChange(objectType, entry, change, value);
                 eventRecord.rawPayload = JSON.serialize(value);
                 events.add(eventRecord);
+            }
+            if (objectType == 'page') {
+                for (Object messagingValue : getList(entry, 'messaging')) {
+                    if (!(messagingValue instanceof Map<String, Object>)) {
+                        continue;
+                    }
+                    NormalizedEvent eventRecord = normalizeMessagingEvent((Map<String, Object>) messagingValue);
+                    if (eventRecord == null) {
+                        continue;
+                    }
+                    eventRecord.rawPayload = JSON.serialize(messagingValue);
+                    events.add(eventRecord);
+                }
             }
         }
         return events;
@@ -109,6 +130,49 @@ public with sharing class MetaPayloadNormalizer {
         return eventRecord;
     }
 
+    private static NormalizedEvent normalizeMessagingEvent(Map<String, Object> messagingValue) {
+        Map<String, Object> message = getMap(messagingValue, 'message');
+        if (message == null || message.containsKey('attachments') || message.containsKey('quick_reply')) {
+            return null;
+        }
+        if (parseBoolean(message.get('is_echo'))) {
+            return null;
+        }
+        String messageId = getString(message, 'mid');
+        String text = getString(message, 'text');
+        if (String.isBlank(messageId) || String.isBlank(text)) {
+            return null;
+        }
+
+        NormalizedEvent eventRecord = new NormalizedEvent();
+        eventRecord.platform = 'Facebook';
+        eventRecord.interactionType = 'Messenger Message';
+        eventRecord.messageId = messageId;
+        eventRecord.messageText = text;
+        eventRecord.commentText = text;
+        Map<String, Object> sender = getMap(messagingValue, 'sender');
+        Map<String, Object> recipient = getMap(messagingValue, 'recipient');
+        eventRecord.senderProfileId = getString(sender, 'id');
+        eventRecord.commenterProfileId = eventRecord.senderProfileId;
+        eventRecord.recipientPageId = getString(recipient, 'id');
+        eventRecord.pageId = eventRecord.recipientPageId;
+        eventRecord.messageTimestamp = datetimeFromMillis(messagingValue.get('timestamp'));
+        return eventRecord;
+    }
+
+    private static Boolean isSupportedWebhookField(String objectType, String fieldName) {
+        if (fieldName == 'leadgen') {
+            return true;
+        }
+        if (objectType == 'instagram') {
+            return fieldName == 'comments';
+        }
+        if (objectType == 'page') {
+            return fieldName == 'comments' || fieldName == 'feed';
+        }
+        return false;
+    }
+
     private static Map<String, Object> getMap(Map<String, Object> source, String key) {
         if (source == null || !source.containsKey(key) || !(source.get(key) instanceof Map<String, Object>)) {
             return null;
@@ -132,5 +196,28 @@ public with sharing class MetaPayloadNormalizer {
 
     private static String firstNonBlank(String firstValue, String secondValue) {
         return String.isBlank(firstValue) ? secondValue : firstValue;
+    }
+
+    private static Boolean parseBoolean(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        return String.valueOf(value).equalsIgnoreCase('true');
+    }
+
+    private static Datetime datetimeFromMillis(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            Decimal milliseconds = Decimal.valueOf(String.valueOf(value));
+            Integer seconds = Integer.valueOf(String.valueOf((milliseconds / 1000).setScale(0, System.RoundingMode.DOWN)));
+            return Datetime.newInstanceGmt(1970, 1, 1, 0, 0, 0).addSeconds(seconds);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

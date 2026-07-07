@@ -33,6 +33,65 @@ private class NetSuiteConfigServiceTest {
   }
 
   @IsTest
+  static void missingNamedCredentialFailsWithUserSafeMessage() {
+    Connector_Instance__c instanceRecord = insertConfiguredInstance();
+    instanceRecord.Named_Credential__c = null;
+    update instanceRecord;
+    insertConfig(instanceRecord.Id, 'account_id', '123456_SB1');
+
+    try {
+      NetSuiteConfigService.requireConfigured();
+      System.assert(false, 'Expected missing named credential to fail.');
+    } catch (AuraHandledException expected) {
+      System.assertNotEquals(null, expected, 'Expected a user-safe setup exception.');
+    }
+  }
+
+  @IsTest
+  static void invalidPollingIntervalFailsWithHandledMessage() {
+    Connector_Instance__c instanceRecord = insertConfiguredInstance();
+    insertConfig(instanceRecord.Id, 'account_id', '123456_SB1');
+    insertConfig(instanceRecord.Id, 'polling_interval_minutes', 'not-a-number');
+
+    try {
+      NetSuiteConfigService.load();
+      System.assert(false, 'Expected invalid polling interval to fail.');
+    } catch (AuraHandledException expected) {
+      System.assertNotEquals(null, expected);
+    }
+  }
+
+  @IsTest
+  static void invalidLastSuccessfulSyncAtFailsWithHandledMessage() {
+    Connector_Instance__c instanceRecord = insertConfiguredInstance();
+    insertConfig(instanceRecord.Id, 'account_id', '123456_SB1');
+    insertConfig(instanceRecord.Id, 'last_successful_sync_at', 'not-a-date');
+
+    try {
+      NetSuiteConfigService.load();
+      System.assert(false, 'Expected invalid last sync date to fail.');
+    } catch (AuraHandledException expected) {
+      System.assertNotEquals(null, expected);
+    }
+  }
+
+  @IsTest
+  static void runtimeConfigDefaultsPhaseOneBooleansAndSuiteQlUrl() {
+    Connector_Instance__c instanceRecord = insertConfiguredInstance();
+    insertConfig(instanceRecord.Id, 'account_id', '123456_SB1');
+
+    NetSuiteConfigService.Config config = NetSuiteConfigService.load();
+
+    System.assertEquals('/services/rest/query/v1/suiteql', config.suiteqlUrl);
+    System.assertEquals(true, config.enableCustomerSync);
+    System.assertEquals(true, config.enableItemSync);
+    System.assertEquals(false, config.enableSalesOrderSync);
+    System.assertEquals(false, config.enableInvoiceSync);
+    System.assertEquals(false, config.enablePaymentSync);
+    System.assertEquals(false, config.enableFulfillmentSync);
+  }
+
+  @IsTest
   static void credentialResolverReturnsReferenceNamesOnly() {
     Connector_Instance__c instanceRecord = insertConfiguredInstance();
     insertConfig(instanceRecord.Id, 'account_id', '123456_SB1');

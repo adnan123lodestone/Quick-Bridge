@@ -8,12 +8,16 @@ public with sharing class MetaIntegrationWorker implements IntegrationWorkHandle
             MetaLeadAdsService.processLeadgenEvent(MetaPayloadNormalizer.fromJson(item.Payload__c));
         } else if (operation == 'CommentAttribution') {
             MetaCommentAttributionProcessor.process(MetaPayloadNormalizer.fromJson(item.Payload__c));
+        } else if (operation == 'MessengerMessage') {
+            MetaMessengerMessageProcessor.process(MetaPayloadNormalizer.fromJson(item.Payload__c));
         } else if (operation == 'WebhookEvent') {
             for (MetaPayloadNormalizer.NormalizedEvent eventRecord : MetaPayloadNormalizer.fromWebhookPayload(item.Payload__c)) {
                 if (eventRecord.interactionType == 'Meta Lead Ad') {
                     MetaLeadAdsService.processLeadgenEvent(eventRecord);
                 } else if (eventRecord.interactionType == 'Comment') {
                     MetaCommentAttributionProcessor.process(eventRecord);
+                } else if (eventRecord.interactionType == 'Messenger Message') {
+                    MetaMessengerMessageProcessor.process(eventRecord);
                 }
             }
         } else if (operation == 'CampaignSync') {

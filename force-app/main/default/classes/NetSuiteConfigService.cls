@@ -87,11 +87,35 @@ public with sharing class NetSuiteConfigService {
   }
 
   public static void markSuccessfulSync(Datetime syncAt) {
-    ConnectorConfigService.upsertNonSecretValue(
-      CONNECTOR_KEY,
-      'last_successful_sync_at',
-      String.valueOf(syncAt == null ? Datetime.now() : syncAt)
-    );
+    Datetime value = syncAt == null ? Datetime.now() : syncAt;
+    if (Test.isRunningTest() && testConfig != null) {
+      testConfig.lastSuccessfulSyncAt = value;
+      return;
+    }
+    List<Connector_Instance__c> instances = [
+      SELECT Id
+      FROM Connector_Instance__c
+      WHERE Connector_Key__c = :CONNECTOR_KEY
+      LIMIT 1
+    ];
+    Id instanceId = instances.isEmpty() ? null : instances[0].Id;
+    List<Connector_Config_Value__c> existing = [
+      SELECT Id
+      FROM Connector_Config_Value__c
+      WHERE Connector_Key__c = :CONNECTOR_KEY
+      AND Field_Key__c = 'last_successful_sync_at'
+      LIMIT 1
+    ];
+    Connector_Config_Value__c row = existing.isEmpty()
+      ? new Connector_Config_Value__c()
+      : existing[0];
+    row.Name = CONNECTOR_KEY + ':last_successful_sync_at';
+    row.Connector_Instance__c = instanceId;
+    row.Connector_Key__c = CONNECTOR_KEY;
+    row.Field_Key__c = 'last_successful_sync_at';
+    row.Value__c = value.formatGmt('yyyy-MM-dd HH:mm:ss');
+    row.Is_Secret_Reference__c = false;
+    upsert row;
   }
 
   private static String value(ConnectorConfigService.ConnectorConfig config, String key) {
@@ -135,7 +159,7 @@ public with sharing class NetSuiteConfigService {
       return null;
     }
     try {
-      return Datetime.valueOf(raw);
+      return Datetime.valueOfGmt(raw);
     } catch (Exception ignored) {
       try {
         return (Datetime) JSON.deserialize('"' + raw + '"', Datetime.class);

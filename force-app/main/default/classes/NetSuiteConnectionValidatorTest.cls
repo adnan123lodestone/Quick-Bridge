@@ -52,6 +52,31 @@ private class NetSuiteConnectionValidatorTest {
     System.assertEquals('Error', refreshed.Health_Status__c);
   }
 
+  @IsTest
+  static void validationFailureFromMissingConfigUpdatesHealthAndAudits() {
+    NetSuiteConfigService.Config config = NetSuiteConfigService.testConfigured();
+    config.accountId = null;
+    NetSuiteConfigService.setTestConfig(config);
+
+    Test.startTest();
+    NetSuiteConnectionValidator.ValidationResult result = NetSuiteConnectionValidator.validateConnection();
+    Test.stopTest();
+
+    System.assertEquals(false, result.success);
+    System.assertNotEquals(null, result.message);
+    Connector_Instance__c refreshed = [
+      SELECT Health_Status__c
+      FROM Connector_Instance__c
+      WHERE Connector_Key__c = 'netsuite'
+      LIMIT 1
+    ];
+    System.assertEquals('Error', refreshed.Health_Status__c);
+    System.assertEquals(
+      1,
+      [SELECT COUNT() FROM QuickBridge_Admin_Audit__c WHERE Connector_Key__c = 'netsuite' AND Action__c = 'CONNECTION_VALIDATE']
+    );
+  }
+
   private class ValidationMock implements HttpCalloutMock {
     Integer statusCode;
     String responseBody;

@@ -16,8 +16,10 @@ public with sharing class NetSuiteFulfillmentService {
       summary.message = 'NetSuite fulfillment sync is disabled.';
       return summary;
     }
-    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery(sinceDatetime, batchSize), null);
+    Datetime effectiveSince = NetSuiteSyncStateService.effectiveSince(sinceDatetime, config);
+    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery(effectiveSince, batchSize), null);
     List<Carrier_Shipment__c> shipments = new List<Carrier_Shipment__c>();
+    Map<String, Map<String, Object>> sourceByExternalId = new Map<String, Map<String, Object>>();
     for (Map<String, Object> row : rows) {
       Carrier_Shipment__c shipment = new Carrier_Shipment__c();
       shipment.External_Shipment_Id__c = 'netsuite:' + stringValue(row.get('id'));
@@ -25,8 +27,24 @@ public with sharing class NetSuiteFulfillmentService {
       shipment.Shipment_Status__c = stringValue(row.get('status'));
       shipment.Integration_Type__c = 'netsuite';
       shipments.add(shipment);
+      sourceByExternalId.put(shipment.External_Shipment_Id__c, row);
     }
     if (!shipments.isEmpty()) {
+      List<SObject> candidates = new List<SObject>();
+      candidates.addAll(shipments);
+      NetSuiteSyncStateService.FilterResult filtered = NetSuiteSyncStateService.filterInboundConflicts(
+        'Carrier_Shipment__c',
+        'External_Shipment_Id__c',
+        candidates,
+        sourceByExternalId,
+        config.lastSuccessfulSyncAt,
+        'NetSuiteFulfillmentService.syncFulfillments'
+      );
+      summary.recordsFailed += filtered.conflictCount;
+      shipments.clear();
+      for (SObject filteredRecord : filtered.records) {
+        shipments.add((Carrier_Shipment__c) filteredRecord);
+      }
       List<Carrier_Shipment__c> inserts = new List<Carrier_Shipment__c>();
       List<Carrier_Shipment__c> updates = new List<Carrier_Shipment__c>();
       Map<String, Carrier_Shipment__c> existingByExternalId = existingShipments(shipments);
@@ -51,6 +69,7 @@ public with sharing class NetSuiteFulfillmentService {
         else summary.recordsFailed++;
       }
     }
+    NetSuiteSyncStateService.advanceWatermarkIfClean(rows, summary.recordsFailed);
     summary.message = 'NetSuite fulfillment sync processed ' + summary.recordsProcessed + ' records.';
     return summary;
   }

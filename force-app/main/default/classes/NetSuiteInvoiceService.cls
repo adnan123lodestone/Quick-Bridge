@@ -16,16 +16,36 @@ public with sharing class NetSuiteInvoiceService {
       summary.message = 'NetSuite invoice sync is disabled.';
       return summary;
     }
-    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery(sinceDatetime, batchSize), null);
+    Datetime effectiveSince = NetSuiteSyncStateService.effectiveSince(sinceDatetime, config);
+    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery(effectiveSince, batchSize), null);
     List<Invoice__c> invoices = new List<Invoice__c>();
+    Map<String, Map<String, Object>> sourceByExternalId = new Map<String, Map<String, Object>>();
     for (Map<String, Object> row : rows) {
-      invoices.add((Invoice__c) NetSuiteRecordMapper.toSalesforceRecord('Invoice__c', 'Invoice', row));
+      Invoice__c invoiceRecord = (Invoice__c) NetSuiteRecordMapper.toSalesforceRecord('Invoice__c', 'Invoice', row);
+      invoices.add(invoiceRecord);
+      sourceByExternalId.put(invoiceRecord.External_Id__c, row);
     }
     if (!invoices.isEmpty()) {
+      List<SObject> candidates = new List<SObject>();
+      candidates.addAll(invoices);
+      NetSuiteSyncStateService.FilterResult filtered = NetSuiteSyncStateService.filterInboundConflicts(
+        'Invoice__c',
+        'External_Id__c',
+        candidates,
+        sourceByExternalId,
+        config.lastSuccessfulSyncAt,
+        'NetSuiteInvoiceService.syncInvoices'
+      );
+      summary.recordsFailed += filtered.conflictCount;
+      invoices.clear();
+      for (SObject filteredRecord : filtered.records) {
+        invoices.add((Invoice__c) filteredRecord);
+      }
       Database.UpsertResult[] results = Database.upsert(invoices, Invoice__c.External_Id__c, false);
       ErrorLogUtility.logUpsertResults('NetSuite', 'NetSuiteInvoiceService.syncInvoices', 'upsert', invoices, results, null, null);
       count(results, summary);
     }
+    NetSuiteSyncStateService.advanceWatermarkIfClean(rows, summary.recordsFailed);
     summary.message = 'NetSuite invoice sync processed ' + summary.recordsProcessed + ' records.';
     return summary;
   }

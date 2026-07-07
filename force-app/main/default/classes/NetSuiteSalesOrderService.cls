@@ -16,8 +16,10 @@ public with sharing class NetSuiteSalesOrderService {
       summary.message = 'NetSuite sales order sync is disabled.';
       return summary;
     }
-    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery('transaction', 'SalesOrd', sinceDatetime, batchSize), null);
+    Datetime effectiveSince = NetSuiteSyncStateService.effectiveSince(sinceDatetime, config);
+    List<Map<String, Object>> rows = NetSuiteApiClient.configured().suiteql(buildQuery('transaction', 'SalesOrd', effectiveSince, batchSize), null);
     List<Order> orders = new List<Order>();
+    Map<String, Map<String, Object>> sourceByExternalId = new Map<String, Map<String, Object>>();
     for (Map<String, Object> row : rows) {
       Order orderRecord = (Order) NetSuiteRecordMapper.toSalesforceRecord('Order', 'SalesOrder', row);
       if (orderRecord.EffectiveDate == null) {
@@ -27,12 +29,29 @@ public with sharing class NetSuiteSalesOrderService {
         orderRecord.Status = 'Draft';
       }
       orders.add(orderRecord);
+      sourceByExternalId.put(orderRecord.External_Id__c, row);
     }
     if (!orders.isEmpty()) {
+      List<SObject> candidates = new List<SObject>();
+      candidates.addAll(orders);
+      NetSuiteSyncStateService.FilterResult filtered = NetSuiteSyncStateService.filterInboundConflicts(
+        'Order',
+        'External_Id__c',
+        candidates,
+        sourceByExternalId,
+        config.lastSuccessfulSyncAt,
+        'NetSuiteSalesOrderService.syncSalesOrders'
+      );
+      summary.recordsFailed += filtered.conflictCount;
+      orders.clear();
+      for (SObject filteredRecord : filtered.records) {
+        orders.add((Order) filteredRecord);
+      }
       Database.UpsertResult[] results = Database.upsert(orders, Order.External_Id__c, false);
       ErrorLogUtility.logUpsertResults('NetSuite', 'NetSuiteSalesOrderService.syncSalesOrders', 'upsert', orders, results, null, null);
       count(results, summary);
     }
+    NetSuiteSyncStateService.advanceWatermarkIfClean(rows, summary.recordsFailed);
     summary.message = 'NetSuite sales order sync processed ' + summary.recordsProcessed + ' records.';
     return summary;
   }
