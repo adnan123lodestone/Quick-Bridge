@@ -8,6 +8,9 @@ public with sharing class MetaSocialInteractionService {
             throw new MetaSocialInteractionException('Meta event is required.');
         }
         String externalKey = interactionExternalKey(eventRecord);
+        if (String.isBlank(externalKey)) {
+            throw new MetaSocialInteractionException('Meta social interaction requires leadgenId or commentId to build External_Key__c.');
+        }
         List<Social_Interaction__c> existing = String.isBlank(externalKey)
             ? new List<Social_Interaction__c>()
             : [
