@@ -7,7 +7,7 @@ global without sharing class MetaWebhookController {
     }
 
     @HttpGet
-    global static String verify() {
+    global static void verify() { 
         RestRequest request = RestContext.request;
         String mode = request == null ? null : request.params.get('hub.mode');
         String token = request == null ? null : request.params.get('hub.verify_token');
@@ -17,13 +17,14 @@ global without sharing class MetaWebhookController {
                 RestContext.response = new RestResponse();
             }
             RestContext.response.statusCode = 200;
-            return MetaWebhookVerifier.verifyChallenge(mode, token, challenge);
+            String result = MetaWebhookVerifier.verifyChallenge(mode, token, challenge);
+            RestContext.response.responseBody = Blob.valueOf(result); 
         } catch (Exception e) {
             if (RestContext.response == null) {
                 RestContext.response = new RestResponse();
             }
             RestContext.response.statusCode = 403;
-            return 'Forbidden';
+            RestContext.response.responseBody = Blob.valueOf('Forbidden');
         }
     }
 
