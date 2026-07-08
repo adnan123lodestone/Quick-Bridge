@@ -3,11 +3,15 @@
     {
       "path": "force-app",
       "default": true,
-      "package": "MyPackage",
-      "versionName": "Version 1.0",
-      "versionNumber": "1.0.0.NEXT"
+      "package": "QuickBridgeTLG",
+      "versionName": "ver 0.2",
+      "versionNumber": "0.2.0.NEXT"
     }
   ],
-  "namespace": "",
-  "sourceApiVersion": "61.0"
+  "namespace": "QuickBridgeTLG",
+  "sourceApiVersion": "61.0",
+  "packageAliases": {
+    "QuickBridgeTLG": "0Hoam0000003gsLCAQ",
+    "QuickBridgeTLG@0.1.0-1": "04tam000006P41lAAC"
+  }
 }
