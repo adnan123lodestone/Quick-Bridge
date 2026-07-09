@@ -173,7 +173,11 @@ public class IntegrationRetryPolicy {
     String lower = message.toLowerCase();
     return lower.contains('unable_to_lock_row') ||
       lower.contains('unable to obtain exclusive access') ||
-      lower.contains('row lock');
+      lower.contains('row lock') ||
+      lower.contains('timeout') ||
+      lower.contains('timed out') ||
+      lower.contains('temporarily unavailable') ||
+      lower.contains('read timed out');
   }
 
   public static Integer httpStatusCodeFromMessage(String message) {

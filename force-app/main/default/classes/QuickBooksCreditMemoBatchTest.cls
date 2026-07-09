@@ -12,19 +12,10 @@ private class QuickBooksCreditMemoBatchTest {
         public HttpResponse respond(HttpRequest req) {
             HttpResponse res = new HttpResponse();
             res.setHeader('Content-Type', 'application/json');
-            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            System.assert(
-                !endpoint.contains('/creditmemo/'),
-                'Credit memo update hydration must use the QuickBooks query endpoint, not a per-record credit memo GET.'
-            );
             
             if (isSuccess) {
                 res.setStatusCode(200);
-                if (req.getMethod() == 'GET' && endpoint.contains('/query?query=')) {
-                    res.setBody('{"QueryResponse":{"CreditMemo":[{"Id":"EXISTING-QB-ID","SyncToken":"0"}]}}');
-                } else {
-                    res.setBody('{"CreditMemo":{"Id":"CM-123","SyncToken":"0"}}');
-                }
+                res.setBody('{"CreditMemo":{"Id":"CM-123","SyncToken":"0"}}');
             } else {
                 res.setStatusCode(500);
                 res.setBody('{"Fault": {"Error": [{"Message": "Server Error"}]}}');

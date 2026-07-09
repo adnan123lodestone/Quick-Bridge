@@ -42,7 +42,7 @@ private class LockSafeDmlTest {
       )
     );
     System.assertEquals(
-      false,
+      true,
       IntegrationRetryPolicy.isRetryableMessage('Read timed out')
     );
     System.assertEquals(
