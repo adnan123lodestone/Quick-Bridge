@@ -120,6 +120,30 @@ private class MetaWebhookRoutingTest {
     System.assertEquals(0, [SELECT COUNT() FROM Integration_Work_Item__c WHERE Integration__c = 'Meta']);
   }
 
+  @IsTest
+  static void malformedWebhookAndDirectCommentWorkCompleteWithoutInteractionFailures() {
+    seedMetaConfig();
+    String malformedFeed = '{"object":"page","entry":[{"id":"page-1","changes":[{"field":"feed","value":{"item":"status","message":"Page post update"}}]}]}';
+    System.assertEquals(0, MetaPayloadNormalizer.fromWebhookPayload(malformedFeed).size());
+
+    Test.startTest();
+    new MetaIntegrationWorker().handle(new Integration_Work_Item__c(
+      Operation__c = 'WebhookEvent',
+      Payload__c = malformedFeed
+    ));
+    new MetaIntegrationWorker().handle(new Integration_Work_Item__c(
+      Operation__c = 'CommentAttribution',
+      Payload__c = '{}'
+    ));
+    Test.stopTest();
+
+    System.assertEquals(0, [SELECT COUNT() FROM Social_Interaction__c]);
+    System.assertEquals(
+      1,
+      [SELECT COUNT() FROM Error_Log__c WHERE Gateway_Name__c = 'Meta' AND Class_Method_Name__c = 'MetaIntegrationWorker.handle']
+    );
+  }
+
   private static MetaWebhookController.MetaWebhookResponse receiveSigned(String body) {
     RestRequest request = new RestRequest();
     request.requestBody = Blob.valueOf(body);

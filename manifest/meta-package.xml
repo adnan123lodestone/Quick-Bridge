@@ -10,6 +10,8 @@
         <members>MetaCampaignSyncModels</members>
         <members>MetaCampaignSyncService</members>
         <members>MetaCommentAttributionProcessor</members>
+        <members>MetaConnectionValidator</members>
+        <members>MetaConnectionValidatorTest</members>
         <members>MetaConfigService</members>
         <members>MetaInsightsSyncService</members>
         <members>MetaIntegrationFoundationTest</members>
@@ -21,10 +23,15 @@
         <members>MetaPayloadNormalizer</members>
         <members>MetaReconciliationService</members>
         <members>MetaRemainingIntegrationTest</members>
+        <members>MetaScheduleService</members>
+        <members>MetaScheduleServiceTest</members>
         <members>MetaScheduledOperationAdapter</members>
         <members>MetaSocialInteractionService</members>
         <members>MetaWebhookController</members>
+        <members>MetaWebhookRoutingTest</members>
         <members>MetaWebhookVerifier</members>
+        <members>PaymentMetadataService</members>
+        <members>PaymentMetadataServiceTest</members>
         <name>ApexClass</name>
     </types>
     <types>

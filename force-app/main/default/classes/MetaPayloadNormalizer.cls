@@ -74,6 +74,9 @@ public with sharing class MetaPayloadNormalizer {
                     continue;
                 }
                 NormalizedEvent eventRecord = normalizeChange(objectType, entry, change, value);
+                if (eventRecord == null) {
+                    continue;
+                }
                 eventRecord.rawPayload = JSON.serialize(value);
                 events.add(eventRecord);
             }
@@ -92,6 +95,22 @@ public with sharing class MetaPayloadNormalizer {
             }
         }
         return events;
+    }
+
+    public static Boolean isProcessableEvent(NormalizedEvent eventRecord) {
+        if (eventRecord == null) {
+            return false;
+        }
+        if (eventRecord.interactionType == 'Meta Lead Ad') {
+            return String.isNotBlank(eventRecord.leadgenId);
+        }
+        if (eventRecord.interactionType == 'Comment') {
+            return String.isNotBlank(eventRecord.commentId);
+        }
+        if (eventRecord.interactionType == 'Messenger Message') {
+            return String.isNotBlank(eventRecord.messageId);
+        }
+        return false;
     }
 
     private static NormalizedEvent normalizeChange(String objectType, Map<String, Object> entry, Map<String, Object> change, Map<String, Object> value) {
@@ -113,13 +132,19 @@ public with sharing class MetaPayloadNormalizer {
             eventRecord.firstName = getString(value, 'first_name');
             eventRecord.lastName = getString(value, 'last_name');
             eventRecord.commenterName = firstNonBlank(getString(value, 'full_name'), getString(value, 'name'));
-            return eventRecord;
+            return isProcessableEvent(eventRecord) ? eventRecord : null;
         }
 
+        if (!isCommentChange(objectType, fieldName, value)) {
+            return null;
+        }
         eventRecord.interactionType = 'Comment';
         eventRecord.commentId = getString(value, 'comment_id');
         if (String.isBlank(eventRecord.commentId)) {
             eventRecord.commentId = getString(value, 'id');
+        }
+        if (String.isBlank(eventRecord.commentId)) {
+            return null;
         }
         eventRecord.postId = firstNonBlank(getString(value, 'post_id'), getString(value, 'parent_id'));
         eventRecord.instagramMediaId = getString(value, 'media_id');
@@ -128,6 +153,22 @@ public with sharing class MetaPayloadNormalizer {
         eventRecord.commenterProfileId = getString(fromValue, 'id');
         eventRecord.commenterName = firstNonBlank(getString(fromValue, 'name'), getString(fromValue, 'username'));
         return eventRecord;
+    }
+
+    private static Boolean isCommentChange(String objectType, String fieldName, Map<String, Object> value) {
+        if (objectType == 'instagram') {
+            return fieldName == 'comments';
+        }
+        if (objectType != 'page') {
+            return false;
+        }
+        if (fieldName == 'comments') {
+            return true;
+        }
+        if (fieldName != 'feed') {
+            return false;
+        }
+        return getString(value, 'item') == 'comment' || String.isNotBlank(getString(value, 'comment_id'));
     }
 
     private static NormalizedEvent normalizeMessagingEvent(Map<String, Object> messagingValue) {

@@ -12,6 +12,7 @@ global with sharing class ScheduledIntegrationHeartbeat implements Schedulable {
           throw new IllegalArgumentException('Forced Exception');
       }
       GenericScheduleDispatcher.dispatchDue();
+      IntegrationWorkDispatcher.dispatchDueWork();
     } catch (Exception e) {
       ErrorLogUtility.logException(
         'QuickBridge',

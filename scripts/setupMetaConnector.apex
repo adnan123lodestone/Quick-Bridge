@@ -79,4 +79,5 @@ for (String fieldKey : valuesByField.keySet()) {
 }
 
 upsert upserts;
-System.debug('Seeded Meta connector instance and ' + upserts.size() + ' config value records. Replace placeholder values before enabling live traffic.');
+MetaScheduleService.ensureDefaultSchedules();
+System.debug('Seeded Meta connector instance, ' + upserts.size() + ' config value records, and paused default sync schedules. Replace placeholder values and validate the connection before activating live traffic.');

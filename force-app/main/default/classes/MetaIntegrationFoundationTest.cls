@@ -253,11 +253,13 @@ private class MetaIntegrationFoundationTest {
         RestContext.request.params.put('hub.verify_token', 'verify-token');
         RestContext.request.params.put('hub.challenge', 'challenge-ok');
 
-        System.assertEquals('challenge-ok', MetaWebhookController.verify());
+        MetaWebhookController.verify();
+        System.assertEquals('challenge-ok', RestContext.response.responseBody.toString());
         System.assertEquals(200, RestContext.response.statusCode);
 
         RestContext.request.params.put('hub.verify_token', 'wrong-token');
-        System.assertEquals('Forbidden', MetaWebhookController.verify());
+        MetaWebhookController.verify();
+        System.assertEquals('Forbidden', RestContext.response.responseBody.toString());
         System.assertEquals(403, RestContext.response.statusCode);
 
         String body = '{"object":"page","entry":[{"id":"page-1","changes":[{"field":"leadgen","value":{"leadgen_id":"webhook-lead","campaign_id":"webhook-camp"}}]}]}';

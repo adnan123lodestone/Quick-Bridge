@@ -251,6 +251,12 @@ public with sharing class PaymentMetadataService {
                 response.message = validation.message;
                 return response;
             }
+            if (descriptor.connectorKey == MetaConfigService.CONNECTOR_KEY) {
+                MetaConnectionValidator.ValidationResult validation = MetaConnectionValidator.validateConnection();
+                response.success = validation.success;
+                response.message = validation.message;
+                return response;
+            }
             response.success = false;
             response.message = 'Connection validation is not registered for ' + descriptor.label + '.';
         } catch (AuraHandledException ahe) {
