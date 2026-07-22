@@ -211,6 +211,19 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         
         // Fetch Dynamic Mapping for Quote Line Items
         Map<String, String> lineMapping = QBObjectMappings.getQuoteLineItemMapping();
+        if (lineMapping == null) {
+            lineMapping = new Map<String, String>();
+        }
+        Set<String> mappedTargetFields = new Set<String>(lineMapping.values());
+        if (!lineMapping.containsKey('Qty') && !lineMapping.containsKey('SalesItemLineDetail.Qty') && !mappedTargetFields.contains('Quantity')) {
+            lineMapping.put('Qty', 'Quantity');
+        }
+        if (!lineMapping.containsKey('UnitPrice') && !lineMapping.containsKey('SalesItemLineDetail.UnitPrice') && !mappedTargetFields.contains('UnitPrice')) {
+            lineMapping.put('UnitPrice', 'UnitPrice');
+        }
+        if (!lineMapping.containsKey('Description') && !lineMapping.containsKey('Line.Description') && !mappedTargetFields.contains('Description')) {
+            lineMapping.put('Description', 'Description');
+        }
         
         Map<Id, Id> productToPbeMap = new Map<Id, Id>();
         for(PricebookEntry pbe : [SELECT Id, Product2Id FROM PricebookEntry WHERE Pricebook2Id = :standardPricebookId AND Product2Id IN :productIdMap.values() AND IsActive = true]) {
@@ -279,13 +292,29 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         if (record == null || qbData == null || mapping == null) return;
 
         for (String qbField : mapping.keySet()) {
-            Object qbValue = getNestedValue(qbData, qbField);
+            String normalizedField = normalizeLineLeaf(qbField);
+            Object qbValue = getNestedValue(qbData, normalizedField);
+            if (qbValue == null && qbData.containsKey(normalizedField)) {
+                qbValue = qbData.get(normalizedField);
+            }
             if (qbValue != null) {
                 try {
                     putFieldValue(record, mapping.get(qbField), qbValue);
                 } catch (Exception e) {}
             }
         }
+    }
+
+    private String normalizeLineLeaf(String qboField) {
+        if (String.isBlank(qboField)) return qboField;
+        String leaf = qboField;
+        if (leaf.startsWith('Line.')) {
+            leaf = leaf.substringAfter('Line.');
+        }
+        if (leaf.startsWith('SalesItemLineDetail.')) {
+            leaf = leaf.substringAfter('SalesItemLineDetail.');
+        }
+        return leaf;
     }
 
     private Object getNestedValue(Map<String, Object> data, String path) {
@@ -305,9 +334,10 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
     private void putFieldValue(SObject record, String fieldName, Object value) {
         if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) return;
         Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
-        if (!fields.containsKey(fieldName)) return;
-        Schema.DisplayType displayType = fields.get(fieldName).getDescribe().getType();
-        record.put(fieldName, coerceValue(value, displayType));
+        String lowName = fieldName.toLowerCase();
+        if (!fields.containsKey(lowName)) return;
+        Schema.DisplayType displayType = fields.get(lowName).getDescribe().getType();
+        record.put(fields.get(lowName).getDescribe().getName(), coerceValue(value, displayType));
     }
 
     private Object coerceValue(Object value, Schema.DisplayType displayType) {

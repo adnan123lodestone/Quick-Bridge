@@ -344,6 +344,34 @@ public class QBObjectMappings {
         }
     }
     
+    // Order Summary -> Invoice Fallback
+    private static final Map<String, String> ORDER_SUMMARY_TO_INVOICE_FALLBACK = new Map<String, String>{
+        'OrderedDate' => 'TxnDate',
+        'Description' => 'CustomerMemo.value'
+    };
+
+    private static final Map<String, String> ORDER_ITEM_SUMMARY_FALLBACK = new Map<String, String>{
+        'Quantity' => 'Qty',
+        'UnitPrice' => 'UnitPrice',
+        'Description' => 'Description'
+    };
+
+    public static Map<String, String> getOrderSummaryToInvoiceMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('OrderSummary', 'SF to QBO');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
+        return new Map<String, String>(ORDER_SUMMARY_TO_INVOICE_FALLBACK);
+    }
+
+    public static Map<String, String> getOrderItemSummaryMapping() {
+        Map<String, String> dynamicMap = getDynamicMapping('OrderItemSummary', 'SF to QBO');
+        if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
+        return new Map<String, String>(ORDER_ITEM_SUMMARY_FALLBACK);
+    }
+
+    public static Map<String, String> getInvoiceToOrderSummaryMapping() {
+        return reverseMapping(getOrderSummaryToInvoiceMapping());
+    }
+
     public static Map<String, String> getInvoiceToOrderMapping() {
         return reverseMapping(getOrderToInvoiceMapping());
     }
