@@ -211,10 +211,7 @@ public class QBObjectMappings {
     
     public static Map<String, String> getItemToProductMapping() {
         Map<String, String> inboundFields = getDynamicMapping('Product2', 'QBO to SF');
-        if (inboundFields == null || inboundFields.isEmpty()) {
-            return reverseMapping(new Map<String, String>(PRODUCT_TO_ITEM_FALLBACK));
-        }
-        return reverseMapping(inboundFields);
+        return mergeInboundMapping(PRODUCT_TO_ITEM_FALLBACK, inboundFields);
     }
     // 3. Invoice__c -> QBO Invoice
     public static Map<String, String> getInvoiceMapping() {
