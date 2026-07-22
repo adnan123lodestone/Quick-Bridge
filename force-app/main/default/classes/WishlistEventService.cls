@@ -164,7 +164,7 @@ global with sharing class WishlistEventService {
             event.Image_URL__c = eventReq.properties.image_url;
             event.Variant_SKU__c = eventReq.properties.variant_sku;
             event.Event_Timestamp__c = convertTimestamp(eventReq.timestamp);
-            event.Event_Type__c = eventReq.event_type;
+            event.Event_Type__c = normalizeEventType(eventReq.event_type);
 
             if (matchedAccount != null) {
                 event.Account__c = matchedAccount.Id;
@@ -185,6 +185,26 @@ global with sharing class WishlistEventService {
             response = new ApiResponse(400, 'Error: ' + ex.getMessage(), false);
             returnError(res, response);
         }
+    }
+
+    @TestVisible
+    private static String normalizeEventType(String eventType) {
+        if (String.isBlank(eventType)) {
+            return null;
+        }
+        Map<String, String> eventTypeLabels = new Map<String, String>{
+            'add_to_wishlist' => 'Add to Wishlist',
+            'remove_from_wishlist' => 'Remove from Wishlist',
+            'share_wishlist' => 'Share Wishlist',
+            'wishlist_shared' => 'Share Wishlist',
+            'price_drop' => 'Price Drop',
+            'low_stock' => 'Low Stock',
+            'back_in_stock' => 'Back in Stock'
+        };
+        String normalizedKey = eventType.trim().toLowerCase().replace(' ', '_');
+        return eventTypeLabels.containsKey(normalizedKey)
+            ? eventTypeLabels.get(normalizedKey)
+            : eventType.trim();
     }
 
     public static DateTime convertTimestamp(String iso8601_ts) {

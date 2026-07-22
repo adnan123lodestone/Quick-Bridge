@@ -84,7 +84,7 @@
     </values>
     <values>
         <field>Password__c</field>
-        <value xsi:type="xsd:string">1234</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>PayPal_Active__c</field>
@@ -116,7 +116,7 @@
     </values>
     <values>
         <field>QuickBooks_Realm_ID__c</field>
-        <value xsi:type="xsd:string">9341456917896565</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>QuickBooks_Start_Date__c</field>
@@ -124,11 +124,11 @@
     </values>
     <values>
         <field>QuickBooks_Verifier_Token__c</field>
-        <value xsi:type="xsd:string">6f344c88-0f0f-47f1-ad06-f5bf48a4bd89</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Quickbooks_Default_Tax_Agency_Id__c</field>
-        <value xsi:type="xsd:string">1</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Shopify_API_Key__c</field>
@@ -216,6 +216,6 @@
     </values>
     <values>
         <field>Username__c</field>
-        <value xsi:type="xsd:string">testuser</value>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

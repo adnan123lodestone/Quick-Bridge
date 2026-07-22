@@ -151,4 +151,12 @@ private class WishlistEventServiceTest {
         System.assertEquals(400, RestContext.response.statusCode);
         System.assert(RestContext.response.responseBody.toString().contains('Invalid request payload'));
     }
+
+    @isTest
+    static void normalizesSupportedEventTypes() {
+        System.assertEquals('Add to Wishlist', WishlistEventService.normalizeEventType('add_to_wishlist'));
+        System.assertEquals('Share Wishlist', WishlistEventService.normalizeEventType('wishlist_shared'));
+        System.assertEquals('Back in Stock', WishlistEventService.normalizeEventType('Back in Stock'));
+        System.assertEquals(null, WishlistEventService.normalizeEventType(null));
+    }
 }

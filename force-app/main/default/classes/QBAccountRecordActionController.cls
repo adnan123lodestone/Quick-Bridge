@@ -1,4 +1,6 @@
 public with sharing class QBAccountRecordActionController {
+    private static Set<Id> personAccountRecordTypeIds;
+
     public class ActionResponse {
         @AuraEnabled public Boolean success { get; set; }
         @AuraEnabled public String message { get; set; }
@@ -77,7 +79,8 @@ public with sharing class QBAccountRecordActionController {
             try {
                 Account accountToUpdate = new Account(
                     Id = existingAccount.Id,
-                    QuickbookID__c = existingAccount.QuickbookID__c
+                    QuickbookID__c = existingAccount.QuickbookID__c,
+                    RecordTypeId = existingAccount.RecordTypeId
                 );
 
                 if (isVendorAccount) {
@@ -174,6 +177,15 @@ public with sharing class QBAccountRecordActionController {
             
             if (qbValue != null && sfFieldMap.containsKey(sfField)) {
                 Schema.DisplayType fieldType = sfFieldMap.get(sfField).getDescribe().getType();
+
+                Schema.DescribeFieldResult fieldDescribe = sfFieldMap.get(sfField).getDescribe();
+                String resolvedFieldName = fieldDescribe.getName();
+                Boolean isPersonAccountOnlyField = resolvedFieldName.startsWith('Person')
+                    || resolvedFieldName == 'FirstName'
+                    || resolvedFieldName == 'LastName';
+                if (isPersonAccountOnlyField && !isPersonAccount(accountToUpdate)) {
+                    continue;
+                }
                 
                 try {
                     if (fieldType == Schema.DisplayType.CURRENCY || fieldType == Schema.DisplayType.DOUBLE || fieldType == Schema.DisplayType.PERCENT) {
@@ -196,6 +208,23 @@ public with sharing class QBAccountRecordActionController {
                 }
             }
         }
+    }
+
+    private static Boolean isPersonAccount(Account accountRecord) {
+        if (accountRecord == null || accountRecord.RecordTypeId == null) {
+            return false;
+        }
+        if (personAccountRecordTypeIds == null) {
+            personAccountRecordTypeIds = new Set<Id>();
+            for (RecordType recordType : [
+                SELECT Id
+                FROM RecordType
+                WHERE SObjectType = 'Account' AND IsPersonType = TRUE
+            ]) {
+                personAccountRecordTypeIds.add(recordType.Id);
+            }
+        }
+        return personAccountRecordTypeIds.contains(accountRecord.RecordTypeId);
     }
 
     private static Boolean isVendorAccount(Account accountRecord) {

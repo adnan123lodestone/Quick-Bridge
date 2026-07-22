@@ -10,3 +10,8 @@ package.xml
 
 # LWC Jest
 **/__tests__/**
+
+# Org-generated or unrelated community metadata that is not part of QuickBridge 2GP
+**/quickActions/GuestCommunityCase.quickAction-meta.xml
+**/quickActions/NewCommunityCase.quickAction-meta.xml
+**/flows/sfdc_default_ReportExport_Protection_Flow.flow-meta.xml

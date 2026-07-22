@@ -7,7 +7,7 @@
     "node": ">=22.22.0 <25"
   },
   "scripts": {
-    "lint": "eslint **/{aura,lwc}/**/*.js",
+    "lint": "eslint \"force-app/main/default/{aura,lwc}/**/*.js\"",
     "test": "npm run test:unit",
     "test:unit": "sfdx-lwc-jest",
     "test:unit:watch": "sfdx-lwc-jest --watch",

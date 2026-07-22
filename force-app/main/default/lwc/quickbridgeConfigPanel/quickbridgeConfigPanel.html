@@ -625,7 +625,9 @@
                               >
                                 Edit Settings
                               </button>
-                              <template if:true={config.supportsConnectionValidation}>
+                              <template
+                                if:true={config.supportsConnectionValidation}
+                              >
                                 <button
                                   class="qb-action-btn btn-save slds-m-right_small"
                                   data-provider={config.provider}
@@ -1245,7 +1247,10 @@
                             for:each={operationalSummaries}
                             for:item="summary"
                           >
-                            <div key={summary.operationKey} class="operation-row">
+                            <div
+                              key={summary.operationKey}
+                              class="operation-row"
+                            >
                               <span>{summary.operationLabel}</span>
                               <span>{summary.lastRunLabel}</span>
                               <span>{summary.pendingCount}</span>
@@ -1285,7 +1290,8 @@
                                 >
                                 <span>
                                   {preset.salesforceObject}.{preset.salesforceField}
-                                  to {preset.externalObject}.{preset.externalField}
+                                  to
+                                  {preset.externalObject}.{preset.externalField}
                                 </span>
                                 <small>{preset.guidance}</small>
                               </div>

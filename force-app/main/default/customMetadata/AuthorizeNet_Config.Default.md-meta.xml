@@ -4,7 +4,7 @@
     <protected>false</protected>
     <values>
         <field>APILoginId__c</field>
-        <value xsi:type="xsd:string">123</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Active__c</field>
@@ -12,15 +12,15 @@
     </values>
     <values>
         <field>EndDate__c</field>
-        <value xsi:type="xsd:date">2027-06-02</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>PublicClientKey__c</field>
-        <value xsi:type="xsd:string">123123123</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>StartDate__c</field>
-        <value xsi:type="xsd:date">2026-06-01</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>UseSandbox__c</field>
@@ -28,6 +28,6 @@
     </values>
     <values>
         <field>WebhookSigningKey__c</field>
-        <value xsi:type="xsd:string">123</value>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

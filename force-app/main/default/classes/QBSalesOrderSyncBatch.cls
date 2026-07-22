@@ -28,10 +28,11 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
   }
 
   public Database.QueryLocator start(Database.BatchableContext bc) {
-    String orderFields = buildOrderQueryFields();
+    Set<String> orderFields = new Set<String>(buildOrderQueryFields().split(',\\s*'));
+    orderFields.add('AccountId');
+    orderFields.add('Account.QuickbookID__c');
     String query =
-      'SELECT ' + orderFields +
-      ', AccountId, Account.QuickbookID__c' +
+      'SELECT ' + String.join(new List<String>(orderFields), ', ') +
       ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice,' +
       ' Product2.QuickbookID__c, QB_LineiTemID__c' +
       buildOrderItemQueryFields() +

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types>
         <members>ConnectorAdapterAllowlist</members>
@@ -92,12 +92,14 @@
         <members>Connector_Config_Field.Meta_CampaignSyncEnabled</members>
         <members>Connector_Config_Field.Meta_CommentAttributionEnabled</members>
         <members>Connector_Config_Field.Meta_CreateMissingCampaigns</members>
-        <members>Connector_Config_Field.Meta_DefaultCampaignMemberStatus</members>
+        <members
+    >Connector_Config_Field.Meta_DefaultCampaignMemberStatus</members>
         <members>Connector_Config_Field.Meta_DefaultFallbackCampaignId</members>
         <members>Connector_Config_Field.Meta_DefaultLeadSource</members>
         <members>Connector_Config_Field.Meta_GraphApiVersion</members>
         <members>Connector_Config_Field.Meta_InsightsSyncEnabled</members>
-        <members>Connector_Config_Field.Meta_InstagramBusinessAccountId</members>
+        <members
+    >Connector_Config_Field.Meta_InstagramBusinessAccountId</members>
         <members>Connector_Config_Field.Meta_KeywordRulesJson</members>
         <members>Connector_Config_Field.Meta_LeadAdsEnabled</members>
         <members>Connector_Config_Field.Meta_LeadCreationMode</members>
@@ -108,12 +110,17 @@
         <members>Connector_Config_Field.Meta_WebhookVerifyTokenRef</members>
         <members>Integration_Connector.Meta</members>
         <members>Integration_Connector_Capability.Meta_Scheduler</members>
-        <members>Integration_Connector_Capability.Meta_Work_CampaignSync</members>
-        <members>Integration_Connector_Capability.Meta_Work_CommentAttribution</members>
-        <members>Integration_Connector_Capability.Meta_Work_InsightsSync</members>
+        <members
+    >Integration_Connector_Capability.Meta_Work_CampaignSync</members>
+        <members
+    >Integration_Connector_Capability.Meta_Work_CommentAttribution</members>
+        <members
+    >Integration_Connector_Capability.Meta_Work_InsightsSync</members>
         <members>Integration_Connector_Capability.Meta_Work_LeadAd</members>
-        <members>Integration_Connector_Capability.Meta_Work_Reconciliation</members>
-        <members>Integration_Connector_Capability.Meta_Work_WebhookEvent</members>
+        <members
+    >Integration_Connector_Capability.Meta_Work_Reconciliation</members>
+        <members
+    >Integration_Connector_Capability.Meta_Work_WebhookEvent</members>
         <members>Integration_Object_Map.Meta_Ad</members>
         <members>Integration_Object_Map.Meta_Ad_Set</members>
         <members>Integration_Object_Map.Meta_Campaign</members>

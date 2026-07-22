@@ -436,11 +436,11 @@ public without sharing class IntegrationUsageService {
       return state;
     }
 
-    Boolean active = ConnectorConfigResolver.getBoolean(
-      info.key,
-      info.activeField
+    ConnectorConfigService.ConnectorConfig connectorConfig = ConnectorConfigService.getConfig(
+      info.key
     );
-    Date endDate = ConnectorConfigResolver.getDate(info.key, info.endDateField);
+    Boolean active = connectorConfig.active == true;
+    Date endDate = connectorConfig.expiryDate;
     if (endDate != null) {
       state.daysRemaining = Date.today().daysBetween(endDate);
     }
@@ -471,11 +471,11 @@ public without sharing class IntegrationUsageService {
     );
     if (String.isBlank(normalized)) {
       normalized = product.toLowerCase().replaceAll('[^a-z0-9]', '');
-      if (normalized == 'qbo' || normalized == 'quickbooksonline') {
-        normalized = 'quickbooks';
-      } else if (normalized == 'authnet' || normalized == 'authorizenet') {
-        normalized = 'authorizenet';
-      }
+    }
+    if (normalized == 'qbo' || normalized == 'quickbooksonline') {
+      normalized = 'quickbooks';
+    } else if (normalized == 'authnet') {
+      normalized = 'authorizenet';
     }
     return PRODUCT_INFO_BY_KEY.get(normalized);
   }

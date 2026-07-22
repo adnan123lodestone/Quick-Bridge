@@ -3656,7 +3656,9 @@ form {
 
 .operation-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.5fr) minmax(145px, 1fr) repeat(4, minmax(64px, 0.55fr)) minmax(70px, 0.5fr);
+  grid-template-columns:
+    minmax(150px, 1.5fr) minmax(145px, 1fr) repeat(4, minmax(64px, 0.55fr))
+    minmax(70px, 0.5fr);
   gap: 0.5rem;
   align-items: center;
   padding: 0.7rem 0.85rem;

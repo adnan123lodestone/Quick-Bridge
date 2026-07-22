@@ -339,16 +339,14 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         // We detect this by checking whether the field's API name starts with 'Person'
         // (e.g. PersonEmail, PersonBirthdate) or is one of the shared name fields that
         // are only writable via person accounts (FirstName, LastName).
-        if (personAccountRecordTypeId != null) {
-            String resolvedName = fieldDescribe.getName();
-            Boolean isPersonOnlyField = resolvedName.startsWith('Person')
-                || resolvedName == 'FirstName'
-                || resolvedName == 'LastName';
-            if (isPersonOnlyField) {
-                Id rtId = (Id) record.get('RecordTypeId');
-                if (rtId == null || rtId != personAccountRecordTypeId) {
-                    return;
-                }
+        String resolvedName = fieldDescribe.getName();
+        Boolean isPersonOnlyField = resolvedName.startsWith('Person')
+            || resolvedName == 'FirstName'
+            || resolvedName == 'LastName';
+        if (isPersonOnlyField) {
+            Id rtId = (Id) record.get('RecordTypeId');
+            if (personAccountRecordTypeId == null || rtId == null || rtId != personAccountRecordTypeId) {
+                return;
             }
         }
 

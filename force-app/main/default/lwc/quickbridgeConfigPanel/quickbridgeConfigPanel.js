@@ -235,11 +235,15 @@ export default class QuickbridgeConfigPanel extends LightningElement {
     return this.operationalMappingPresets.length > 0;
   }
   get visibleOperationalMappingPresets() {
-    return (this.operationalMappingPresets || []).slice(0, 10).map((preset) => ({
-      ...preset,
-      requiredLabel: preset.required ? "Required" : "Recommended",
-      requiredClass: preset.required ? "preset-required" : "preset-recommended"
-    }));
+    return (this.operationalMappingPresets || [])
+      .slice(0, 10)
+      .map((preset) => ({
+        ...preset,
+        requiredLabel: preset.required ? "Required" : "Recommended",
+        requiredClass: preset.required
+          ? "preset-required"
+          : "preset-recommended"
+      }));
   }
   get manualRunDirectionOptions() {
     return [
@@ -537,12 +541,7 @@ export default class QuickbridgeConfigPanel extends LightningElement {
   }
 
   tileMatchKeys(tile) {
-    return [
-      tile?.id,
-      tile?.productKey,
-      tile?.label,
-      ...(tile?.aliases || [])
-    ]
+    return [tile?.id, tile?.productKey, tile?.label, ...(tile?.aliases || [])]
       .map((value) => this.normalizeBrandKey(value))
       .filter(Boolean);
   }
@@ -701,7 +700,10 @@ export default class QuickbridgeConfigPanel extends LightningElement {
         try {
           await refreshLicenses({ sessionToken: this.adminSessionToken });
         } catch (refreshError) {
-          console.error("Automatic license refresh failed during login:", refreshError);
+          console.error(
+            "Automatic license refresh failed during login:",
+            refreshError
+          );
         }
 
         this.selectedTile = "";
@@ -925,7 +927,9 @@ export default class QuickbridgeConfigPanel extends LightningElement {
       if (this.handleSessionError(error)) return;
       this.showToast(
         "Manual Run Failed",
-        error.body?.message || error.message || "Could not queue the manual run.",
+        error.body?.message ||
+          error.message ||
+          "Could not queue the manual run.",
         "error"
       );
     } finally {

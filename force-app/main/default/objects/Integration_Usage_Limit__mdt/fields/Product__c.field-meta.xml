@@ -49,6 +49,21 @@
                 <default>false</default>
                 <label>DHL</label>
             </value>
+            <value>
+                <fullName>Klaviyo</fullName>
+                <default>false</default>
+                <label>Klaviyo</label>
+            </value>
+            <value>
+                <fullName>Facebook / Instagram</fullName>
+                <default>false</default>
+                <label>Facebook / Instagram</label>
+            </value>
+            <value>
+                <fullName>NetSuite</fullName>
+                <default>false</default>
+                <label>NetSuite</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

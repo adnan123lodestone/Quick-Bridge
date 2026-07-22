@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types>
         <members>ConnectorAdapterAllowlist</members>
@@ -38,12 +38,14 @@
         <members>Connector_Config_Field.NetSuite_AccountId</members>
         <members>Connector_Config_Field.NetSuite_AuthType</members>
         <members>Connector_Config_Field.NetSuite_ConsumerKeyReference</members>
-        <members>Connector_Config_Field.NetSuite_ConsumerSecretReference</members>
+        <members
+    >Connector_Config_Field.NetSuite_ConsumerSecretReference</members>
         <members>Connector_Config_Field.NetSuite_ARAccountReference</members>
         <members>Connector_Config_Field.NetSuite_DefaultClass</members>
         <members>Connector_Config_Field.NetSuite_DefaultCurrency</members>
         <members>Connector_Config_Field.NetSuite_DefaultDepartment</members>
-        <members>Connector_Config_Field.NetSuite_DefaultFulfillmentLocation</members>
+        <members
+    >Connector_Config_Field.NetSuite_DefaultFulfillmentLocation</members>
         <members>Connector_Config_Field.NetSuite_DefaultItemRecordType</members>
         <members>Connector_Config_Field.NetSuite_DefaultLocation</members>
         <members>Connector_Config_Field.NetSuite_DefaultPriceLevel</members>
@@ -57,8 +59,10 @@
         <members>Connector_Config_Field.NetSuite_Environment</members>
         <members>Connector_Config_Field.NetSuite_LastSuccessfulSyncAt</members>
         <members>Connector_Config_Field.NetSuite_NamedCredentialName</members>
-        <members>Connector_Config_Field.NetSuite_PaymentAccountReference</members>
-        <members>Connector_Config_Field.NetSuite_PollingIntervalMinutes</members>
+        <members
+    >Connector_Config_Field.NetSuite_PaymentAccountReference</members>
+        <members
+    >Connector_Config_Field.NetSuite_PollingIntervalMinutes</members>
         <members>Connector_Config_Field.NetSuite_RestWebServicesUrl</members>
         <members>Connector_Config_Field.NetSuite_SuiteQLUrl</members>
         <members>Connector_Config_Field.NetSuite_SyncDirection</members>
@@ -67,20 +71,28 @@
         <members>Connector_Config_Field.NetSuite_WebhookEnabled</members>
         <members>Integration_Connector.NetSuite</members>
         <members>Integration_Connector_Capability.NetSuite_Scheduler</members>
-        <members>Integration_Connector_Capability.NetSuite_Work_CustomerSync</members>
-        <members>Integration_Connector_Capability.NetSuite_Work_FulfillmentSync</members>
-        <members>Integration_Connector_Capability.NetSuite_Work_InvoiceSync</members>
-        <members>Integration_Connector_Capability.NetSuite_Work_ItemSync</members>
-        <members>Integration_Connector_Capability.NetSuite_Work_PaymentSync</members>
-        <members>Integration_Connector_Capability.NetSuite_Work_SalesOrderSync</members>
+        <members
+    >Integration_Connector_Capability.NetSuite_Work_CustomerSync</members>
+        <members
+    >Integration_Connector_Capability.NetSuite_Work_FulfillmentSync</members>
+        <members
+    >Integration_Connector_Capability.NetSuite_Work_InvoiceSync</members>
+        <members
+    >Integration_Connector_Capability.NetSuite_Work_ItemSync</members>
+        <members
+    >Integration_Connector_Capability.NetSuite_Work_PaymentSync</members>
+        <members
+    >Integration_Connector_Capability.NetSuite_Work_SalesOrderSync</members>
         <members>Integration_Object_Map.NetSuite_Customer_Account</members>
         <members>Integration_Object_Map.NetSuite_Customer_Contact</members>
-        <members>Integration_Object_Map.NetSuite_Fulfillment_CarrierShipment</members>
+        <members
+    >Integration_Object_Map.NetSuite_Fulfillment_CarrierShipment</members>
         <members>Integration_Object_Map.NetSuite_InvoiceLine</members>
         <members>Integration_Object_Map.NetSuite_Invoice_CustomInvoice</members>
         <members>Integration_Object_Map.NetSuite_Item_Product</members>
         <members>Integration_Object_Map.NetSuite_Payment_PortalTxn</members>
-        <members>Integration_Object_Map.NetSuite_SalesOrderLine_OrderItem</members>
+        <members
+    >Integration_Object_Map.NetSuite_SalesOrderLine_OrderItem</members>
         <members>Integration_Object_Map.NetSuite_SalesOrder_Order</members>
         <members>Integration_Product_Default.NetSuite</members>
         <name>CustomMetadata</name>

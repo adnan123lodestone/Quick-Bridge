@@ -10,16 +10,16 @@ All eight repo-reproducible issues from the permanent fix plan were implemented 
 
 ## Fixed Items
 
-| Plan ID | Status | Fix Summary |
-| --- | --- | --- |
-| ISSUE-007 | Fixed | Removed per-record QuickBooks batch hydration for invoices, credit memos, and purchase orders. Batches now hydrate existing QuickBooks records with `QuickBooksBulkQueryService.queryByIdsMap(...)` instead of per-record `/invoice/{id}`, `/creditmemo/{id}`, and `/purchaseorder/{id}` calls. |
-| ISSUE-002 | Fixed | Moved remaining runtime reads off `Quickbridge_Config__mdt` into normalized connector config resolution. Legacy custom metadata reads are isolated in `QuickbridgeLegacyConfigCompatibility` for compatibility-only paths. |
-| ISSUE-009 | Fixed | Made the invoice pipeline fail closed unless exactly one canonical invoice target exists. Tests now explicitly configure invoice targets instead of relying on hidden fallback behavior. |
-| NEW-003 | Fixed | Tightened retry classification so HTTP status and structured signals drive retries. Message parsing is limited to platform lock/DML lock patterns. |
-| ISSUE-005 | Fixed | Refactored `internalPaymentComponent` to render from provider descriptors and renderer mode, removing provider-key fallback/default lists and provider-specific getters. |
-| NEW-004 | Fixed | Refactored `quickbridgeConfigPanel` logo and scheduler UI to use connector descriptors and capabilities, removing connector-key logo maps and hard-coded scheduler checks. |
-| ISSUE-015 | Fixed | Added static guardrails for admin/runtime import boundaries and verified checkout/config-panel boundaries in the permanent-fix script. |
-| NEW-011 | Fixed | Added `ErrorLogLinkBackfillService` for idempotent backfill of missing `Error_Log_Link__c` records and kept `Error_Log_Link__c` as the authoritative error-correlation path. |
+| Plan ID   | Status | Fix Summary                                                                                                                                                                                                                                                                                     |
+| --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ISSUE-007 | Fixed  | Removed per-record QuickBooks batch hydration for invoices, credit memos, and purchase orders. Batches now hydrate existing QuickBooks records with `QuickBooksBulkQueryService.queryByIdsMap(...)` instead of per-record `/invoice/{id}`, `/creditmemo/{id}`, and `/purchaseorder/{id}` calls. |
+| ISSUE-002 | Fixed  | Moved remaining runtime reads off `Quickbridge_Config__mdt` into normalized connector config resolution. Legacy custom metadata reads are isolated in `QuickbridgeLegacyConfigCompatibility` for compatibility-only paths.                                                                      |
+| ISSUE-009 | Fixed  | Made the invoice pipeline fail closed unless exactly one canonical invoice target exists. Tests now explicitly configure invoice targets instead of relying on hidden fallback behavior.                                                                                                        |
+| NEW-003   | Fixed  | Tightened retry classification so HTTP status and structured signals drive retries. Message parsing is limited to platform lock/DML lock patterns.                                                                                                                                              |
+| ISSUE-005 | Fixed  | Refactored `internalPaymentComponent` to render from provider descriptors and renderer mode, removing provider-key fallback/default lists and provider-specific getters.                                                                                                                        |
+| NEW-004   | Fixed  | Refactored `quickbridgeConfigPanel` logo and scheduler UI to use connector descriptors and capabilities, removing connector-key logo maps and hard-coded scheduler checks.                                                                                                                      |
+| ISSUE-015 | Fixed  | Added static guardrails for admin/runtime import boundaries and verified checkout/config-panel boundaries in the permanent-fix script.                                                                                                                                                          |
+| NEW-011   | Fixed  | Added `ErrorLogLinkBackfillService` for idempotent backfill of missing `Error_Log_Link__c` records and kept `Error_Log_Link__c` as the authoritative error-correlation path.                                                                                                                    |
 
 ## Additional Cleanup
 

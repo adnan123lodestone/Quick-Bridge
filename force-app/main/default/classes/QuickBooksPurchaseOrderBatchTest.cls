@@ -6,11 +6,13 @@ private class QuickBooksPurchaseOrderBatchTest {
             HttpResponse res = new HttpResponse();
             res.setStatusCode(200);
             res.setHeader('Content-Type', 'application/json');
-            String endpoint = req.getEndpoint();
-            if (req.getMethod() == 'GET' && endpoint.contains('/purchaseorder/PO-EXISTING')) {
-                res.setBody('{"PurchaseOrder":{"Id":"PO-EXISTING","SyncToken":"5"}}');
-            } else if (req.getMethod() == 'GET') {
-                res.setBody('{"PurchaseOrder":{"Id":"PO-1","SyncToken":"0"}}');
+            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
+            System.assert(
+                !endpoint.contains('/purchaseorder/'),
+                'Purchase order update hydration must use the QuickBooks query endpoint, not a per-record purchase order GET.'
+            );
+            if (req.getMethod() == 'GET' && endpoint.contains('/query?query=')) {
+                res.setBody('{"QueryResponse":{"PurchaseOrder":[{"Id":"PO-EXISTING","SyncToken":"5"}]}}');
             } else if (req.getMethod() == 'POST') {
                 res.setBody('{"PurchaseOrder":{"Id":"PO-NEW","SyncToken":"0"}}');
             } else {

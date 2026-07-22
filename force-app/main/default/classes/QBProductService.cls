@@ -132,7 +132,7 @@ public class QBProductService {
             return hydratedById;
         }
 
-        Set<String> fieldsToQuery = new Set<String>{
+        Set<String> requestedFields = new Set<String>{
             'Id', 'Name', 'IsActive', 'QuickbookID__c',
             'Income_Account__c', 'Expense_Account__c',
             'COGS_Account_Ref__c', 'Asset_Account_Ref__c',
@@ -141,7 +141,22 @@ public class QBProductService {
 
         Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
         if (fieldMap != null) {
-            fieldsToQuery.addAll(fieldMap.keySet());
+            requestedFields.addAll(fieldMap.keySet());
+        }
+
+        Map<String, Schema.SObjectField> productFields = Schema.SObjectType.Product2.fields.getMap();
+        Set<String> fieldsToQuery = new Set<String>();
+        for (String fieldName : requestedFields) {
+            if (String.isBlank(fieldName) || fieldName.contains('.')) continue;
+            Schema.SObjectField fieldToken = productFields.get(fieldName);
+            if (fieldToken == null) fieldToken = productFields.get(fieldName.toLowerCase());
+            if (fieldToken == null && !fieldName.toLowerCase().startsWith('quickbridgetlg__')) {
+                fieldToken = productFields.get('QuickBridgeTLG__' + fieldName);
+                if (fieldToken == null) fieldToken = productFields.get(('QuickBridgeTLG__' + fieldName).toLowerCase());
+            }
+            if (fieldToken != null) {
+                fieldsToQuery.add(fieldToken.getDescribe().getName());
+            }
         }
 
         String query = 'SELECT ' + String.join(new List<String>(fieldsToQuery), ', ')

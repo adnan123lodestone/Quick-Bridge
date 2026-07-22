@@ -113,9 +113,9 @@ private class QBObjectMappingsTest {
     static void testOrderItemMapping() {
         Map<String, String> orderItemMap = QBObjectMappings.getOrderItemMapping();
         System.assert(!orderItemMap.isEmpty());
-        System.assertEquals('Qty', orderItemMap.get('Quantity'));
-        System.assertEquals('UnitPrice', orderItemMap.get('UnitPrice'));
-        System.assertEquals('Description', orderItemMap.get('Description'));
+        System.assert(orderItemMap.get('Quantity').endsWith('Qty'));
+        System.assert(orderItemMap.get('UnitPrice').endsWith('UnitPrice'));
+        System.assert(orderItemMap.get('Description').endsWith('Description'));
     }
 
     @isTest

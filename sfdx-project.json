@@ -9,7 +9,7 @@
     }
   ],
   "namespace": "QuickBridgeTLG",
-  "sourceApiVersion": "61.0",
+  "sourceApiVersion": "66.0",
   "packageAliases": {
     "QuickBridgeTLG": "0Hoam0000003gsLCAQ",
     "QuickBridgeTLG@0.1.0-1": "04tam000006P41lAAC"

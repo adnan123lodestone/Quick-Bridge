@@ -84,7 +84,7 @@
     </values>
     <values>
         <field>Password__c</field>
-        <value xsi:type="xsd:string">1234</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>PayPal_Active__c</field>
@@ -144,7 +144,7 @@
     </values>
     <values>
         <field>Shopify_End_Date__c</field>
-        <value xsi:type="xsd:date">2026-05-16</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Shopify_Is_Active__c</field>
@@ -152,11 +152,11 @@
     </values>
     <values>
         <field>Shopify_Start_Date__c</field>
-        <value xsi:type="xsd:date">2026-05-15</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Shopify_Store_URL__c</field>
-        <value xsi:type="xsd:string">https://example.com</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Stripe_Active__c</field>
@@ -216,6 +216,6 @@
     </values>
     <values>
         <field>Username__c</field>
-        <value xsi:type="xsd:string">testuser</value>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

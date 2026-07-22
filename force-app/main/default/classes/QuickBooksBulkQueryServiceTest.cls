@@ -42,6 +42,22 @@ private class QuickBooksBulkQueryServiceTest {
     }
 
     @isTest
+    static void queryByIdsMapIndexesRecordsByQuickBooksId() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        queryCalls = 0;
+        mockMode = 'chunk';
+        Test.setMock(HttpCalloutMock.class, new BulkQueryMock());
+
+        Map<String, Map<String, Object>> recordsById = QuickBooksBulkQueryService.queryByIdsMap(
+            'Invoice',
+            new Set<String>{ 'INV-123' }
+        );
+
+        System.assertEquals(1, queryCalls, 'A single id set should use one QBO query call.');
+        System.assertEquals(true, recordsById.containsKey('INV-0'), 'Returned QBO records should be indexed by Id.');
+    }
+
+    @isTest
     static void queryUpdatedSincePaginatesUntilShortPage() {
         QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         queryCalls = 0;

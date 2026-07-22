@@ -31,12 +31,14 @@ private class QBOInvoiceMappingResolverTest {
      */
     @isTest
     static void testResolvesOrderExceptionPath() {
-        QBOInvoiceMappingResolver.clearTestFieldMappingRows();
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>());
         try {
             QBOInvoiceMappingResolver.ResolverResult result = QBOInvoiceMappingResolver.resolve();
-            System.assertNotEquals(null, result);
+            Assert.fail('Expected the resolver to reject an empty mapping set.');
         } catch (QBOInvoiceMappingResolver.ResolverException e) {
-            System.assert(e.getMessage().contains('No active Field_Mapping__mdt'));
+            Assert.isTrue(e.getMessage().contains('No active Field_Mapping__mdt'));
+        } finally {
+            QBOInvoiceMappingResolver.clearTestFieldMappingRows();
         }
     }
 

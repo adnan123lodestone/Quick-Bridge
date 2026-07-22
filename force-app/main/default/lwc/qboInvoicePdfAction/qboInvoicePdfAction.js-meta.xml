@@ -1,9 +1,10 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
     <apiVersion>66.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>QBO Invoice PDF</masterLabel>
-    <description>Download the QBO Invoice PDF for this record and save it to Files.</description>
+    <description
+  >Download the QBO Invoice PDF for this record and save it to Files.</description>
     <targets>
         <target>lightning__RecordPage</target>
         <target>lightning__AppPage</target>

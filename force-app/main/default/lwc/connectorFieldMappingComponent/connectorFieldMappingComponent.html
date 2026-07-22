@@ -17,7 +17,9 @@
       </template>
 
       <template if:true={hasObjectMaps}>
-        <div class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large">
+        <div
+          class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large"
+        >
           <div class="slds-grid slds-grid_vertical-align-end slds-gutters">
             <div class="slds-col slds-size_3-of-5">
               <label class="custom-label">Object Map</label>
@@ -104,7 +106,9 @@
                           </template>
                         </select>
                         <template if:true={row.isMandatory}>
-                          <span class="required-star" title={requiredTitle}>*</span>
+                          <span class="required-star" title={requiredTitle}
+                            >*</span
+                          >
                         </template>
                       </div>
                     </td>
@@ -140,7 +144,10 @@
                         <option value="" selected={row.isSfFieldBlank}>
                           -- None --
                         </option>
-                        <template for:each={row.sfFieldOptions} for:item="option">
+                        <template
+                          for:each={row.sfFieldOptions}
+                          for:item="option"
+                        >
                           <option
                             key={option.value}
                             value={option.value}
@@ -181,7 +188,9 @@
           </div>
         </div>
 
-        <div class="slds-m-top_large slds-grid slds-grid_align-spread footer-actions">
+        <div
+          class="slds-m-top_large slds-grid slds-grid_align-spread footer-actions"
+        >
           <p class="slds-text-color_weak font-size-sm">{footerText}</p>
           <div class="slds-grid slds-gutters">
             <div class="slds-col">
