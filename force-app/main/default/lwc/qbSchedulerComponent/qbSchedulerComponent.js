@@ -231,7 +231,7 @@ export default class QbSchedulerComponent extends LightningElement {
       });
       this.showToast("Schedule Stopped", result, "info");
       await refreshApex(this.wiredUsageResult);
-      await refreshApex(this.wiredJobsResult);
+      return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast(
         "Error",
@@ -328,11 +328,11 @@ export default class QbSchedulerComponent extends LightningElement {
       btnClass: "obj-btn"
     },
     {
-      id: "Quotes",
-      label: "Quotes",
-      icon: "utility:quote",
-      isSelected: false,
-      btnClass: "obj-btn"
+      id: "Quotes",             
+      label: "Quotes",          
+      icon: "utility:quote",    
+      isSelected: false,        
+      btnClass: "obj-btn"       
     }
   ];
 
@@ -396,7 +396,7 @@ export default class QbSchedulerComponent extends LightningElement {
         "success"
       );
       await refreshApex(this.wiredUsageResult);
-      await refreshApex(this.wiredJobsResult);
+      return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
     }
@@ -429,7 +429,7 @@ export default class QbSchedulerComponent extends LightningElement {
       this.selectedJobId = null;
       this.isEditMode = false;
       await refreshApex(this.wiredUsageResult);
-      await refreshApex(this.wiredJobsResult);
+      return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
     }
@@ -446,7 +446,7 @@ export default class QbSchedulerComponent extends LightningElement {
       this.showToast("Success", "Schedule updated successfully!", "success");
       this.isEditMode = false;
       await refreshApex(this.wiredUsageResult);
-      await refreshApex(this.wiredJobsResult);
+      return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
     }

@@ -1,6 +1,8 @@
 import { LightningElement, track } from "lwc";
+import QuickBridge_Logo from "@salesforce/resourceUrl/QuickBridge_Logo";
 
 export default class QuickBridgeLogin extends LightningElement {
+  quickBridgeLogo = QuickBridge_Logo;
   @track userId = "";
 
   handleUserIdChange(event) {

@@ -63,19 +63,6 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                     );
                 }
             }
-
-            Map<String, Map<String, Object>> existingCreditMemosById = new Map<String, Map<String, Object>>();
-            if (!isInitialSync) {
-                Set<String> creditMemoIdsToUpdate = new Set<String>();
-                for (sObject obj : scope) {
-                    sObject currentRecord = recordsWithItems.containsKey(obj.Id) ? recordsWithItems.get(obj.Id) : obj;
-                    String qbId = getCreditMemoQbId(currentRecord);
-                    if (String.isNotBlank(qbId)) {
-                        creditMemoIdsToUpdate.add(qbId);
-                    }
-                }
-                existingCreditMemosById = QuickBooksBulkQueryService.queryByIdsMap('CreditMemo', creditMemoIdsToUpdate);
-            }
             
             for (sObject obj : scope) {
                 sObject currentRecord = obj;
@@ -104,7 +91,11 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                 
                 if (currentRecord == null || childItems == null || childItems.isEmpty()) continue;
                 
-                String qbId = getCreditMemoQbId(currentRecord);
+                String qbId = null;
+                try { qbId = (String)currentRecord.get('External_Id__c'); } catch(Exception e){}
+                if (qbId == null) {
+                    try { qbId = (String)currentRecord.get('QuickBridgeTLG__External_Id__c'); } catch(Exception e){}
+                }
                 
                 if (qbId == null) {
                     String newQbId = createCreditMemo(currentRecord, childItems, fieldMap, lineFieldMap);
@@ -115,14 +106,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                     }
                 }
                 else if (qbId != null && !isInitialSync) {
-                    updateCreditMemo(
-                        currentRecord,
-                        childItems,
-                        fieldMap,
-                        qbId,
-                        lineFieldMap,
-                        existingCreditMemosById.get(qbId)
-                    );
+                    updateCreditMemo(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
                 }
             }
             
@@ -212,25 +196,21 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         return null;
     }
     
-    private void updateCreditMemo(
-        sObject record,
-        List<sObject> lineItems,
-        Map<String, String> fieldMap,
-        String qbId,
-        Map<String, String> lineFieldMap,
-        Map<String, Object> existingCM
-    ) {
-        if (existingCM == null) {
+    private void updateCreditMemo(sObject record, List<sObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
+        HttpResponse getRes = QuickBooksAuthHandler.makeApiCall('GET', '/creditmemo/' + qbId, null);
+        if (getRes == null || getRes.getStatusCode() != 200) {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
-                'QuickBooksCreditMemoBatch.updateCreditMemo.queryCreditMemo',
-                'QuickBooks credit memo query returned no record for Id ' + qbId,
-                null,
+                'QuickBooksCreditMemoBatch.updateCreditMemo.getCreditMemo',
+                'QuickBooks credit memo query failed: ' + (getRes == null ? 'Null Response' : getRes.getBody()),
+                getRes == null ? null : getRes.getStatusCode(),
                 'Credit_Memo__c',
                 record == null ? null : record.Id
             );
             return;
         }
+        
+        Map<String, Object> existingCM = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('CreditMemo');
         
         Map<String, Object> requestBody = new Map<String, Object>();
         requestBody.put('Id', qbId);
@@ -267,16 +247,6 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                 record == null ? null : record.Id
             );
         }
-    }
-
-    private static String getCreditMemoQbId(sObject record) {
-        if (record == null) return null;
-        String qbId = null;
-        try { qbId = (String)record.get('External_Id__c'); } catch(Exception e){}
-        if (qbId == null) {
-            try { qbId = (String)record.get('QuickBridgeTLG__External_Id__c'); } catch(Exception e){}
-        }
-        return qbId;
     }
     
     private void applyDynamicMappings(Map<String, Object> requestBody, sObject record, Map<String, String> fieldMap) {

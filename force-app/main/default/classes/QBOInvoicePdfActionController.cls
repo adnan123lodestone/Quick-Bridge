@@ -217,7 +217,33 @@ public with sharing class QBOInvoicePdfActionController {
 
             String displayName = fetchFieldValue(recordId, objectApiName, resolved.displayNameField);
 
+            // Check if record is a Draft Order mapped to an Estimate
+            String stripped = stripNamespace(objectApiName);
+            if (stripped.equalsIgnoreCase('Order')) {
+                String status = fetchFieldValue(recordId, objectApiName, 'Status');
+                Boolean mapDraftAsEstimates = false;
+                try {
+                    mapDraftAsEstimates = ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
+                } catch (Exception e) {}
+
+                if (status == 'Draft' && mapDraftAsEstimates) {
+                    throw new AuraHandledException(
+                        'This QuickBooks ID (' + qboId + ') is for an Estimate, not an Invoice. Please activate the Order and sync it as an Invoice before downloading the Invoice PDF.'
+                    );
+                }
+            }
+
             HttpResponse res = QuickBooksAuthHandler.makeBinaryApiCall('/invoice/' + qboId + '/pdf');
+
+            if (res.getStatusCode() == 400 || res.getStatusCode() == 404) {
+                // Check if this ID belongs to an Estimate in QBO
+                HttpResponse estCheck = QuickBooksAuthHandler.makeBinaryApiCall('/estimate/' + qboId + '/pdf');
+                if (estCheck != null && estCheck.getStatusCode() == 200) {
+                    throw new AuraHandledException(
+                        'This QuickBooks ID (' + qboId + ') is for an Estimate, not an Invoice. Please activate the Order and sync it as an Invoice before downloading the Invoice PDF.'
+                    );
+                }
+            }
 
             if (res.getStatusCode() != 200) {
                 throw new AuraHandledException(

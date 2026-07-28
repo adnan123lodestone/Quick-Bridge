@@ -40,6 +40,8 @@
 .logo-icon {
   width: 3.5rem;
   height: 3.5rem;
+  object-fit: contain;
+  border-radius: 4px;
   color: #000000;
   flex-shrink: 0;
 }

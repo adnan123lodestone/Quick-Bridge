@@ -18,17 +18,19 @@
         </div> -->
 
     <div class="app-layout">
-      <c-quickbridge-control-plane-shell
-        quick-bridge-logo={quickBridgeLogo}
-        is-logged-in={isLoggedIn}
-        current-screen={currentScreen}
-        is-scheduler-available={isSchedulerAvailable}
-        show-sidebar-back-button={showSidebarBackButton}
-        onnavigate={handleControlPlaneNavigate}
-        onback={handleSidebarBack}
-        onlogin={handleBackToLogin}
-        onlogout={handleLogout}
-      ></c-quickbridge-control-plane-shell>
+      <template if:true={isLoggedIn}>
+        <c-quickbridge-control-plane-shell
+          quick-bridge-logo={quickBridgeLogo}
+          is-logged-in={isLoggedIn}
+          current-screen={currentScreen}
+          is-scheduler-available={isSchedulerAvailable}
+          show-sidebar-back-button={showSidebarBackButton}
+          onnavigate={handleControlPlaneNavigate}
+          onback={handleSidebarBack}
+          onlogin={handleBackToLogin}
+          onlogout={handleLogout}
+        ></c-quickbridge-control-plane-shell>
+      </template>
 
       <main class="main-content">
         <template if:true={isLoginScreen}>
@@ -46,30 +48,11 @@
             <div class="login-container">
               <div class="login-card">
                 <div class="logo-section">
-                  <svg
+                  <img
+                    src={quickBridgeLogo}
+                    alt="QuickBridge"
                     class="logo-icon"
-                    viewBox="0 0 100 100"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M30 30 C10 30, 10 70, 30 70 C50 70, 50 30, 30 30 Z M70 30 C50 30, 50 70, 70 70 C90 70, 90 30, 70 30 Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="8"
-                    />
-                    <path
-                      d="M40 50 L60 50 M45 40 L45 60 M55 40 L55 60"
-                      stroke="currentColor"
-                      stroke-width="4"
-                    />
-                    <rect
-                      x="25"
-                      y="45"
-                      width="50"
-                      height="10"
-                      fill="currentColor"
-                    />
-                  </svg>
+                  />
                   <div class="logo-text">
                     <span class="logo-title">QuickBridge</span>
                     <span class="logo-subtitle">The Lodestone Group</span>
@@ -176,30 +159,11 @@
             <div class="login-container">
               <div class="login-card">
                 <div class="logo-section">
-                  <svg
+                  <img
+                    src={quickBridgeLogo}
+                    alt="QuickBridge"
                     class="logo-icon"
-                    viewBox="0 0 100 100"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M30 30 C10 30, 10 70, 30 70 C50 70, 50 30, 30 30 Z M70 30 C50 30, 50 70, 70 70 C90 70, 90 30, 70 30 Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="8"
-                    />
-                    <path
-                      d="M40 50 L60 50 M45 40 L45 60 M55 40 L55 60"
-                      stroke="currentColor"
-                      stroke-width="4"
-                    />
-                    <rect
-                      x="25"
-                      y="45"
-                      width="50"
-                      height="10"
-                      fill="currentColor"
-                    />
-                  </svg>
+                  />
                   <div class="logo-text">
                     <span class="logo-title">QuickBridge</span>
                     <span class="logo-subtitle">PIN Recovery</span>
@@ -625,9 +589,7 @@
                               >
                                 Edit Settings
                               </button>
-                              <template
-                                if:true={config.supportsConnectionValidation}
-                              >
+                              <template if:true={config.supportsConnectionValidation}>
                                 <button
                                   class="qb-action-btn btn-save slds-m-right_small"
                                   data-provider={config.provider}
@@ -1247,10 +1209,7 @@
                             for:each={operationalSummaries}
                             for:item="summary"
                           >
-                            <div
-                              key={summary.operationKey}
-                              class="operation-row"
-                            >
+                            <div key={summary.operationKey} class="operation-row">
                               <span>{summary.operationLabel}</span>
                               <span>{summary.lastRunLabel}</span>
                               <span>{summary.pendingCount}</span>
@@ -1290,8 +1249,7 @@
                                 >
                                 <span>
                                   {preset.salesforceObject}.{preset.salesforceField}
-                                  to
-                                  {preset.externalObject}.{preset.externalField}
+                                  to {preset.externalObject}.{preset.externalField}
                                 </span>
                                 <small>{preset.guidance}</small>
                               </div>

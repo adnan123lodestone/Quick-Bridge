@@ -43,17 +43,6 @@ public with sharing class QuickBooksBulkQueryService {
         return records;
     }
 
-    public static Map<String, Map<String, Object>> queryByIdsMap(String entityName, Set<String> ids) {
-        Map<String, Map<String, Object>> recordsById = new Map<String, Map<String, Object>>();
-        for (Map<String, Object> record : queryByIds(entityName, ids)) {
-            if (record == null || !record.containsKey('Id') || record.get('Id') == null) {
-                continue;
-            }
-            recordsById.put(String.valueOf(record.get('Id')), record);
-        }
-        return recordsById;
-    }
-
     public static List<String> serializeRecords(List<Map<String, Object>> records) {
         List<String> payloads = new List<String>();
         if (records == null) {

@@ -67,8 +67,6 @@ private class IntegrationUsageServiceTest {
       when 'ups' { return 'UPS'; }
       when 'dhl' { return 'DHL'; }
       when 'klaviyo' { return 'Klaviyo'; }
-      when 'meta' { return 'Facebook / Instagram'; }
-      when 'netsuite' { return 'NetSuite'; }
       when else { return productKey; }
     }
   }

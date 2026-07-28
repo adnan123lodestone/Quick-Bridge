@@ -16,6 +16,13 @@
             </value>
         </inputParameters>
         <inputParameters>
+            <name>senderAddress</name>
+            <value>
+                <inputConfiguratorMode>Custom</inputConfiguratorMode>
+                <stringValue>devgroup@thelodestonegroup.com</stringValue>
+            </value>
+        </inputParameters>
+        <inputParameters>
             <name>useEmailTemplate</name>
             <value>
                 <stringValue>True</stringValue>

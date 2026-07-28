@@ -90,6 +90,8 @@ public with sharing class IntegrationEntityRegistry {
         add(rows, 'qbonline', 'Credit_Memo__c', 'CreditMemo');
         add(rows, 'qbonline', 'Purchase_Order__c', 'PurchaseOrder');
         add(rows, 'qbonline', 'Item_Sales_Tax__c', 'TaxCode');
+        add(rows, 'qbonline', 'Quote', 'Estimate');
+        add(rows, 'qbonline', 'QuoteLineItem', 'EstimateLine');
         add(rows, 'qbonline', 'OrderItem', 'InvoiceLine');
         add(rows, 'qbonline', 'Credit_Memo_Line__c', 'CreditMemoLine');
         add(rows, 'qbonline', 'Purchase_Order_Line__c', 'PurchaseOrderLine');

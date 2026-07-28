@@ -37,7 +37,8 @@ export default class ErrorLogTable extends LightningElement {
       // Build dynamic columns from field set
       let tempCols = [...data.columns];
       tempCols = tempCols.filter(
-        (col) => col.fieldName !== "Name" && col.fieldName !== "Name"
+        (col) =>
+          col.fieldName !== "Name" && col.fieldName !== "Name"
       );
 
       let nameColumn = {
@@ -75,67 +76,61 @@ export default class ErrorLogTable extends LightningElement {
         let newRec = { ...record };
         let cleanRec = {};
         for (let key in newRec) {
-          if (Object.prototype.hasOwnProperty.call(newRec, key)) {
             let cleanKey = key;
             // Remove namespace prefix if present (e.g., QuickBridgeTLG__Field__c -> Field__c)
-            if (key.includes("__")) {
-              let parts = key.split("__");
-              if (
-                parts.length >= 2 &&
-                !key.endsWith("__c") &&
-                !key.endsWith("__r")
-              ) {
-                // This is a namespace prefix (not a field ending with __c or __r)
-                cleanKey = parts.slice(1).join("__");
-              }
+            if (key.includes('__')) {
+                let parts = key.split('__');
+                if (parts.length >= 2 && !key.endsWith('__c') && !key.endsWith('__r')) {
+                    // This is a namespace prefix (not a field ending with __c or __r)
+                    cleanKey = parts.slice(1).join('__');
+                }
             }
             cleanRec[cleanKey] = newRec[key];
-          }
         }
-
+        
         cleanRec.recordUrl = `/lightning/r/${cleanRec.Id}/view`;
-
+        
         // Mobile fields
         let mobileFields = [];
         data.columns.forEach((col) => {
-          if (col.type === "url") {
-            let originalField = col.fieldName.replace("_Url", "");
-            // Try to get value from cleanRec first, then from newRec
-            let value = cleanRec[originalField] || newRec[originalField];
-            if (value) {
-              cleanRec[col.fieldName] = `/lightning/r/${value}/view`;
-              let relationName = originalField.endsWith("__c")
-                ? originalField.replace("__c", "__r")
-                : originalField.replace("Id", "");
-              cleanRec[originalField + "_Name"] =
-                cleanRec[relationName] && cleanRec[relationName].Name
-                  ? cleanRec[relationName].Name
-                  : value;
-            } else {
-              cleanRec[col.fieldName] = "";
-              cleanRec[originalField + "_Name"] = "";
+            if (col.type === "url") {
+                let originalField = col.fieldName.replace("_Url", "");
+                // Try to get value from cleanRec first, then from newRec
+                let value = cleanRec[originalField] || newRec[originalField];
+                if (value) {
+                    cleanRec[col.fieldName] = `/lightning/r/${value}/view`;
+                    let relationName = originalField.endsWith("__c") 
+                        ? originalField.replace("__c", "__r") 
+                        : originalField.replace("Id", "");
+                    cleanRec[originalField + "_Name"] = 
+                        (cleanRec[relationName] && cleanRec[relationName].Name) 
+                        ? cleanRec[relationName].Name 
+                        : value;
+                } else {
+                    cleanRec[col.fieldName] = "";
+                    cleanRec[originalField + "_Name"] = "";
+                }
             }
-          }
 
-          if (col.fieldName !== "Name" && col.fieldName !== "recordUrl") {
-            let isUrl = col.type === "url";
-            let isDate = col.type === "date";
-            let displayValue = isUrl
-              ? cleanRec[col.fieldName.replace("_Url", "") + "_Name"]
-              : cleanRec[col.fieldName];
-            mobileFields.push({
-              label: col.label,
-              value: displayValue,
-              isDate: isDate,
-              isUrl: isUrl && cleanRec[col.fieldName] !== "",
-              urlLink: cleanRec[col.fieldName],
-              urlLabel: displayValue
-            });
-          }
+            if (col.fieldName !== "Name" && col.fieldName !== "recordUrl") {
+                let isUrl = col.type === "url";
+                let isDate = col.type === "date";
+                let displayValue = isUrl 
+                    ? cleanRec[col.fieldName.replace("_Url", "") + "_Name"] 
+                    : cleanRec[col.fieldName];
+                mobileFields.push({
+                    label: col.label,
+                    value: displayValue,
+                    isDate: isDate,
+                    isUrl: isUrl && cleanRec[col.fieldName] !== "",
+                    urlLink: cleanRec[col.fieldName],
+                    urlLabel: displayValue
+                });
+            }
         });
         cleanRec.mobileFields = mobileFields;
         return cleanRec;
-      });
+    });
 
       if (this.isRetryableGateway) {
         // Split based on Retry_Count__c
@@ -227,7 +222,7 @@ export default class ErrorLogTable extends LightningElement {
             "This error is not retryable. Retry count has been increased.",
             "warning"
           );
-        } catch {
+        } catch (incError) {
           this.showToast("Error", "Failed to update retry count.", "error");
         }
       } else {

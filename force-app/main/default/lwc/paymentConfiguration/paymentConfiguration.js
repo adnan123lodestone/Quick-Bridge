@@ -2,7 +2,6 @@ import { LightningElement } from "lwc";
 import getPaymentMetadataConfigs from "@salesforce/apex/PaymentMetadataService.getPaymentMetadataConfigs";
 import updatePaymentMetadata from "@salesforce/apex/PaymentMetadataService.updatePaymentMetadata";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
-import LightningConfirm from "lightning/confirm";
 
 export default class PaymentConfiguration extends LightningElement {
   selectedProvider = "authorizenet";
@@ -153,7 +152,7 @@ export default class PaymentConfiguration extends LightningElement {
           c.editableFieldsData.forEach((f) => {
             if (f.name === "Active__c") {
               f.currentValue = true;
-              this.metadataFormValues[provider].Active__c = true;
+              this.metadataFormValues[provider]["Active__c"] = true;
             } else {
               f.currentValue = f.isCheckbox ? false : "";
             }
@@ -231,8 +230,8 @@ export default class PaymentConfiguration extends LightningElement {
         fieldValues[fieldName] = value;
       });
 
-      if (fieldValues.Active__c === undefined) {
-        fieldValues.Active__c = true;
+      if (fieldValues["Active__c"] === undefined) {
+        fieldValues["Active__c"] = true;
       }
 
       const response = await updatePaymentMetadata({
@@ -246,7 +245,7 @@ export default class PaymentConfiguration extends LightningElement {
 
         this.paymentMetadataConfigs = this.paymentMetadataConfigs.map((c) => {
           if (c.provider === provider) {
-            c.active = fieldValues.Active__c;
+            c.active = fieldValues["Active__c"];
             c.isEditing = false;
             c.formValues = { ...fieldValues };
             if (c.editableFieldsData) {
@@ -296,12 +295,11 @@ export default class PaymentConfiguration extends LightningElement {
       event.target.dataset.provider || event.currentTarget.dataset.provider;
     if (!provider) return;
 
-    const confirmed = await LightningConfirm.open({
-      label: "Delete Configuration",
-      message: `Are you sure you want to delete the configuration for ${provider}?`,
-      theme: "warning"
-    });
-    if (!confirmed) {
+    if (
+      !confirm(
+        `Are you sure you want to delete the configuration for ${provider}?`
+      )
+    ) {
       return;
     }
 

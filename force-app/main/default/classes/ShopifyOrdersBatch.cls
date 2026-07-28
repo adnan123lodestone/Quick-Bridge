@@ -509,7 +509,6 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
         Order ord = new Order();
         ord.AccountId = accountId;
         ord.Status = 'Draft';
-        ord.EffectiveDate = Date.today();
         ord.Pricebook2Id = getStdPricebookIdStatic();
 
         Map<String, String> fieldMap = ShopifyObjectMappings.getShopifyToOrderMapping();

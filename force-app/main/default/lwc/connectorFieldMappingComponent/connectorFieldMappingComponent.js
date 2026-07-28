@@ -62,9 +62,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   }
 
   get selectedObjectMap() {
-    return this.objectMaps.find(
-      (mapRow) => mapRow.key === this.selectedObjectMapKey
-    );
+    return this.objectMaps.find((mapRow) => mapRow.key === this.selectedObjectMapKey);
   }
 
   get normalizedConnectorKey() {
@@ -94,7 +92,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
         if (!this.objectMaps.length) {
           this.isLoading = false;
           this.notifyMappingContextChange();
-          return Promise.resolve();
+          return;
         }
 
         this.selectedObjectMapKey = this.objectMaps[0].key;
@@ -175,9 +173,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   }
 
   buildMappingRows(savedMappings) {
-    const requiredFields = this.externalFieldOptions.filter(
-      (field) => field.required
-    );
+    const requiredFields = this.externalFieldOptions.filter((field) => field.required);
     const rows = [];
     let counter = 1;
 
@@ -189,9 +185,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
         id: counter++,
         sfField: existingMapping?.sfField || "",
         externalField: field.value,
-        syncDirection: this.getAvailableDirectionValue(
-          existingMapping?.syncDirection
-        ),
+        syncDirection: this.getAvailableDirectionValue(existingMapping?.syncDirection),
         isMandatory: true
       });
     });
@@ -306,9 +300,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   handleSFFieldChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) => {
-      return row.id === rowId ? { ...row, sfField: value } : row;
-    });
+    this.mappingRows = this.mappingRows.map((row) =>
+      row.id === rowId ? { ...row, sfField: value } : row
+    );
     this.updateRowDropdowns();
     this.notifyMappingContextChange();
   }
@@ -341,9 +335,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   handleSyncDirectionChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) => {
-      return row.id === rowId ? { ...row, syncDirection: value } : row;
-    });
+    this.mappingRows = this.mappingRows.map((row) =>
+      row.id === rowId ? { ...row, syncDirection: value } : row
+    );
     this.updateRowDropdowns();
     this.notifyMappingContextChange();
   }
@@ -421,9 +415,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   }
 
   resetMappingRows() {
-    const requiredFields = this.externalFieldOptions.filter(
-      (field) => field.required
-    );
+    const requiredFields = this.externalFieldOptions.filter((field) => field.required);
     const defaultDirection = this.getDefaultSyncDirection();
     let counter = 1;
     const rows = requiredFields.map((field) => ({
@@ -461,8 +453,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
       if (!sfField || !externalField) return;
       if (
         rows.some(
-          (row) =>
-            row.sfField === sfField && row.externalField === externalField
+          (row) => row.sfField === sfField && row.externalField === externalField
         )
       ) {
         return;
@@ -485,9 +476,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
         id: this.rowCounter++,
         sfField,
         externalField,
-        syncDirection: this.getAvailableDirectionValue(
-          suggestion.syncDirection
-        ),
+        syncDirection: this.getAvailableDirectionValue(suggestion.syncDirection),
         isMandatory: suggestion.required === true
       });
       changed = true;
@@ -511,9 +500,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
           salesforceObject: this.selectedSFObject,
           externalObject: this.selectedExternalObject,
           syncDirection: null,
-          allowApply: Boolean(
-            this.selectedSFObject && this.selectedExternalObject
-          ),
+          allowApply: Boolean(this.selectedSFObject && this.selectedExternalObject),
           mappings: this.mappingRows.map((row) => ({
             sfField: row.sfField,
             externalField: row.externalField,
@@ -527,9 +514,7 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
 
   getAllowedSyncDirectionOptions() {
     const connector = this.normalizedConnectorKey;
-    const direction = String(
-      this.selectedObjectMapDirection || ""
-    ).toLowerCase();
+    const direction = String(this.selectedObjectMapDirection || "").toLowerCase();
     let options;
     if (connector === "meta") {
       options = [

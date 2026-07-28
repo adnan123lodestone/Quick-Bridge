@@ -32,6 +32,24 @@ private class IntegrationEntityRegistryTest {
       )
     );
     System.assertEquals(
+      'Estimate',
+      IntegrationEntityRegistry.resolveExternalEntity(
+        'qbonline',
+        'Quote',
+        'Estimate',
+        'Invoice'
+      )
+    );
+    System.assertEquals(
+      'EstimateLine',
+      IntegrationEntityRegistry.resolveExternalEntity(
+        'qbonline',
+        'QuoteLineItem',
+        'EstimateLine',
+        'Invoice'
+      )
+    );
+    System.assertEquals(
       'Shipment',
       IntegrationEntityRegistry.resolveExternalEntity(
         'fedex',

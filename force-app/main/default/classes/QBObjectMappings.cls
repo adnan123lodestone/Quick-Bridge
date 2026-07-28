@@ -179,25 +179,38 @@ public class QBObjectMappings {
     // 1. Account -> Customer
     public static Map<String, String> getAccountToCustomerMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('Account', 'SF to QBO', 'Customer');
-        return mergeOutboundMapping(ACCOUNT_TO_CUSTOMER_FALLBACK, dynamicMap);
+        if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
+
+        // Fallback
+        return new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK);
     }
 
     // Reverse Mapping for Customer -> Account (Inbound Sync)
     public static Map<String, String> getCustomerToAccountMapping() {
         Map<String, String> inboundFields = getDynamicMapping('Account', 'QBO to SF', 'Customer');
-        return mergeInboundMapping(ACCOUNT_TO_CUSTOMER_FALLBACK, inboundFields);
+        if (inboundFields == null || inboundFields.isEmpty()) {
+            return reverseMapping(new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK));
+        }
+        return reverseMapping(inboundFields);
     }
 
     // Account -> Vendor (Outbound Sync)
     public static Map<String, String> getAccountToVendorMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('Account', 'SF to QBO', 'Vendor');
-        return mergeOutboundMapping(ACCOUNT_TO_CUSTOMER_FALLBACK, dynamicMap);
+        if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
+
+        // Fallback to the shared Account->Customer field set when no Vendor-specific
+        // mappings exist.
+        return new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK);
     }
 
     // Reverse Mapping for Vendor -> Account (Inbound Sync)
     public static Map<String, String> getVendorToAccountMapping() {
         Map<String, String> inboundFields = getDynamicMapping('Account', 'QBO to SF', 'Vendor');
-        return mergeInboundMapping(ACCOUNT_TO_CUSTOMER_FALLBACK, inboundFields);
+        if (inboundFields == null || inboundFields.isEmpty()) {
+            return reverseMapping(new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK));
+        }
+        return reverseMapping(inboundFields);
     }
     
     // 2. Product2 -> Item
@@ -211,7 +224,10 @@ public class QBObjectMappings {
     
     public static Map<String, String> getItemToProductMapping() {
         Map<String, String> inboundFields = getDynamicMapping('Product2', 'QBO to SF');
-        return mergeInboundMapping(PRODUCT_TO_ITEM_FALLBACK, inboundFields);
+        if (inboundFields == null || inboundFields.isEmpty()) {
+            return reverseMapping(new Map<String, String>(PRODUCT_TO_ITEM_FALLBACK));
+        }
+        return reverseMapping(inboundFields);
     }
     // 3. Invoice__c -> QBO Invoice
     public static Map<String, String> getInvoiceMapping() {
@@ -251,34 +267,15 @@ public class QBObjectMappings {
     // Old Order -> Invoice Fallback
     public static Map<String, String> getOrderToInvoiceMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('Order', 'SF to QBO');
-        return mergeOutboundMapping(ORDER_TO_INVOICE_FALLBACK, dynamicMap);
+        if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
+        
+        return new Map<String, String>(ORDER_TO_INVOICE_FALLBACK);
     }
     
     public static Map<String, String> getOrderItemMapping() {
         Map<String, String> dynamicMap = getDynamicMapping('OrderItem', 'SF to QBO');
-        return mergeOutboundMapping(ORDER_ITEM_FALLBACK, dynamicMap);
-    }
-
-    private static Map<String, String> mergeOutboundMapping(
-        Map<String, String> fallback,
-        Map<String, String> configured
-    ) {
-        Map<String, String> merged = new Map<String, String>(fallback);
-        if (configured != null) {
-            merged.putAll(configured);
-        }
-        return merged;
-    }
-
-    private static Map<String, String> mergeInboundMapping(
-        Map<String, String> fallback,
-        Map<String, String> configured
-    ) {
-        Map<String, String> merged = reverseMapping(fallback);
-        if (configured != null) {
-            merged.putAll(reverseMapping(configured));
-        }
-        return merged;
+        if (dynamicMap != null && !dynamicMap.isEmpty()) return dynamicMap;
+        return new Map<String, String>(ORDER_ITEM_FALLBACK);
     }
     
     public static Map<String, String> getCreditMemoLineMapping() {

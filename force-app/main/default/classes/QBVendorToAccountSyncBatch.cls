@@ -238,14 +238,6 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
             return;
         }
 
-        String resolvedFieldName = fieldDescribe.getName();
-        Boolean isPersonAccountOnlyField = resolvedFieldName.startsWith('Person')
-            || resolvedFieldName == 'FirstName'
-            || resolvedFieldName == 'LastName';
-        if (isPersonAccountOnlyField) {
-            return;
-        }
-
         Schema.DisplayType displayType = fieldDescribe.getType();
         record.put(fieldName, coerceValue(value, displayType));
     }

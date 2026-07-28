@@ -680,10 +680,7 @@ public class FieldMappingControllerTest {
       'Campaign',
       'campaign'
     );
-    Assert.isTrue(
-      clearResult == 'No active mappings to clear.' || clearResult.startsWith('Mappings Cleared. Job ID:'),
-      'The clear request should either find no rows or return its test deployment id.'
-    );
+    Assert.areEqual('No active mappings to clear.', clearResult);
   }
 
   @isTest

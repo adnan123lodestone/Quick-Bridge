@@ -12,19 +12,14 @@ private class QuickBooksInvoiceBatchTest {
             HttpResponse res = new HttpResponse();
             res.setStatusCode(this.statusCode);
             res.setHeader('Content-Type', 'application/json');
-            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            System.assert(
-                !endpoint.contains('/invoice/'),
-                'Invoice update hydration must use the QuickBooks query endpoint, not a per-record invoice GET.'
-            );
 
             if (this.statusCode >= 400) {
                 res.setBody('{"Fault": {"Error": [{"Message": "API Error"}]}}');
                 return res;
             }
 
-            if (req.getMethod() == 'GET' && endpoint.contains('/query?query=')) {
-                res.setBody('{"QueryResponse":{"Invoice":[{"Id":"INV-123","SyncToken":"1","Line":[{"Id":"1","Amount":100.00,"DetailType":"SalesItemLineDetail","SalesItemLineDetail":{"Qty":2,"UnitPrice":50.00}}]}]}}');
+            if (req.getEndpoint() != null && req.getEndpoint().contains('/invoice/')) {
+                res.setBody('{"Invoice":{"Id":"INV-123","SyncToken":"1","Line":[{"Id":"1","Amount":100.00,"DetailType":"SalesItemLineDetail","SalesItemLineDetail":{"Qty":2,"UnitPrice":50.00}}]}}');
             } else {
                 res.setBody('{"Invoice":{"Id":"INV-123","Line":[{"Id":"1","Amount":100.00,"DetailType":"SalesItemLineDetail","SalesItemLineDetail":{"Qty":2,"UnitPrice":50.00}}]}}');
             }
@@ -36,14 +31,9 @@ private class QuickBooksInvoiceBatchTest {
         public HttpResponse respond(HttpRequest req) {
             HttpResponse res = new HttpResponse();
             res.setHeader('Content-Type', 'application/json');
-            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            System.assert(
-                !endpoint.contains('/invoice/'),
-                'Invoice update hydration must use the QuickBooks query endpoint, not a per-record invoice GET.'
-            );
-            if (req.getMethod() == 'GET' && endpoint.contains('/query?query=')) {
+            if (req.getMethod() == 'GET') {
                 res.setStatusCode(200);
-                res.setBody('{"QueryResponse":{"Invoice":[{"Id":"INV-123","SyncToken":"1"}]}}');
+                res.setBody('{"Invoice":{"Id":"INV-123","SyncToken":"1"}}');
             } else {
                 res.setStatusCode(400);
                 res.setBody('{"Fault":{"Error":[{"Message":"Update Failed"}]}}');

@@ -1,6 +1,7 @@
-import { LightningElement, api, track } from "lwc";
+import { LightningElement, api, track, wire } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
 import { RefreshEvent } from "lightning/refresh";
+import { getRecord, notifyRecordUpdateAvailable } from "lightning/uiRecordApi";
 import getPanelData from "@salesforce/apex/QBOInvoicePdfActionController.getPanelData";
 import downloadPdf from "@salesforce/apex/QBOInvoicePdfActionController.downloadPdf";
 import syncToQbo from "@salesforce/apex/QBOInvoicePdfActionController.syncToQbo";
@@ -20,24 +21,57 @@ export default class QboInvoicePdfAction extends LightningElement {
   @track showSyncFromQbo = false;
   @track panelMessage = "";
 
+  pollInterval = null;
+  pollCount = 0;
+  maxPolls = 8; // Poll up to 20 seconds (8 * 2.5s)
+
+  @wire(getRecord, { recordId: "$recordId", layoutTypes: ["Full"], modes: ["View"] })
+  wiredRecord({ error, data }) {
+    if (data) {
+      // Re-evaluate panel state whenever Lightning Data Service updates the record
+      this.loadPanel(true);
+    }
+  }
+
   connectedCallback() {
     this.loadPanel();
   }
 
-  loadPanel() {
+  disconnectedCallback() {
+    this.stopPolling();
+  }
+
+  loadPanel(isPolling = false) {
     if (!this.recordId || !this.objectApiName) {
       this.panelMessage = "PDF download is available on saved records.";
-      return;
+      return Promise.resolve();
     }
 
-    this.isPanelLoading = true;
-    getPanelData({ recordId: this.recordId, objectApiName: this.objectApiName })
+    if (!isPolling) {
+      this.isPanelLoading = true;
+    }
+
+    return getPanelData({ recordId: this.recordId, objectApiName: this.objectApiName, timestamp: String(Date.now()) })
       .then((data) => {
         this.isConfigured = data.isConfigured;
+        const previousQboIdState = this.qboIdPresent;
         this.qboIdPresent = data.qboIdPresent;
         this.showSyncToQbo = data.showSyncToQbo;
         this.showSyncFromQbo = data.showSyncFromQbo;
         this.panelMessage = data.message || "";
+
+        if (this.qboIdPresent) {
+          if (!previousQboIdState && isPolling) {
+            this.showToast(
+              "Sync Complete",
+              "QuickBooks ID linked. PDF Download is now available!",
+              "success"
+            );
+            notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
+            this.dispatchEvent(new RefreshEvent());
+          }
+          this.stopPolling();
+        }
       })
       .catch((error) => {
         this.isConfigured = false;
@@ -47,8 +81,30 @@ export default class QboInvoicePdfAction extends LightningElement {
           "Failed to load QBO Invoice PDF panel.";
       })
       .finally(() => {
-        this.isPanelLoading = false;
+        if (!isPolling) {
+          this.isPanelLoading = false;
+        }
       });
+  }
+
+  startPolling() {
+    this.stopPolling();
+    this.pollCount = 0;
+    this.pollInterval = setInterval(() => {
+      this.pollCount++;
+      if (this.pollCount > this.maxPolls) {
+        this.stopPolling();
+        return;
+      }
+      this.loadPanel(true);
+    }, 2500);
+  }
+
+  stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
   }
 
   get isDownloadDisabled() {
@@ -88,12 +144,12 @@ export default class QboInvoicePdfAction extends LightningElement {
     syncToQbo({ recordId: this.recordId, objectApiName: this.objectApiName })
       .then((result) => {
         this.showToast(
-          "Success",
-          result.message || "Record synced to QBO.",
-          "success"
+          "Sync Initiated",
+          result.message || "Record queued to sync to QBO. Checking status...",
+          "info"
         );
-        this.loadPanel();
-        this.dispatchEvent(new RefreshEvent());
+        notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
+        this.startPolling();
       })
       .catch((error) => {
         this.showToast(
@@ -118,7 +174,8 @@ export default class QboInvoicePdfAction extends LightningElement {
           result.message || "Sync from QBO queued.",
           "success"
         );
-        this.dispatchEvent(new RefreshEvent());
+        notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
+        this.startPolling();
       })
       .catch((error) => {
         this.showToast(
@@ -143,6 +200,7 @@ export default class QboInvoicePdfAction extends LightningElement {
           result.message || "PDF saved to Files.",
           "success"
         );
+        notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
       })
       .catch((error) => {
         this.showToast(

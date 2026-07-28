@@ -59,49 +59,6 @@ private class QuickBridgeRecordEngineTest {
   }
 
   @isTest
-  static void testInvalidCanonicalInvoiceMetadataFailsClosed() {
-    QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>());
-
-    Map<String, Object> payload = new Map<String, Object>{
-      'Reference_number__c' => 'REF-NO-CANONICAL'
-    };
-
-    Test.startTest();
-    QuickBridgeRecordEngine.processIncomingInvoice(payload);
-    Test.stopTest();
-
-    System.assertEquals(
-      0,
-      [
-        SELECT COUNT()
-        FROM Invoice__c
-        WHERE Reference_number__c = 'REF-NO-CANONICAL'
-      ],
-      'The invoice pipeline must not create a fallback Invoice__c when canonical target metadata is invalid.'
-    );
-    List<Error_Log__c> errorLogs = [
-      SELECT Error_Message__c
-      FROM Error_Log__c
-      WHERE Class_Method_Name__c = 'QuickBridgeRecordEngine.processIncomingInvoice'
-      ORDER BY CreatedDate DESC
-      LIMIT 1
-    ];
-    System.assertEquals(
-      1,
-      errorLogs.size(),
-      'The fail-closed error should be logged for operational visibility.'
-    );
-    System.assert(
-      errorLogs[0].Error_Message__c.contains(
-        'Exactly one active canonical invoice pipeline target is required'
-      ),
-      'The logged error should explain the invalid canonical target metadata.'
-    );
-
-    QBOInvoiceMappingResolver.clearTestFieldMappingRows();
-  }
-
-  @isTest
   static void testProcessIncomingInvoiceFailureLogsAgainstOrder() {
     Account acc = [
       SELECT Id

@@ -21,15 +21,11 @@ public with sharing class QBOrderRecordActionController {
             }
 
             // 1. Build dynamic query fields
-            Set<String> orderFieldSet = new Set<String>(
-                QBSalesOrderSyncBatch.buildOrderQueryFields().split(',\\s*')
-            );
-            orderFieldSet.add('AccountId');
-            orderFieldSet.add('Account.QuickbookID__c');
-            String orderFields = String.join(new List<String>(orderFieldSet), ', ');
+            String orderFields = QBSalesOrderSyncBatch.buildOrderQueryFields();
             String orderItemFields = QBSalesOrderSyncBatch.buildOrderItemQueryFields();
 
             String query = 'SELECT ' + orderFields + 
+                           ', AccountId, Account.QuickbookID__c' +
                            ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice, Product2Id, Product2.Name, Product2.QuickbookID__c, QB_LineItemID__c ' + 
                            orderItemFields + 
                            ' FROM OrderItems) ' +
@@ -425,17 +421,7 @@ public with sharing class QBOrderRecordActionController {
                     for (String qbField : reverseLineMap.keySet()) {
                         String sfField = reverseLineMap.get(qbField);
                         String leaf = normalizeLineLeaf(qbField);
-                        if (
-                            leaf == 'Qty' ||
-                            leaf == 'UnitPrice' ||
-                            leaf == 'Description' ||
-                            leaf == 'Amount' ||
-                            leaf == 'ItemRef' ||
-                            leaf == 'ItemRef.value' ||
-                            sfField == 'Product2Id' ||
-                            sfField == 'PricebookEntryId' ||
-                            sfField == 'OrderId'
-                        ) {
+                        if (leaf == 'Qty' || leaf == 'UnitPrice' || leaf == 'Description' || leaf == 'Amount' || leaf == 'ItemRef') {
                             continue;
                         }
                         Object val = getNestedValue(detail, leaf);

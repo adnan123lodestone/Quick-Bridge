@@ -1,5 +1,4 @@
 public with sharing class QuickBridgeRecordEngine {
-  private static final String CANONICAL_INVOICE_TARGET_ERROR = 'Exactly one active canonical invoice pipeline target is required before processing QuickBridge invoices.';
   @TestVisible
   private static List<Invoice_Field_Mapping__mdt> testActiveMappings;
   @TestVisible
@@ -151,11 +150,9 @@ public with sharing class QuickBridgeRecordEngine {
         return res.invoiceSourceObject;
       }
     } catch (QBOInvoiceMappingResolver.ResolverException e) {
-      throw new PipelineException(
-        CANONICAL_INVOICE_TARGET_ERROR + ' ' + e.getMessage()
-      );
+      // QBO mapping is ambiguous or unconfigured; fall back to canonical Invoice__c
     }
-    throw new PipelineException(CANONICAL_INVOICE_TARGET_ERROR);
+    return 'Invoice__c';
   }
 
   private static PipelineTarget defaultInvoiceTarget(String targetObject) {

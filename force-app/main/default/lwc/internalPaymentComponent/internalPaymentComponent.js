@@ -8,6 +8,8 @@ let acceptJsPromise;
 let stripeJsPromise;
 let paypalJsPromise;
 
+const FALLBACK_PAYMENT_PROVIDERS = [];
+
 const PAYMENT_ACTIONS = {
   ACCEPT_JS: "acceptJs",
   STRIPE_ELEMENTS: "stripeElements",
@@ -69,7 +71,7 @@ export default class PaymentComponent extends LightningElement {
   paypalButtonsInstance;
   isPaypalInitializing = false;
   isSubmitting = false;
-  paymentProviderDescriptors = [];
+  paymentProviderDescriptors = FALLBACK_PAYMENT_PROVIDERS;
   providerConfigs = {};
 
   CardPayment_lables = Object.fromEntries(
@@ -150,7 +152,7 @@ export default class PaymentComponent extends LightningElement {
       this.selectedActionType === PAYMENT_ACTIONS.HOSTED
     );
   }
-  get isAcceptJsSelected() {
+  get isAuthorizeNetSelected() {
     return this.selectedActionType === PAYMENT_ACTIONS.ACCEPT_JS;
   }
   get isStripeSelected() {
@@ -287,7 +289,7 @@ export default class PaymentComponent extends LightningElement {
           hasPayment: true,
           hasCheckout: true
         }))
-      : [];
+      : FALLBACK_PAYMENT_PROVIDERS;
 
     this.providerConfigs = this.paymentProviderDescriptors.reduce(
       (acc, provider) => {
