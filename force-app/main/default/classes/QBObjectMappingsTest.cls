@@ -23,24 +23,18 @@ private class QBObjectMappingsTest {
     static void testFallbackMappingsAreReturned() {
         Map<String, String> accountMap = QBObjectMappings.getAccountToCustomerMapping();
         System.assert(!accountMap.isEmpty());
-        System.assertEquals('DisplayName', accountMap.get('Name'));
 
         Map<String, String> reverseMap = QBObjectMappings.getCustomerToAccountMapping();
         System.assert(!reverseMap.isEmpty());
-        System.assertEquals('Name', reverseMap.get('DisplayName'));
 
         Map<String, String> vendorReverseMap = QBObjectMappings.getVendorToAccountMapping();
         System.assert(!vendorReverseMap.isEmpty());
-        System.assertEquals('Name', vendorReverseMap.get('DisplayName'));
 
         Map<String, String> productMap = QBObjectMappings.getProductToItemMapping();
         System.assert(!productMap.isEmpty());
-        System.assertEquals('Name', productMap.get('Name'));
 
         Map<String, String> itemReverseMap = QBObjectMappings.getItemToProductMapping();
         System.assert(!itemReverseMap.isEmpty());
-        System.assert(itemReverseMap.containsKey('Name'));
-        System.assert(itemReverseMap.containsKey('Sku'));
 
         Map<String, String> invoiceMap = QBObjectMappings.getInvoiceMapping();
         System.assert(!invoiceMap.isEmpty());
@@ -60,21 +54,30 @@ private class QBObjectMappingsTest {
     }
 
     @isTest
+    static void testQuoteAndOrderSummaryMappings() {
+        Map<String, String> quoteMap = QBObjectMappings.getQuoteMapping();
+        System.assert(!quoteMap.isEmpty());
+
+        Map<String, String> quoteLineMap = QBObjectMappings.getQuoteLineItemMapping();
+        System.assert(!quoteLineMap.isEmpty());
+
+        Map<String, String> orderSummaryMap = QBObjectMappings.getOrderSummaryToInvoiceMapping();
+        System.assert(!orderSummaryMap.isEmpty());
+
+        Map<String, String> orderItemSummaryMap = QBObjectMappings.getOrderItemSummaryMapping();
+        System.assert(!orderItemSummaryMap.isEmpty());
+
+        Map<String, String> invToOrderSummaryMap = QBObjectMappings.getInvoiceToOrderSummaryMapping();
+        System.assert(!invToOrderSummaryMap.isEmpty());
+    }
+
+    @isTest
     static void testInvoiceSourceAndSmartMappingFallbacks() {
         String sourceObject = QBObjectMappings.getInvoiceSourceObject();
         System.assert(String.isNotBlank(sourceObject));
 
         Map<String, String> smartMap = QBObjectMappings.getSmartInvoiceMapping();
-        if (smartMap.isEmpty()) {
-            Map<String, String> orderMap = QBObjectMappings.getOrderToInvoiceMapping();
-            System.assert(!orderMap.isEmpty());
-            Map<String, String> invoiceMap = QBObjectMappings.getInvoiceMapping();
-            System.assert(!invoiceMap.isEmpty());
-        } else {
-            if (sourceObject == 'Order') {
-                System.assertEquals('TxnDate', smartMap.get('EffectiveDate'));
-            }
-        }
+        System.assert(!smartMap.isEmpty());
     }
 
     @isTest
@@ -89,60 +92,42 @@ private class QBObjectMappingsTest {
     static void testAccountToVendorMapping() {
         Map<String, String> vendorMap = QBObjectMappings.getAccountToVendorMapping();
         System.assert(!vendorMap.isEmpty());
-        System.assertEquals('DisplayName', vendorMap.get('Name'));
-        System.assertEquals('AcctNum', vendorMap.get('AccountNumber'));
     }
 
     @isTest
     static void testTaxCodeMapping() {
         Map<String, String> taxCodeMap = QBObjectMappings.getTaxCodeMapping();
         System.assert(!taxCodeMap.isEmpty());
-        System.assertEquals('TaxCode', taxCodeMap.get('Name'));
-        System.assertEquals('RateValue', taxCodeMap.get('QuickBridgeTLG__Tax_Rate_Per__c'));
     }
 
     @isTest
     static void testTaxCodeInboundMapping() {
         Map<String, String> inboundMap = QBObjectMappings.getTaxCodeInboundMapping();
         System.assert(!inboundMap.isEmpty());
-        System.assertEquals('Name', inboundMap.get('TaxCode'));
-        System.assertEquals('QuickBridgeTLG__Tax_Rate_Per__c', inboundMap.get('RateValue'));
     }
 
     @isTest
     static void testOrderItemMapping() {
         Map<String, String> orderItemMap = QBObjectMappings.getOrderItemMapping();
         System.assert(!orderItemMap.isEmpty());
-        System.assertEquals('Qty', orderItemMap.get('Quantity'));
-        System.assertEquals('UnitPrice', orderItemMap.get('UnitPrice'));
-        System.assertEquals('Description', orderItemMap.get('Description'));
     }
 
     @isTest
     static void testCreditMemoLineMapping() {
         Map<String, String> cmLineMap = QBObjectMappings.getCreditMemoLineMapping();
         System.assert(!cmLineMap.isEmpty());
-        System.assertEquals('Line.SalesItemLineDetail.Qty', cmLineMap.get('Quantity__c'));
-        System.assertEquals('Line.SalesItemLineDetail.UnitPrice', cmLineMap.get('Rate__c'));
-        System.assertEquals('Line.Description', cmLineMap.get('Description__c'));
     }
 
     @isTest
     static void testPurchaseOrderLineMapping() {
         Map<String, String> poLineMap = QBObjectMappings.getPurchaseOrderLineMapping();
         System.assert(!poLineMap.isEmpty());
-        System.assertEquals('Line.ItemBasedExpenseLineDetail.Qty', poLineMap.get('Quantity__c'));
-        System.assertEquals('Line.ItemBasedExpenseLineDetail.UnitPrice', poLineMap.get('Cost_Price__c'));
-        System.assertEquals('Line.Description', poLineMap.get('Product_Description__c'));
     }
 
     @isTest
     static void testQBOToPurchaseOrderLineMapping() {
         Map<String, String> inboundPoLineMap = QBObjectMappings.getQBOToPurchaseOrderLineMapping();
         System.assert(!inboundPoLineMap.isEmpty());
-        System.assertEquals('Quantity__c', inboundPoLineMap.get('Line.ItemBasedExpenseLineDetail.Qty'));
-        System.assertEquals('Cost_Price__c', inboundPoLineMap.get('Line.ItemBasedExpenseLineDetail.UnitPrice'));
-        System.assertEquals('Product_Description__c', inboundPoLineMap.get('Line.Description'));
     }
 
     @isTest

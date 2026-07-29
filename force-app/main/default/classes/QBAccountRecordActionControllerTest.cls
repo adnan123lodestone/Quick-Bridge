@@ -81,7 +81,7 @@ private class QBAccountRecordActionControllerTest {
         
         System.assertEquals(true, response.success);
         System.assertEquals('ACT-1', response.quickBooksId);
-        System.assert(response.message.contains('Customer') || response.message.contains('customer'));
+        System.assert(response.message.contains('synced to QuickBooks') || response.message.contains('Account synced'));
     }
     
     @isTest
@@ -136,7 +136,7 @@ private class QBAccountRecordActionControllerTest {
         
         System.assertEquals(true, response.success);
         System.assertEquals('VEND-ACT-1', response.quickBooksId);
-        System.assert(response.message.contains('vendor'));
+        System.assert(response.message.contains('synced from QuickBooks'));
         
         Account updatedAccount = [SELECT Id, Name, BillingStreet FROM Account WHERE Id = :acc.Id];
         System.assertEquals('Action Vendor', updatedAccount.Name);
@@ -201,7 +201,7 @@ private class QBAccountRecordActionControllerTest {
         
         System.assertEquals(true, response.success);
         System.assertEquals('VEND-ACT-1', response.quickBooksId);
-        System.assert(response.message.contains('vendor'));
+        System.assert(response.message.contains('synced from QuickBooks'));
         
         Account updatedVendor = [
             SELECT Id, Name, BillingStreet

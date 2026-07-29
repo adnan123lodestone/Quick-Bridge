@@ -13,14 +13,14 @@ public with sharing class QBAccountRecordActionController {
                 accountToSync,
                 accountToSync.QuickbookID__c == null
             );
-            String qbEntityName = isVendorAccount(accountToSync) ? 'vendor' : 'customer';
+            String accountName = String.isNotBlank(accountToSync.Name) ? accountToSync.Name : result.quickBooksId;
 
             ActionResponse response = new ActionResponse();
             response.success = true;
             response.quickBooksId = result.quickBooksId;
             response.message = result.created
-                ? 'Account synced to QuickBooks ' + qbEntityName + ' ' + result.quickBooksId + '.'
-                : 'Account updated in QuickBooks ' + qbEntityName + ' ' + result.quickBooksId + '.';
+                ? 'Account synced to QuickBooks ' + accountName + '.'
+                : 'Account updated in QuickBooks ' + accountName + '.';
             return response;
         } catch (Exception e) {
             ErrorLogUtility.logException(
@@ -97,10 +97,13 @@ public with sharing class QBAccountRecordActionController {
                 QBTriggerHandler.isAccountProcessing = false;
             }
 
+            Account updatedAcc = [SELECT Id, Name FROM Account WHERE Id = :existingAccount.Id LIMIT 1];
+            String accountName = String.isNotBlank(updatedAcc.Name) ? updatedAcc.Name : existingAccount.Name;
+
             ActionResponse actionResponse = new ActionResponse();
             actionResponse.success = true;
             actionResponse.quickBooksId = existingAccount.QuickbookID__c;
-            actionResponse.message = 'Account synced from QuickBooks ' + qbEntityName + ' ' + existingAccount.QuickbookID__c + '.';
+            actionResponse.message = 'Account synced from QuickBooks ' + accountName + '.';
             return actionResponse;
         } catch (Exception e) {
             ErrorLogUtility.logException(

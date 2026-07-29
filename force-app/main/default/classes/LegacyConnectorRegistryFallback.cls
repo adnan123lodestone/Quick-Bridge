@@ -52,6 +52,7 @@ public with sharing class LegacyConnectorRegistryFallback {
             if (operation == 'invoiceupsert') return 'QBInvoiceWorker';
             if (operation == 'creditmemoupsert') return 'QBCreditMemoWorker';
             if (operation == 'purchaseorderupsert') return 'QBPurchaseOrderWorker';
+            if (operation == 'quoteupsert') return 'QBQuoteWorker';
         }
         if (connector == 'shopify') {
             return 'ShopifyIntegrationWorker';

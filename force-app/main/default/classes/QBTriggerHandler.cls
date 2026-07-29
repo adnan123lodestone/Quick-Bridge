@@ -2,7 +2,8 @@ public class QBTriggerHandler {
     // Prevent recursion
     public static Boolean isAccountProcessing = false;
     public static Boolean isProductProcessing = false;
-      public static Boolean isOrderProcessing = false;
+    public static Boolean isOrderProcessing = false;
+    public static Boolean isQuoteProcessing = false;
     
     // Handler for Account triggers
     public static void handleAccountTrigger(List<Account> newList, Map<Id, Account> oldMap, Boolean isInsert, Boolean isUpdate) {
@@ -31,7 +32,6 @@ public class QBTriggerHandler {
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleAccountTrigger: ' + e.getMessage());
-            System.debug(e.getStackTraceString());
             ErrorLogUtility.logException(
                 'QuickBooks',
                 'QBTriggerHandler.handleAccountTrigger',
@@ -44,6 +44,7 @@ public class QBTriggerHandler {
         }
     }
     
+    // Handler for Product triggers
     public static void handleProductTrigger(List<Product2> newList, Map<Id, Product2> oldMap, Boolean isInsert, Boolean isUpdate) {
         if (isProductProcessing) return;
         isProductProcessing = true;
@@ -70,7 +71,6 @@ public class QBTriggerHandler {
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleProductTrigger: ' + e.getMessage());
-            System.debug(e.getStackTraceString());
             ErrorLogUtility.logException(
                 'QuickBooks',
                 'QBTriggerHandler.handleProductTrigger',
@@ -82,16 +82,54 @@ public class QBTriggerHandler {
             isProductProcessing = false;
         }
     }
-    
-    // Rest of the helper methods remain the same...
+
+    // Handler for Quote triggers
+    public static void handleQuoteTrigger(List<Quote> newList, Map<Id, Quote> oldMap, Boolean isInsert, Boolean isUpdate) {
+        if (isQuoteProcessing) return;
+        isQuoteProcessing = true;
+        
+        try {
+            List<Quote> quotesToSync = new List<Quote>();
+            
+            for (Quote q : newList) {
+                if (shouldSyncQuote(q, (isInsert || oldMap == null) ? null : oldMap.get(q.Id))) {
+                    quotesToSync.add(q);
+                }
+            }
+            
+            if (!quotesToSync.isEmpty()) {
+                for (Quote quoteRecord : quotesToSync) {
+                    IntegrationWorkService.enqueueQuickBooksWork(
+                        'QuoteUpsert',
+                        'Quote',
+                        quoteRecord.Id,
+                        'Quote:' + String.valueOf(quoteRecord.Id),
+                        isInsert
+                    );
+                }
+            }
+        } catch (Exception e) {
+            System.debug('Error in QBTriggerHandler.handleQuoteTrigger: ' + e.getMessage());
+            ErrorLogUtility.logException(
+                'QuickBooks',
+                'QBTriggerHandler.handleQuoteTrigger',
+                e,
+                'Quote',
+                newList == null || newList.isEmpty() ? null : newList[0].Id
+            );
+        } finally {
+            isQuoteProcessing = false;
+        }
+    }
+
     private static Boolean shouldSyncAccount(Account newAcc, Account oldAcc) {
         if (oldAcc == null) return true;
         
         Map<String, String> fieldMap = QBObjectMappings.getAccountToCustomerMapping();
         for (String sfField : fieldMap.keySet()) {
-            if (newAcc.get(sfField) != oldAcc.get(sfField)) {
-                return true;
-            }
+            try {
+                if (newAcc.get(sfField) != oldAcc.get(sfField)) return true;
+            } catch (Exception e) {}
         }
         
         return false;
@@ -102,13 +140,24 @@ public class QBTriggerHandler {
         
         Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
         for (String sfField : fieldMap.keySet()) {
-            if (newProd.get(sfField) != oldProd.get(sfField)) {
-                return true;
-            }
+            try {
+                if (newProd.get(sfField) != oldProd.get(sfField)) return true;
+            } catch (Exception e) {}
         }
         
         return false;
     }
-    
 
+    private static Boolean shouldSyncQuote(Quote newQuote, Quote oldQuote) {
+        if (oldQuote == null) return true;
+        
+        Map<String, String> fieldMap = QBObjectMappings.getQuoteMapping();
+        for (String sfField : fieldMap.keySet()) {
+            try {
+                if (newQuote.get(sfField) != oldQuote.get(sfField)) return true;
+            } catch (Exception e) {}
+        }
+        
+        return false;
+    }
 }

@@ -89,11 +89,19 @@ public with sharing class QBOInvoicePdfActionController {
             QBOInvoiceMappingResolver.ResolverResult resolved = QBOInvoiceMappingResolver.resolve();
             assertObjectMatch(objectApiName, resolved.invoiceSourceObject);
 
+            String stripped = stripNamespace(objectApiName);
+            if (stripped.equalsIgnoreCase('order')) {
+                QBOrderRecordActionController.ActionResponse resp = QBOrderRecordActionController.syncToQuickBooks(recordId);
+                if (resp != null && !resp.success) {
+                    throw new AuraHandledException(resp.message);
+                }
+                return new ActionResponse(true, resp != null && String.isNotBlank(resp.message) ? resp.message : 'Order successfully synced to QBO.');
+            }
+
             String qboId = fetchFieldValue(recordId, objectApiName, resolved.qboIdField);
             Boolean isInitialSync = String.isBlank(qboId);
 
-            String stripped = stripNamespace(objectApiName);
-            String lockPrefix = stripped.equalsIgnoreCase('order') ? 'Order' : 'Invoice';
+            String lockPrefix = 'Invoice';
 
             IntegrationWorkService.enqueueQuickBooksWork(
                 'InvoiceUpsert',
@@ -129,6 +137,15 @@ public with sharing class QBOInvoicePdfActionController {
             QBOInvoiceMappingResolver.ResolverResult resolved = QBOInvoiceMappingResolver.resolve();
             assertObjectMatch(objectApiName, resolved.invoiceSourceObject);
 
+            String stripped = stripNamespace(objectApiName);
+            if (stripped.equalsIgnoreCase('order')) {
+                QBOrderRecordActionController.ActionResponse resp = QBOrderRecordActionController.syncFromQuickBooks(recordId);
+                if (resp != null && !resp.success) {
+                    throw new AuraHandledException(resp.message);
+                }
+                return new ActionResponse(true, resp != null && String.isNotBlank(resp.message) ? resp.message : 'Order successfully synced from QBO.');
+            }
+
             String qboId = fetchFieldValue(recordId, objectApiName, resolved.qboIdField);
             if (String.isBlank(qboId)) {
                 throw new AuraHandledException(
@@ -139,15 +156,6 @@ public with sharing class QBOInvoicePdfActionController {
             String externalEntity = IntegrationEntityRegistry.resolveExternalEntity(
                 'qbonline', objectApiName, null, 'Invoice'
             );
-
-            // For Order-based invoices, delegate to QBOInvoiceSyncQueueable which handles
-            // the full rebuild including line items (TotalAmount is derived from OrderItems,
-            // not a directly writable field).
-            if (externalEntity == 'Invoice' && stripNamespace(objectApiName).equalsIgnoreCase('order')) {
-                QBOInvoiceSyncQueueable syncJob = new QBOInvoiceSyncQueueable(new Set<String>{ qboId });
-                syncJob.executeSync();
-                return new ActionResponse(true, 'Invoice ' + qboId + ' synced from QBO including line items.');
-            }
 
             String endpoint = '/' + externalEntity.toLowerCase() + '/' + qboId;
 

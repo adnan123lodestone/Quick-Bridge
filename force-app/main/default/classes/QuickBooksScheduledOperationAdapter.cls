@@ -159,7 +159,22 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         targetObject == 'Quote' ||
         targetObject == 'Quotes'
       ) {
-        Database.executeBatch(new QBEstimateToQuoteSyncBatch(), 1);
+        if (safeDirection == 'In') {
+          Database.executeBatch(new QBEstimateToQuoteSyncBatch(), 1);
+        } else {
+          List<Quote> unsyncedQuotes = [
+            SELECT Id FROM Quote WHERE QuickbookID__c = NULL
+          ];
+          if (!unsyncedQuotes.isEmpty()) {
+            Database.executeBatch(
+              new QBQuoteToEstimateSyncBatch(
+                new Map<Id, Quote>(unsyncedQuotes).keySet(),
+                true
+              ),
+              1
+            );
+          }
+        }
       }
     } catch (Exception e) {
       ErrorLogUtility.logException(

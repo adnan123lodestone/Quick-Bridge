@@ -23,11 +23,15 @@ public with sharing class QBOrderRecordActionController {
             // 1. Build dynamic query fields
             String orderFields = QBSalesOrderSyncBatch.buildOrderQueryFields();
             String orderItemFields = QBSalesOrderSyncBatch.buildOrderItemQueryFields();
+            String accountFields = getAccountQboIdQueryFields();
+            String productFields = getProductQboIdQueryFields();
 
             String query = 'SELECT ' + orderFields + 
-                           ', AccountId, Account.QuickbookID__c' +
-                           ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice, Product2Id, Product2.Name, Product2.QuickbookID__c, QB_LineItemID__c ' + 
-                           orderItemFields + 
+                           (String.isNotBlank(accountFields) ? ', ' + accountFields : '') +
+                           ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice, Product2Id, Product2.Name' +
+                           getOrderItemQbLineIdQueryFields() +
+                           (String.isNotBlank(productFields) ? ', ' + productFields : '') +
+                           (String.isNotBlank(orderItemFields) ? ', ' + orderItemFields : '') + 
                            ' FROM OrderItems) ' +
                            ' FROM Order WHERE Id = :orderId LIMIT 1';
 
@@ -38,14 +42,16 @@ public with sharing class QBOrderRecordActionController {
             Order ord = orders[0];
 
             // 2. Preflight checks
-            if (ord.AccountId == null || String.isBlank(ord.Account.QuickbookID__c)) {
+            String accQboId = getQboId(ord.Account);
+            if (ord.AccountId == null || String.isBlank(accQboId)) {
                 throw new AuraHandledException('The associated Account does not have a QuickBooks ID. Please sync the Account to QuickBooks first.');
             }
 
             Set<String> missingProducts = new Set<String>();
             for (OrderItem item : ord.OrderItems) {
-                if (item.Product2Id == null || String.isBlank(item.Product2.QuickbookID__c)) {
-                    missingProducts.add(item.Product2.Name != null ? item.Product2.Name : String.valueOf(item.Product2Id));
+                String prodQboId = getQboId(item.Product2);
+                if (item.Product2Id == null || String.isBlank(prodQboId)) {
+                    missingProducts.add(item.Product2 != null && item.Product2.Name != null ? item.Product2.Name : String.valueOf(item.Product2Id));
                 }
             }
             if (!missingProducts.isEmpty()) {
@@ -62,7 +68,8 @@ public with sharing class QBOrderRecordActionController {
             Map<String, String> headerMap = QBObjectMappings.getOrderToInvoiceMapping();
             Map<String, String> lineMap = QBObjectMappings.getOrderItemMapping();
 
-            Boolean isCreate = String.isBlank(ord.QuickbookID__c);
+            String ordQboId = getQboId(ord);
+            Boolean isCreate = String.isBlank(ordQboId);
 
             for (String sfField : headerMap.keySet()) {
                 String qboFieldMapping = headerMap.get(sfField);
@@ -86,7 +93,7 @@ public with sharing class QBOrderRecordActionController {
             }
 
             // Add Customer Ref
-            requestBody.put('CustomerRef', new Map<String, String>{ 'value' => ord.Account.QuickbookID__c });
+            requestBody.put('CustomerRef', new Map<String, String>{ 'value' => accQboId });
 
             // Build Lines
             List<Map<String, Object>> lines = new List<Map<String, Object>>();
@@ -122,12 +129,16 @@ public with sharing class QBOrderRecordActionController {
                     }
                 }
                 line.put('Amount', quantity * unitPrice);
-                itemDetail.put('ItemRef', new Map<String, String>{ 'value' => item.Product2.QuickbookID__c });
+                String itemQboId = getQboId(item.Product2);
+                if (String.isNotBlank(itemQboId)) {
+                    itemDetail.put('ItemRef', new Map<String, String>{ 'value' => itemQboId });
+                }
                 line.put('SalesItemLineDetail', itemDetail);
 
-                if (String.isNotBlank(item.QB_LineItemID__c) && item.QB_LineItemID__c.contains(':')) {
+                String itemQbLineId = (String) getFieldValue(item, qbLineItemIdField());
+                if (String.isNotBlank(itemQbLineId) && itemQbLineId.contains(':')) {
                     if (qboObjectName != 'Invoice') {
-                        line.put('Id', item.QB_LineItemID__c.split(':')[1]);
+                        line.put('Id', itemQbLineId.split(':')[1]);
                     }
                 }
                 lines.add(line);
@@ -135,12 +146,14 @@ public with sharing class QBOrderRecordActionController {
             requestBody.put('Line', lines);
 
             // Add existing QuickBooks metadata for update (bypassed if converting Estimate to Invoice)
-            if (String.isNotBlank(ord.QuickbookID__c)) {
+            if (String.isNotBlank(ordQboId)) {
                 if (ord.Status == 'Activated' && qboObjectName == 'Invoice') {
                     System.debug('Converting Estimate to Invoice.');
                 } else {
-                    requestBody.put('Id', ord.QuickbookID__c);
-                    requestBody.put('SyncToken', String.isBlank(ord.SyncToken__c) ? '0' : ord.SyncToken__c);
+                    requestBody.put('Id', ordQboId);
+                    Object syncTokVal = getFieldValue(ord, getSyncTokenField('Order'));
+                    String ordSyncToken = syncTokVal != null ? String.valueOf(syncTokVal) : null;
+                    requestBody.put('SyncToken', String.isBlank(ordSyncToken) ? '0' : ordSyncToken);
                     requestBody.put('sparse', true);
                 }
             }
@@ -158,8 +171,10 @@ public with sharing class QBOrderRecordActionController {
                 QBTriggerHandler.isOrderProcessing = true;
                 try {
                     Order ordToUpdate = new Order(Id = ord.Id);
-                    ordToUpdate.QuickbookID__c = (String)qboResponseObj.get('Id');
-                    ordToUpdate.SyncToken__c = (String)qboResponseObj.get('SyncToken');
+                    String newQbId = (String)qboResponseObj.get('Id');
+                    String newSyncToken = (String)qboResponseObj.get('SyncToken');
+                    try { ordToUpdate.put(getQboIdField('Order'), newQbId); } catch(Exception e){}
+                    try { ordToUpdate.put(getSyncTokenField('Order'), newSyncToken); } catch(Exception e){}
                     update ordToUpdate;
 
                     List<Object> qboLines = (List<Object>)qboResponseObj.get('Line');
@@ -171,7 +186,7 @@ public with sharing class QBOrderRecordActionController {
                                 Map<String, Object> qbLine = (Map<String, Object>)qboLines[qboLineIndex];
                                 if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
                                     OrderItem itemToUpdate = new OrderItem(Id = item.Id);
-                                    itemToUpdate.QB_LineItemID__c = ordToUpdate.QuickbookID__c + ':' + (String)qbLine.get('Id');
+                                    try { itemToUpdate.put(qbLineItemIdField(), newQbId + ':' + (String)qbLine.get('Id')); } catch(Exception e){}
                                     itemsToUpdate.add(itemToUpdate);
                                     qboLineIndex++;
                                     break;
@@ -186,8 +201,8 @@ public with sharing class QBOrderRecordActionController {
                     
                     ActionResponse actionResponse = new ActionResponse();
                     actionResponse.success = true;
-                    actionResponse.quickBooksId = ordToUpdate.QuickbookID__c;
-                    actionResponse.message = 'Order successfully synced to QuickBooks ' + qboObjectName + ' ' + ordToUpdate.QuickbookID__c + '.';
+                    actionResponse.quickBooksId = newQbId;
+                    actionResponse.message = 'Order successfully synced to QuickBooks ' + qboObjectName + ' ' + newQbId + '.';
                     return actionResponse;
                 } finally {
                     QuickBooksInvoiceHandler.setBatchContext(false);
@@ -211,8 +226,15 @@ public with sharing class QBOrderRecordActionController {
                 throw new AuraHandledException('Order Id is required.');
             }
 
-            Order existingOrder = [SELECT Id, Status, QuickbookID__c, Pricebook2Id, AccountId FROM Order WHERE Id = :orderId LIMIT 1];
-            if (String.isBlank(existingOrder.QuickbookID__c)) {
+            String qField = getQboIdField('Order');
+            String queryStr = 'SELECT Id, Status, Pricebook2Id, AccountId, ' + qField + ' FROM Order WHERE Id = :orderId LIMIT 1';
+            List<Order> existingOrders = Database.query(queryStr);
+            if (existingOrders.isEmpty()) {
+                throw new AuraHandledException('Order not found.');
+            }
+            Order existingOrder = existingOrders[0];
+            String existingQboId = getQboId(existingOrder);
+            if (String.isBlank(existingQboId)) {
                 throw new AuraHandledException('This Order does not have a QuickBooks ID yet. Run Sync To QB first.');
             }
 
@@ -222,7 +244,7 @@ public with sharing class QBOrderRecordActionController {
             String qboObjectName = targetInfo.qboObjectName;
 
             // 2. Fetch latest data from QuickBooks
-            HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', endpointPath + '/' + existingOrder.QuickbookID__c, null);
+            HttpResponse response = QuickBooksAuthHandler.makeApiCall('GET', endpointPath + '/' + existingQboId, null);
 
             if (response == null || response.getStatusCode() != 200) {
                 throw new AuraHandledException(getQuickBooksErrorMessage(response, 'QuickBooks ' + qboObjectName + ' could not be retrieved.'));
@@ -239,15 +261,17 @@ public with sharing class QBOrderRecordActionController {
             Order orderToUpdate = new Order(Id = existingOrder.Id);
             applyQuickBooksDataToOrder(orderToUpdate, qboData, invoiceToOrderMapping);
 
-            orderToUpdate.QuickbookID__c = (String)qboData.get('Id');
-            orderToUpdate.SyncToken__c = (String)qboData.get('SyncToken');
+            try { orderToUpdate.put(getQboIdField('Order'), (String)qboData.get('Id')); } catch(Exception e){}
+            try { orderToUpdate.put(getSyncTokenField('Order'), (String)qboData.get('SyncToken')); } catch(Exception e){}
 
             // Resolve Account
             if (qboData.containsKey('CustomerRef')) {
                 Map<String, Object> customerRef = (Map<String, Object>)qboData.get('CustomerRef');
                 String qbCustomerId = (String)customerRef.get('value');
                 if (String.isNotBlank(qbCustomerId)) {
-                    List<Account> accs = [SELECT Id FROM Account WHERE QuickbookID__c = :qbCustomerId LIMIT 1];
+                    String accQField = getQboIdField('Account');
+                    String accQuery = 'SELECT Id FROM Account WHERE ' + accQField + ' = :qbCustomerId LIMIT 1';
+                    List<Account> accs = Database.query(accQuery);
                     if (!accs.isEmpty()) {
                         orderToUpdate.AccountId = accs[0].Id;
                     }
@@ -291,8 +315,13 @@ public with sharing class QBOrderRecordActionController {
 
                 // Query and map Products
                 Map<String, Product2> productMap = new Map<String, Product2>();
-                for (Product2 p : [SELECT Id, QuickbookID__c, Name FROM Product2 WHERE QuickbookID__c IN :productQbIds]) {
-                    productMap.put(p.QuickbookID__c, p);
+                String pQbField = getQboIdField('Product2');
+                String pQuery = 'SELECT Id, Name, ' + pQbField + ' FROM Product2 WHERE ' + pQbField + ' IN :productQbIds';
+                for (Product2 p : Database.query(pQuery)) {
+                    String qId = getQboId(p);
+                    if (String.isNotBlank(qId)) {
+                        productMap.put(qId, p);
+                    }
                 }
 
                 List<Product2> productsToInsert = new List<Product2>();
@@ -307,9 +336,9 @@ public with sharing class QBOrderRecordActionController {
                             if (String.isNotBlank(pQbId) && !productMap.containsKey(pQbId)) {
                                 Product2 newProd = new Product2(
                                     Name = String.isNotBlank(pName) ? pName : 'QuickBooks Product ' + pQbId,
-                                    QuickbookID__c = pQbId,
                                     IsActive = true
                                 );
+                                try { newProd.put(pQbField, pQbId); } catch(Exception e){}
                                 productsToInsert.add(newProd);
                                 productMap.put(pQbId, newProd);
                             }
@@ -320,7 +349,10 @@ public with sharing class QBOrderRecordActionController {
                 if (!productsToInsert.isEmpty()) {
                     insert productsToInsert;
                     for (Product2 p : productsToInsert) {
-                        productMap.put(p.QuickbookID__c, p);
+                        String qId = getQboId(p);
+                        if (String.isNotBlank(qId)) {
+                            productMap.put(qId, p);
+                        }
                     }
 
                     Id stdPricebookId = getStandardPricebookId();
@@ -340,8 +372,8 @@ public with sharing class QBOrderRecordActionController {
 
                 // Query and map PricebookEntries
                 Map<Id, PricebookEntry> pbeMap = new Map<Id, PricebookEntry>();
-                for (PricebookEntry pbe : [SELECT Id, Product2Id, Product2.QuickbookID__c FROM PricebookEntry 
-                                           WHERE Pricebook2Id = :pricebookId AND Product2.QuickbookID__c IN :productQbIds AND IsActive = true]) {
+                String pbeQuery = 'SELECT Id, Product2Id, Product2.' + pQbField + ' FROM PricebookEntry WHERE Pricebook2Id = :pricebookId AND Product2.' + pQbField + ' IN :productQbIds AND IsActive = true';
+                for (PricebookEntry pbe : Database.query(pbeQuery)) {
                     pbeMap.put(pbe.Product2Id, pbe);
                 }
 
@@ -365,15 +397,20 @@ public with sharing class QBOrderRecordActionController {
 
                 // Query existing OrderItems
                 Map<String, OrderItem> existingOrderItems = new Map<String, OrderItem>();
-                for (OrderItem oi : [SELECT Id, QB_LineItemID__c, Quantity, UnitPrice, Description FROM OrderItem WHERE OrderId = :existingOrder.Id]) {
-                    if (String.isNotBlank(oi.QB_LineItemID__c)) {
-                        existingOrderItems.put(oi.QB_LineItemID__c, oi);
+                String lineIdFieldStr = qbLineItemIdField();
+                String itemQueryStr = 'SELECT Id, Quantity, UnitPrice, Description, ' + lineIdFieldStr + ' FROM OrderItem WHERE OrderId = \'' + String.escapeSingleQuotes(existingOrder.Id) + '\'';
+                for (OrderItem oi : Database.query(itemQueryStr)) {
+                    String lineIdVal = (String) getFieldValue(oi, lineIdFieldStr);
+                    if (String.isNotBlank(lineIdVal)) {
+                        existingOrderItems.put(lineIdVal, oi);
                     }
                 }
 
                 List<OrderItem> orderItemsToUpsert = new List<OrderItem>();
                 Map<String, String> lineMap = QBObjectMappings.getOrderItemMapping();
                 Map<String, String> reverseLineMap = reverseMapping(lineMap);
+
+                String existingOrdQboId = getQboId(existingOrder);
 
                 for (Object lineObj : qboLines) {
                     Map<String, Object> line = (Map<String, Object>)lineObj;
@@ -387,7 +424,7 @@ public with sharing class QBOrderRecordActionController {
                     }
 
                     String lineId = (String)line.get('Id');
-                    String compositeId = orderToUpdate.QuickbookID__c + ':' + lineId;
+                    String compositeId = existingOrdQboId + ':' + lineId;
 
                     Map<String, Object> itemRef = (Map<String, Object>)detail.get('ItemRef');
                     String pQbId = (String)itemRef.get('value');
@@ -408,9 +445,9 @@ public with sharing class QBOrderRecordActionController {
                     if (oi == null) {
                         oi = new OrderItem(
                             OrderId = existingOrder.Id,
-                            PricebookEntryId = pbe.Id,
-                            QB_LineItemID__c = compositeId
+                            PricebookEntryId = pbe.Id
                         );
+                        try { oi.put(lineIdFieldStr, compositeId); } catch(Exception e){}
                     }
 
                     oi.Quantity = quantity;
@@ -421,7 +458,7 @@ public with sharing class QBOrderRecordActionController {
                     for (String qbField : reverseLineMap.keySet()) {
                         String sfField = reverseLineMap.get(qbField);
                         String leaf = normalizeLineLeaf(qbField);
-                        if (leaf == 'Qty' || leaf == 'UnitPrice' || leaf == 'Description' || leaf == 'Amount' || leaf == 'ItemRef') {
+                        if (sfField == 'Product2Id' || sfField == 'PricebookEntryId' || leaf.startsWith('ItemRef') || leaf == 'Qty' || leaf == 'UnitPrice' || leaf == 'Description' || leaf == 'Amount') {
                             continue;
                         }
                         Object val = getNestedValue(detail, leaf);
@@ -438,7 +475,8 @@ public with sharing class QBOrderRecordActionController {
                     QuickBooksInvoiceHandler.setBatchContext(true);
                     QBTriggerHandler.isOrderProcessing = true;
                     try {
-                        upsert orderItemsToUpsert QB_LineItemID__c;
+                        Schema.SObjectField lineIdToken = Schema.SObjectType.OrderItem.fields.getMap().get(lineIdFieldStr.toLowerCase());
+                        Database.upsert(orderItemsToUpsert, lineIdToken, true);
                     } finally {
                         QuickBooksInvoiceHandler.setBatchContext(false);
                         QBTriggerHandler.isOrderProcessing = false;
@@ -690,5 +728,70 @@ public with sharing class QBOrderRecordActionController {
         } else {
             throw new AuraHandledException('Only Draft or Activated Orders can be synced to QuickBooks.');
         }
+    }
+
+    private static String getQboId(SObject record) {
+        if (record == null) return null;
+        try {
+            String val = (String) record.get('quickbridgetlg__QuickbookID__c');
+            if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+        try {
+            String val = (String) record.get('QuickbookID__c');
+            if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private static String getQboIdField(String sObjectName) {
+        Map<String, Schema.SObjectField> flds = sObjectName == 'Account'
+            ? Schema.SObjectType.Account.fields.getMap()
+            : sObjectName == 'Product2'
+                ? Schema.SObjectType.Product2.fields.getMap()
+                : Schema.SObjectType.Order.fields.getMap();
+        Schema.SObjectField tok = flds.get('quickbridgetlg__quickbookid__c');
+        if (tok != null) return tok.getDescribe().getName();
+        tok = flds.get('quickbookid__c');
+        return tok != null ? tok.getDescribe().getName() : 'QuickbookID__c';
+    }
+
+    private static String getSyncTokenField(String sObjectName) {
+        Map<String, Schema.SObjectField> flds = Schema.SObjectType.Order.fields.getMap();
+        Schema.SObjectField tok = flds.get('quickbridgetlg__synctoken__c');
+        if (tok != null) return tok.getDescribe().getName();
+        tok = flds.get('synctoken__c');
+        return tok != null ? tok.getDescribe().getName() : 'SyncToken__c';
+    }
+
+    private static String qbLineItemIdField() {
+        Map<String, Schema.SObjectField> flds = Schema.SObjectType.OrderItem.fields.getMap();
+        Schema.SObjectField tok = flds.get('quickbridgetlg__qb_lineitemid__c');
+        if (tok != null) return tok.getDescribe().getName();
+        tok = flds.get('qb_lineitemid__c');
+        return tok != null ? tok.getDescribe().getName() : 'QB_LineItemID__c';
+    }
+
+    private static String getAccountQboIdQueryFields() {
+        Map<String, Schema.SObjectField> flds = Schema.SObjectType.Account.fields.getMap();
+        List<String> res = new List<String>();
+        if (flds.containsKey('quickbookid__c')) res.add('Account.QuickbookID__c');
+        if (flds.containsKey('quickbridgetlg__quickbookid__c')) res.add('Account.quickbridgetlg__QuickbookID__c');
+        return String.join(res, ', ');
+    }
+
+    private static String getProductQboIdQueryFields() {
+        Map<String, Schema.SObjectField> flds = Schema.SObjectType.Product2.fields.getMap();
+        List<String> res = new List<String>();
+        if (flds.containsKey('quickbookid__c')) res.add('Product2.QuickbookID__c');
+        if (flds.containsKey('quickbridgetlg__quickbookid__c')) res.add('Product2.quickbridgetlg__QuickbookID__c');
+        return String.join(res, ', ');
+    }
+
+    private static String getOrderItemQbLineIdQueryFields() {
+        Map<String, Schema.SObjectField> flds = Schema.SObjectType.OrderItem.fields.getMap();
+        List<String> res = new List<String>();
+        if (flds.containsKey('qb_lineitemid__c')) res.add('QB_LineItemID__c');
+        if (flds.containsKey('quickbridgetlg__qb_lineitemid__c')) res.add('quickbridgetlg__QB_LineItemID__c');
+        return res.isEmpty() ? '' : ', ' + String.join(res, ', ');
     }
 }

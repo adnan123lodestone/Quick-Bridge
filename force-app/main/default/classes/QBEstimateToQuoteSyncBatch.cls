@@ -64,12 +64,16 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
 
     public void execute(Database.BatchableContext bc, List<String> scope) {
         isProcessing = true;
+        if (this.standardPricebookId == null) {
+            this.standardPricebookId = getStandardPricebookId();
+        }
 
         try {
             processAccountsAndProducts(scope);
             processQuotes(scope);
             processQuoteLineItems(scope);
         } catch(Exception e) {
+            System.debug('QBEstimateToQuoteSyncBatch EXECUTE EXCEPTION: ' + e.getMessage() + '\n' + e.getStackTraceString());
             ErrorLogUtility.logException('QuickBooks', 'QBEstimateToQuoteSyncBatch.execute', e, null, null);
         } finally {
             isProcessing = false;
@@ -80,6 +84,25 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         List<Account> accountsToUpsert = new List<Account>();
         List<Product2> productsToUpsert = new List<Product2>();
         Set<String> productQBIds = new Set<String>();
+        Set<String> customerQBIds = new Set<String>();
+
+        for(String jsonStr : scope) {
+            Map<String, Object> estimate = (Map<String, Object>)JSON.deserializeUntyped(jsonStr);
+            if(estimate.containsKey('CustomerRef')) {
+                Map<String, Object> customerRef = (Map<String, Object>)estimate.get('CustomerRef');
+                if (customerRef != null && customerRef.containsKey('value')) {
+                    customerQBIds.add((String)customerRef.get('value'));
+                }
+            }
+        }
+
+        if (!customerQBIds.isEmpty()) {
+            String accQuery = 'SELECT Id, ' + getAccountQbIdSelectFields() + ' FROM Account WHERE ' + getAccountQbIdWhereClause();
+            for (Account a : (List<Account>) Database.query(accQuery)) {
+                String qbId = (String) getSObjectField(a, 'QuickbookID__c');
+                if (String.isNotBlank(qbId)) customerIdMap.put(qbId, a.Id);
+            }
+        }
 
         for(String jsonStr : scope) {
             Map<String, Object> estimate = (Map<String, Object>)JSON.deserializeUntyped(jsonStr);
@@ -90,10 +113,11 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
                 String customerName = (String)customerRef.get('name');
 
                 if(!customerIdMap.containsKey(qbCustomerId)) {
-                    accountsToUpsert.add(new Account(
-                        Name = (String.isNotBlank(customerName) ? customerName : 'Unknown Customer'),
-                        QuickbookID__c = qbCustomerId
-                    ));
+                    Account newAcc = new Account(
+                        Name = (String.isNotBlank(customerName) ? customerName : 'Unknown Customer')
+                    );
+                    putFieldValue(newAcc, 'QuickbookID__c', qbCustomerId);
+                    accountsToUpsert.add(newAcc);
                 }
             }
 
@@ -114,15 +138,23 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
 
         if(!accountsToUpsert.isEmpty()) {
             Map<String, Account> dedupMap = new Map<String, Account>();
-            for (Account a : accountsToUpsert) dedupMap.put(a.QuickbookID__c, a);
-            Database.UpsertResult[] results = Database.upsert(dedupMap.values(), Account.Fields.QuickbookID__c, false);
+            for (Account a : accountsToUpsert) {
+                String qbId = (String) getSObjectField(a, 'QuickbookID__c');
+                if (String.isNotBlank(qbId)) dedupMap.put(qbId, a);
+            }
+            Database.UpsertResult[] results = Database.upsert(dedupMap.values(), getAccountQbIdField(), false);
             for(Integer i = 0; i < results.size(); i++) {
-                if(results[i].isSuccess()) customerIdMap.put(dedupMap.values()[i].QuickbookID__c, results[i].getId());
+                String qbId = (String) getSObjectField(dedupMap.values()[i], 'QuickbookID__c');
+                if(results[i].isSuccess() && String.isNotBlank(qbId)) customerIdMap.put(qbId, results[i].getId());
             }
         }
 
-        for(Product2 p : [SELECT Id, QuickbookID__c FROM Product2 WHERE QuickbookID__c IN :productQBIds]) {
-            productIdMap.put(p.QuickbookID__c, p.Id);
+        if (!productQBIds.isEmpty()) {
+            String prodQuery = 'SELECT Id, ' + getProductQbIdSelectFields() + ' FROM Product2 WHERE ' + getProductQbIdWhereClause();
+            for(Product2 p : (List<Product2>) Database.query(prodQuery)) {
+                String qbId = (String) getSObjectField(p, 'QuickbookID__c');
+                if (String.isNotBlank(qbId)) productIdMap.put(qbId, p.Id);
+            }
         }
 
         for(String jsonStr : scope) {
@@ -136,7 +168,9 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
                             Map<String, Object> itemRef = (Map<String, Object>)detail.get('ItemRef');
                             String qbProdId = (String)itemRef.get('value');
                             if(!productIdMap.containsKey(qbProdId)) {
-                                productsToUpsert.add(new Product2(Name = (String)itemRef.get('name'), QuickbookID__c = qbProdId, IsActive = true));
+                                Product2 pNew = new Product2(Name = (String)itemRef.get('name'), IsActive = true);
+                                putFieldValue(pNew, 'QuickbookID__c', qbProdId);
+                                productsToUpsert.add(pNew);
                             }
                         }
                     }
@@ -145,11 +179,12 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         }
 
         if(!productsToUpsert.isEmpty()) {
-            Database.UpsertResult[] results = Database.upsert(productsToUpsert, Product2.Fields.QuickbookID__c, false);
+            Database.UpsertResult[] results = Database.upsert(productsToUpsert, getProductQbIdField(), false);
             List<PricebookEntry> pbesToInsert = new List<PricebookEntry>();
             for(Integer i = 0; i < results.size(); i++) {
+                String qbId = (String) getSObjectField(productsToUpsert[i], 'QuickbookID__c');
                 if(results[i].isSuccess()) {
-                    productIdMap.put(productsToUpsert[i].QuickbookID__c, results[i].getId());
+                    if (String.isNotBlank(qbId)) productIdMap.put(qbId, results[i].getId());
                     pbesToInsert.add(new PricebookEntry(Pricebook2Id = standardPricebookId, Product2Id = results[i].getId(), UnitPrice = 0, IsActive = true));
                 }
             }
@@ -159,9 +194,52 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
 
     private void processQuotes(List<String> scope) {
         List<Quote> quotesToUpsert = new List<Quote>();
-        
-        // 1. Fetch Dynamic Mapping for Quote
         Map<String, String> quoteMapping = QBObjectMappings.getQuoteMapping();
+
+        Set<Id> accountIds = new Set<Id>();
+        for (Id aId : customerIdMap.values()) {
+            if (aId != null) accountIds.add(aId);
+        }
+
+        Map<Id, Id> accountToOppMap = new Map<Id, Id>();
+        if (!accountIds.isEmpty()) {
+            for (Opportunity opp : [SELECT Id, AccountId FROM Opportunity WHERE AccountId IN :accountIds ORDER BY CreatedDate DESC]) {
+                if (!accountToOppMap.containsKey(opp.AccountId)) {
+                    accountToOppMap.put(opp.AccountId, opp.Id);
+                }
+            }
+        }
+
+        List<Opportunity> newOppsToInsert = new List<Opportunity>();
+        Map<Id, Integer> accToNewOppIndex = new Map<Id, Integer>();
+        for (String jsonStr : scope) {
+            Map<String, Object> estimate = (Map<String, Object>)JSON.deserializeUntyped(jsonStr);
+            Map<String, Object> customerRef = (Map<String, Object>)estimate.get('CustomerRef');
+            if (customerRef != null) {
+                String qbCustomerId = (String)customerRef.get('value');
+                Id sfAccountId = customerIdMap.get(qbCustomerId);
+                if (sfAccountId != null && !accountToOppMap.containsKey(sfAccountId) && !accToNewOppIndex.containsKey(sfAccountId)) {
+                    String docNum = (String)estimate.get('DocNumber');
+                    Opportunity opp = new Opportunity(
+                        Name = 'Estimate Opp ' + (String.isNotBlank(docNum) ? docNum : (String)estimate.get('Id')),
+                        AccountId = sfAccountId,
+                        StageName = 'Prospecting',
+                        CloseDate = Date.today().addDays(30),
+                        Pricebook2Id = standardPricebookId
+                    );
+                    accToNewOppIndex.put(sfAccountId, newOppsToInsert.size());
+                    newOppsToInsert.add(opp);
+                }
+            }
+        }
+
+        if (!newOppsToInsert.isEmpty()) {
+            insert newOppsToInsert;
+            for (Id sfAccountId : accToNewOppIndex.keySet()) {
+                Integer idx = accToNewOppIndex.get(sfAccountId);
+                accountToOppMap.put(sfAccountId, newOppsToInsert[idx].Id);
+            }
+        }
 
         for(String jsonStr : scope) {
             Map<String, Object> estimate = (Map<String, Object>)JSON.deserializeUntyped(jsonStr);
@@ -175,13 +253,12 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
                 Id sfAccountId = customerIdMap.get(qbCustomerId);
 
                 if(sfAccountId != null) {
-                    // Initialize base Quote with required/fixed values
                     Quote newQuote = new Quote(
-                        //AccountId = sfAccountId,
+                        OpportunityId = accountToOppMap.get(sfAccountId),
                         Pricebook2Id = standardPricebookId,
-                        QuickbookID__c = qbEstimateId,
                         Status = 'Draft'
                     );
+                    putFieldValue(newQuote, 'QuickbookID__c', qbEstimateId);
 
                     // 2. Apply Dynamic Mappings safely
                     applyDynamicMapping(newQuote, estimate, quoteMapping);
@@ -198,10 +275,11 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         }
 
         if(!quotesToUpsert.isEmpty()) {
-            Schema.SObjectField extIdField = Quote.Fields.QuickbookID__c;
+            Schema.SObjectField extIdField = getQuoteQbIdField();
             Database.UpsertResult[] results = Database.upsert(quotesToUpsert, extIdField, false);
             for(Integer i = 0; i < results.size(); i++) {
-                if(results[i].isSuccess()) quoteIdMap.put(quotesToUpsert[i].QuickbookID__c, results[i].getId());
+                String qbId = (String) getSObjectField(quotesToUpsert[i], 'QuickbookID__c');
+                if(results[i].isSuccess() && String.isNotBlank(qbId)) quoteIdMap.put(qbId, results[i].getId());
             }
         }
     }
@@ -279,7 +357,7 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         }
 
         if(!linesToUpsert.isEmpty()) {
-            Database.upsert(linesToUpsert, QuoteLineItem.Fields.QB_LineItemID__c, false);
+            Database.upsert(linesToUpsert, getQuoteLineItemQbIdField(), false);
         }
     }
 
@@ -335,9 +413,14 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
         if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) return;
         Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
         String lowName = fieldName.toLowerCase();
+        if (!fields.containsKey(lowName) && fields.containsKey('quickbridgetlg__' + lowName)) {
+            lowName = 'quickbridgetlg__' + lowName;
+        }
         if (!fields.containsKey(lowName)) return;
-        Schema.DisplayType displayType = fields.get(lowName).getDescribe().getType();
-        record.put(fields.get(lowName).getDescribe().getName(), coerceValue(value, displayType));
+        Schema.DescribeFieldResult d = fields.get(lowName).getDescribe();
+        if (!d.isCreateable() && !d.isUpdateable()) return;
+        Schema.DisplayType displayType = d.getType();
+        record.put(d.getName(), coerceValue(value, displayType));
     }
 
     private Object coerceValue(Object value, Schema.DisplayType displayType) {
@@ -359,6 +442,95 @@ public class QBEstimateToQuoteSyncBatch implements Database.Batchable<String>, D
                 return Datetime.valueOf(String.valueOf(value));
             }
         } catch (Exception e) {}
-        return value;
+        return String.valueOf(value);
+    }
+
+    private static String getAccountQbIdSelectFields() {
+        Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Account.fields.getMap();
+        List<String> fList = new List<String>();
+        if (schemaFields.containsKey('quickbookid__c')) fList.add('QuickbookID__c');
+        if (schemaFields.containsKey('quickbridgetlg__quickbookid__c')) fList.add('QuickBridgeTLG__QuickbookID__c');
+        if (fList.isEmpty()) fList.add('QuickbookID__c');
+        return String.join(fList, ', ');
+    }
+
+    private static String getAccountQbIdWhereClause() {
+        Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Account.fields.getMap();
+        List<String> clauses = new List<String>();
+        if (schemaFields.containsKey('quickbookid__c')) clauses.add('QuickbookID__c IN :customerQBIds');
+        if (schemaFields.containsKey('quickbridgetlg__quickbookid__c')) clauses.add('QuickBridgeTLG__QuickbookID__c IN :customerQBIds');
+        if (clauses.isEmpty()) return 'QuickbookID__c IN :customerQBIds';
+        return '(' + String.join(clauses, ' OR ') + ')';
+    }
+
+    private static String getProductQbIdSelectFields() {
+        Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Product2.fields.getMap();
+        List<String> fList = new List<String>();
+        if (schemaFields.containsKey('quickbookid__c')) fList.add('QuickbookID__c');
+        if (schemaFields.containsKey('quickbridgetlg__quickbookid__c')) fList.add('QuickBridgeTLG__QuickbookID__c');
+        if (fList.isEmpty()) fList.add('QuickbookID__c');
+        return String.join(fList, ', ');
+    }
+
+    private static String getProductQbIdWhereClause() {
+        Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Product2.fields.getMap();
+        List<String> clauses = new List<String>();
+        if (schemaFields.containsKey('quickbookid__c')) clauses.add('QuickbookID__c IN :productQBIds');
+        if (schemaFields.containsKey('quickbridgetlg__quickbookid__c')) clauses.add('QuickBridgeTLG__QuickbookID__c IN :productQBIds');
+        if (clauses.isEmpty()) return 'QuickbookID__c IN :productQBIds';
+        return '(' + String.join(clauses, ' OR ') + ')';
+    }
+
+    private static Schema.SObjectField getQuoteLineItemQbIdField() {
+        Map<String, Schema.SObjectField> fields = Schema.SObjectType.QuoteLineItem.fields.getMap();
+        if (fields.containsKey('quickbridgetlg__qb_lineitemid__c')) return fields.get('quickbridgetlg__qb_lineitemid__c');
+        return fields.get('qb_lineitemid__c');
+    }
+
+    private static String getAccountQbIdFieldName() {
+        Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Account.fields.getMap();
+        if (!schemaFields.containsKey('quickbookid__c') && schemaFields.containsKey('quickbridgetlg__quickbookid__c')) {
+            return 'QuickBridgeTLG__QuickbookID__c';
+        }
+        return 'QuickbookID__c';
+    }
+
+    private static Schema.SObjectField getQuoteQbIdField() {
+        Map<String, Schema.SObjectField> fields = Schema.SObjectType.Quote.fields.getMap();
+        if (fields.containsKey('quickbridgetlg__quickbookid__c')) return fields.get('quickbridgetlg__quickbookid__c');
+        return fields.get('quickbookid__c');
+    }
+
+    private static Schema.SObjectField getAccountQbIdField() {
+        Map<String, Schema.SObjectField> fields = Schema.SObjectType.Account.fields.getMap();
+        if (fields.containsKey('quickbridgetlg__quickbookid__c')) return fields.get('quickbridgetlg__quickbookid__c');
+        return fields.get('quickbookid__c');
+    }
+
+    private static Schema.SObjectField getProductQbIdField() {
+        Map<String, Schema.SObjectField> fields = Schema.SObjectType.Product2.fields.getMap();
+        if (fields.containsKey('quickbridgetlg__quickbookid__c')) return fields.get('quickbridgetlg__quickbookid__c');
+        return fields.get('quickbookid__c');
+    }
+
+    private static String getProductQbIdFieldName() {
+        Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Product2.fields.getMap();
+        if (!schemaFields.containsKey('quickbookid__c') && schemaFields.containsKey('quickbridgetlg__quickbookid__c')) {
+            return 'QuickBridgeTLG__QuickbookID__c';
+        }
+        return 'QuickbookID__c';
+    }
+
+    private static Object getSObjectField(SObject obj, String fieldName) {
+        if (obj == null || String.isBlank(fieldName)) return null;
+        Map<String, Schema.SObjectField> fields = obj.getSObjectType().getDescribe().fields.getMap();
+        String key = fieldName.toLowerCase();
+        if (fields.containsKey(key)) {
+            return obj.get(fields.get(key).getDescribe().getName());
+        }
+        if (fields.containsKey('quickbridgetlg__' + key)) {
+            return obj.get(fields.get('quickbridgetlg__' + key).getDescribe().getName());
+        }
+        return null;
     }
 }

@@ -144,12 +144,13 @@ export default class QboInvoicePdfAction extends LightningElement {
     syncToQbo({ recordId: this.recordId, objectApiName: this.objectApiName })
       .then((result) => {
         this.showToast(
-          "Sync Initiated",
-          result.message || "Record queued to sync to QBO. Checking status...",
-          "info"
+          "Success",
+          result.message || "Record successfully synced to QBO.",
+          "success"
         );
         notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
-        this.startPolling();
+        this.dispatchEvent(new RefreshEvent());
+        this.loadPanel(true);
       })
       .catch((error) => {
         this.showToast(
@@ -171,11 +172,12 @@ export default class QboInvoicePdfAction extends LightningElement {
       .then((result) => {
         this.showToast(
           "Success",
-          result.message || "Sync from QBO queued.",
+          result.message || "Record successfully synced from QBO.",
           "success"
         );
         notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
-        this.startPolling();
+        this.dispatchEvent(new RefreshEvent());
+        this.loadPanel(true);
       })
       .catch((error) => {
         this.showToast(

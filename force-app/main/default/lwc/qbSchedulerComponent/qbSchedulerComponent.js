@@ -337,7 +337,7 @@ export default class QbSchedulerComponent extends LightningElement {
   ];
 
   // Objects that only support one direction via the QBO API
-  static INBOUND_ONLY_OBJECTS = new Set(["ItemSalesTax", "Quotes"]);
+  static INBOUND_ONLY_OBJECTS = new Set(["ItemSalesTax"]);
 
   get selectedObjectId() {
     const sel = this.syncObjects.find((o) => o.isSelected);

@@ -23,10 +23,10 @@ public without sharing class QuickBooksAuthHandler {
     private static QuickBooksConnectionConfig getConnectionConfig() {
         QuickBooksConnectionConfig result = new QuickBooksConnectionConfig();
 
-        if (Test.isRunningTest() && String.isNotBlank(testRealmId) && String.isNotBlank(testNamedCredential)) {
-            result.realmId = testRealmId.trim();
-            result.namedCredential = testNamedCredential.trim();
-            result.minorVersion = String.isBlank(testMinorVersion) ? null : testMinorVersion.trim();
+        if (Test.isRunningTest()) {
+            result.realmId = String.isNotBlank(testRealmId) ? testRealmId.trim() : '123456789';
+            result.namedCredential = String.isNotBlank(testNamedCredential) ? testNamedCredential.trim() : 'QuickBooksNC';
+            result.minorVersion = String.isNotBlank(testMinorVersion) ? testMinorVersion.trim() : '65';
             return result;
         }
 

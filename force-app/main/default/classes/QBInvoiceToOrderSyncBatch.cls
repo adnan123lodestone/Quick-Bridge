@@ -308,6 +308,19 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
                     );
 
                     applyDynamicMapping(newOrder, invoice, invoiceToOrderMapping);
+                    if (invoice.containsKey('TxnDate') && invoice.get('TxnDate') != null) {
+                        try {
+                            newOrder.EffectiveDate = Date.valueOf(String.valueOf(invoice.get('TxnDate')));
+                        } catch (Exception e) {}
+                    }
+                    if (String.isBlank(newOrder.Description) && invoice.containsKey('CustomerMemo') && invoice.get('CustomerMemo') != null) {
+                        try {
+                            Map<String, Object> memoMap = (Map<String, Object>)invoice.get('CustomerMemo');
+                            if (memoMap != null && memoMap.containsKey('value')) {
+                                newOrder.Description = (String)memoMap.get('value');
+                            }
+                        } catch (Exception e) {}
+                    }
                     // Re-set after dynamic mapping to prevent CustomerRef.value → AccountId
                     // from overwriting the resolved SF Account Id with a raw QBO string.
                     newOrder.AccountId = customerIdMap.get(qbCustomerId);
@@ -523,17 +536,14 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
                             }
 
                             if(needsUpdate) {
-                                // Update existing OrderItem
+                                // Update existing OrderItem (exclude non-editable Product2Id and PricebookEntryId)
                                 orderItemToProcess = new OrderItem(
                                     Id = existingItem.Id,
-                                    OrderId = currentOrderId,
-                                    Product2Id = peInfo.productId,
-                                    PricebookEntryId = peInfo.pricebookEntryId,
                                     Quantity = quantity,
                                     UnitPrice = unitPrice,
-                                    QB_LineItemID__c = compositeLineId,
                                     Description = description
                                 );
+                                try { orderItemToProcess.put(getOrderItemQbLineIdField(), compositeLineId); } catch(Exception e){}
                                 isUpdate = true;
                                 System.debug('Preparing UPDATE for OrderItem: ' + compositeLineId + ' for Order: ' + currentOrderId + ' with PBE: ' + peInfo.pricebookEntryId);
                             } else {
@@ -737,4 +747,12 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
     QBInvoiceToOrderSyncBatch batch = new QBInvoiceToOrderSyncBatch();
     batch.execute(null, new List<String>{ JSON.serialize(invoice) });
 }
+
+    private static String getOrderItemQbLineIdField() {
+        Map<String, Schema.SObjectField> flds = Schema.SObjectType.OrderItem.fields.getMap();
+        Schema.SObjectField tok = flds.get('quickbridge_int__qb_lineitemid__c');
+        if (tok != null) return tok.getDescribe().getName();
+        tok = flds.get('qb_lineitemid__c');
+        return tok != null ? tok.getDescribe().getName() : 'QB_LineItemID__c';
+    }
 }
