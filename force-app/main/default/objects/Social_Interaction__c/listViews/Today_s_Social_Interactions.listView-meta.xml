@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Today_s_Social_Interactions</fullName>
+    <columns>NAME</columns>
+    <columns>Interaction_Type__c</columns>
+    <columns>Processing_Status__c</columns>
+    <columns>Comment_Text__c</columns>
+    <columns>Meta_Ad__c</columns>
+    <columns>Platform__c</columns>
+    <columns>CREATED_DATE</columns>
+    <filterScope>Everything</filterScope>
+    <label>Today&apos;s Social Interactions</label>
+</ListView>

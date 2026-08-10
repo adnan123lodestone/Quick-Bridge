@@ -10,6 +10,11 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
+                <fullName>meta</fullName>
+                <default>false</default>
+                <label>meta</label>
+            </value>
+            <value>
                 <fullName>QuickBooks</fullName>
                 <default>false</default>
                 <label>QuickBooks</label>
@@ -50,9 +55,9 @@
                 <label>DHL</label>
             </value>
             <value>
-                <fullName>Klaviyo</fullName>
+                <fullName>klaviyo</fullName>
                 <default>false</default>
-                <label>Klaviyo</label>
+                <label>klaviyo</label>
             </value>
             <value>
                 <fullName>Facebook / Instagram</fullName>
