@@ -32,7 +32,6 @@
   margin-bottom: 0.5rem;
 }
 
-.custom-select,
 .custom-select-table {
   width: 100%;
   min-height: 38px;
@@ -42,6 +41,20 @@
   background: #ffffff;
   padding: 0.45rem 0.65rem;
   font-size: 0.85rem;
+}
+
+.selector-grid {
+  display: grid;
+  align-items: end;
+  gap: 1rem;
+}
+
+.selector-grid_two-column {
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+}
+
+.selector-field {
+  min-width: 0;
 }
 
 .custom-select-table {
@@ -214,6 +227,10 @@
 }
 
 @media (max-width: 768px) {
+  .selector-grid_two-column {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .footer-actions {
     display: block;
   }

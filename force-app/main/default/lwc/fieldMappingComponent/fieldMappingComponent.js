@@ -1,6 +1,6 @@
 import { LightningElement, api, track } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
-import getSalesforceObjects from "@salesforce/apex/FieldMappingController.getSalesforceObjects";
+import getSalesforceObjectDiscovery from "@salesforce/apex/FieldMappingController.getSalesforceObjectDiscovery";
 import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFields";
 import getQuickBooksFields from "@salesforce/apex/FieldMappingController.getQuickBooksFields";
 import getExistingMappings from "@salesforce/apex/FieldMappingController.getExistingMappings";
@@ -10,6 +10,13 @@ import saveChildFieldMappings from "@salesforce/apex/FieldMappingController.save
 import getDraftOrderSetting from "@salesforce/apex/FieldMappingController.getDraftOrderSetting";
 import saveDraftOrderSetting from "@salesforce/apex/FieldMappingController.saveDraftOrderSetting";
 import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
+import {
+  buildObjectOptions,
+  firstAvailableObject,
+  isConfiguredPair,
+  registerConfiguredPair,
+  selectConfiguredExternalObject
+} from "c/mappingObjectDiscovery";
 
 export default class FieldMappingComponent extends LightningElement {
   @track selectedIntegration = "qbonline";
@@ -81,11 +88,22 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   loadSalesforceObjects() {
-    return getSalesforceObjects().then((result) => {
-      this.sfObjectOptions = result.map((obj) => ({
-        label: obj.label,
-        value: obj.value,
-        selected: obj.value === this.selectedSFObject
+    return getSalesforceObjectDiscovery({
+      connectorKey: this.selectedIntegration
+    }).then((result) => {
+      this.sfObjectOptions = buildObjectOptions(result, this.selectedSFObject);
+      if (
+        !this.sfObjectOptions.some(
+          (option) =>
+            option.value === this.selectedSFObject && option.available !== false
+        )
+      ) {
+        this.selectedSFObject = firstAvailableObject(this.sfObjectOptions);
+      }
+      this.updateQBObjectSelection(this.selectedSFObject);
+      this.sfObjectOptions = this.sfObjectOptions.map((option) => ({
+        ...option,
+        selected: option.value === this.selectedSFObject
       }));
     });
   }
@@ -100,6 +118,10 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   loadQuickBooksFields() {
+    if (!this.selectedQBObject) {
+      this.qbFieldOptions = [];
+      return Promise.resolve();
+    }
     return getQuickBooksFields({
       sfObject: this.selectedSFObject,
       qbObject: this.selectedQBObject
@@ -131,29 +153,12 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   updateQBObjectSelection(sfObject) {
-    const objectMap = {
-      Account: "Customer",
-      Contact: "Customer",
-      Product2: "Item",
-      Order: "Invoice",
-      OrderSummary: "Invoice",
-      Invoice__c: "Invoice",
-      Credit_Memo__c: "CreditMemo",
-      Purchase_Order__c: "PurchaseOrder",
-      Item_Sales_Tax__c: "TaxCode",
-      Quote: "Estimate"
-    };
-
-    let key = sfObject;
-    if (
-      sfObject &&
-      sfObject.endsWith("__c") &&
-      (sfObject.match(/__/g) || []).length === 2
-    ) {
-      key = sfObject.split("__")[1] + "__c";
-    }
-
-    this.selectedQBObject = objectMap[key] || "Customer";
+    this.selectedQBObject = selectConfiguredExternalObject(
+      this.sfObjectOptions,
+      sfObject,
+      this.qbObjectOptions,
+      this.selectedQBObject
+    );
     this.qbObjectOptions = this.qbObjectOptions.map((opt) => ({
       ...opt,
       selected: opt.value === this.selectedQBObject
@@ -220,7 +225,7 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   handleSalesforceObjectChange(event) {
-    const objectName = event.target ? event.target.value : event.detail.value;
+    const objectName = event.detail?.value ?? event.target?.value ?? "";
     this.selectedSFObject = objectName;
     this.isLoading = true;
 
@@ -272,11 +277,13 @@ export default class FieldMappingComponent extends LightningElement {
       this.loadObjectFields(objectName),
       this.loadQuickBooksFields(),
       this.loadDirectionAvailability(objectName),
-      getExistingMappings({
-        integration: this.selectedIntegration,
-        sfObject: objectName,
-        qbObject: this.selectedQBObject
-      })
+      this.selectedQBObject
+        ? getExistingMappings({
+            integration: this.selectedIntegration,
+            sfObject: objectName,
+            qbObject: this.selectedQBObject
+          })
+        : Promise.resolve([])
     ])
       .then(([, , , savedMappings]) => {
         this.buildMappingRows(savedMappings || []);
@@ -289,7 +296,7 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   handleQBObjectChange(event) {
-    this.selectedQBObject = event.target.value;
+    this.selectedQBObject = event.detail?.value ?? event.target?.value ?? "";
     this.qbObjectOptions = this.qbObjectOptions.map((opt) => ({
       ...opt,
       selected: opt.value === this.selectedQBObject
@@ -475,6 +482,13 @@ export default class FieldMappingComponent extends LightningElement {
       mappingsJson: JSON.stringify(rowsToSave)
     })
       .then((result) => {
+        if (rowsToSave.length) {
+          this.sfObjectOptions = registerConfiguredPair(
+            this.sfObjectOptions,
+            this.selectedSFObject,
+            this.selectedQBObject
+          );
+        }
         this.isLoading = false;
         this.showToast("Success", result, "success");
       })
@@ -596,10 +610,43 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   get isMappingBlocked() {
-    return this.directionAvailability?.allDirectionsBlocked === true;
+    return (
+      !this.selectedSFObject ||
+      !this.selectedQBObject ||
+      this.directionAvailability?.allDirectionsBlocked === true
+    );
+  }
+
+  get isQBObjectBlank() {
+    return !this.selectedQBObject;
+  }
+
+  get qbObjectSelectOptions() {
+    return [
+      { label: "Select a QuickBooks object", value: "" },
+      ...this.qbObjectOptions.map(({ label, value }) => ({ label, value }))
+    ];
+  }
+
+  get showMappingOnlyWarning() {
+    return (
+      Boolean(this.selectedSFObject && this.selectedQBObject) &&
+      !isConfiguredPair(
+        this.sfObjectOptions,
+        this.selectedSFObject,
+        this.selectedQBObject
+      )
+    );
+  }
+
+  get mappingOnlyWarning() {
+    return "This pair is not registered yet. Saving valid field mappings will register it. Automated QuickBooks processing remains limited to supported runtime objects.";
   }
 
   get directionConflictMessage() {
+    if (!this.selectedQBObject) {
+      return "Select a QuickBooks object before configuring field mappings.";
+    }
     return this.directionAvailability?.message || "";
   }
 

@@ -6,12 +6,23 @@ import getExternalFields from "@salesforce/apex/FieldMappingController.getExtern
 import getExistingMappings from "@salesforce/apex/FieldMappingController.getExistingMappings";
 import saveFieldMappings from "@salesforce/apex/FieldMappingController.saveFieldMappings";
 import clearFieldMappingsForTargetObject from "@salesforce/apex/FieldMappingController.clearFieldMappingsForTargetObject";
+import getSalesforceObjectDiscovery from "@salesforce/apex/FieldMappingController.getSalesforceObjectDiscovery";
+import {
+  buildObjectOptions,
+  firstAvailableObject,
+  isConfiguredPair,
+  normalizeObjectApiName,
+  registerConfiguredPair,
+  selectConfiguredExternalObject
+} from "c/mappingObjectDiscovery";
 
 export default class ConnectorFieldMappingComponent extends LightningElement {
   @api connectorKey = "";
   @api connectorLabel = "";
 
   @track objectMapOptions = [];
+  @track sfObjectOptions = [];
+  @track externalObjectOptions = [];
   @track selectedObjectMapKey = "";
   @track selectedSFObject = "";
   @track selectedExternalObject = "";
@@ -34,7 +45,10 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   }
 
   get hasObjectMaps() {
-    return this.objectMapOptions.length > 0;
+    return (
+      this.sfObjectOptions.some((option) => option.available !== false) &&
+      this.externalObjectOptions.length > 0
+    );
   }
 
   get tableTitle() {
@@ -62,7 +76,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   }
 
   get selectedObjectMap() {
-    return this.objectMaps.find((mapRow) => mapRow.key === this.selectedObjectMapKey);
+    return this.objectMaps.find(
+      (mapRow) => mapRow.key === this.selectedObjectMapKey
+    );
   }
 
   get normalizedConnectorKey() {
@@ -71,8 +87,11 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
 
   loadInitialData() {
     this.isLoading = true;
-    getConnectorDescriptors()
-      .then((descriptors) => {
+    Promise.all([
+      getConnectorDescriptors(),
+      getSalesforceObjectDiscovery({ connectorKey: this.connectorKey })
+    ])
+      .then(([descriptors, discoveredObjects]) => {
         const descriptor = (descriptors || []).find((item) =>
           this.matchesConnector(item)
         );
@@ -88,15 +107,48 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
           value: row.key,
           selected: false
         }));
+        this.sfObjectOptions = buildObjectOptions(discoveredObjects, "");
+        const externalObjects = [
+          ...new Set(this.objectMaps.map((row) => row.externalObject))
+        ].sort((left, right) => left.localeCompare(right));
+        this.externalObjectOptions = externalObjects.map((value) => ({
+          label: value,
+          value,
+          selected: false
+        }));
 
-        if (!this.objectMaps.length) {
+        if (!this.hasObjectMaps) {
           this.isLoading = false;
           this.notifyMappingContextChange();
-          return;
+          return Promise.resolve();
         }
 
-        this.selectedObjectMapKey = this.objectMaps[0].key;
-        this.applySelectedObjectMap();
+        const initialMap = this.objectMaps.find((row) =>
+          this.sfObjectOptions.some(
+            (option) =>
+              option.available !== false &&
+              normalizeObjectApiName(option.value) ===
+                normalizeObjectApiName(row.salesforceObject)
+          )
+        );
+        if (initialMap) {
+          this.selectedSFObject =
+            this.sfObjectOptions.find(
+              (option) =>
+                normalizeObjectApiName(option.value) ===
+                normalizeObjectApiName(initialMap.salesforceObject)
+            )?.value || "";
+          this.selectedExternalObject = initialMap.externalObject;
+        } else {
+          this.selectedSFObject = firstAvailableObject(this.sfObjectOptions);
+          this.selectedExternalObject = selectConfiguredExternalObject(
+            this.sfObjectOptions,
+            this.selectedSFObject,
+            this.externalObjectOptions,
+            ""
+          );
+        }
+        this.syncSelectedOptions();
         return this.loadSelectedMapping();
       })
       .catch((error) => {
@@ -123,6 +175,25 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
     this.objectMapOptions = this.objectMapOptions.map((option) => ({
       ...option,
       selected: option.value === this.selectedObjectMapKey
+    }));
+  }
+
+  syncSelectedOptions() {
+    const matchingMap = this.objectMaps.find(
+      (row) =>
+        normalizeObjectApiName(row.salesforceObject) ===
+          normalizeObjectApiName(this.selectedSFObject) &&
+        row.externalObject === this.selectedExternalObject
+    );
+    this.selectedObjectMapKey = matchingMap?.key || "";
+    this.selectedObjectMapDirection = matchingMap?.direction || "";
+    this.sfObjectOptions = this.sfObjectOptions.map((option) => ({
+      ...option,
+      selected: option.value === this.selectedSFObject
+    }));
+    this.externalObjectOptions = this.externalObjectOptions.map((option) => ({
+      ...option,
+      selected: option.value === this.selectedExternalObject
     }));
   }
 
@@ -172,8 +243,43 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
     this.loadSelectedMapping();
   }
 
+  handleSalesforceObjectChange(event) {
+    this.selectedSFObject = event.detail?.value ?? event.target?.value ?? "";
+    this.selectedExternalObject = selectConfiguredExternalObject(
+      this.sfObjectOptions,
+      this.selectedSFObject,
+      this.externalObjectOptions,
+      this.selectedExternalObject
+    );
+    this.syncSelectedOptions();
+    if (!this.selectedExternalObject) {
+      this.mappingRows = [];
+      this.sfFieldOptions = [];
+      this.externalFieldOptions = [];
+      this.notifyMappingContextChange();
+      return;
+    }
+    this.isLoading = true;
+    this.loadSelectedMapping();
+  }
+
+  handleExternalObjectChange(event) {
+    this.selectedExternalObject =
+      event.detail?.value ?? event.target?.value ?? "";
+    this.syncSelectedOptions();
+    if (!this.selectedSFObject || !this.selectedExternalObject) {
+      this.mappingRows = [];
+      this.notifyMappingContextChange();
+      return;
+    }
+    this.isLoading = true;
+    this.loadSelectedMapping();
+  }
+
   buildMappingRows(savedMappings) {
-    const requiredFields = this.externalFieldOptions.filter((field) => field.required);
+    const requiredFields = this.externalFieldOptions.filter(
+      (field) => field.required
+    );
     const rows = [];
     let counter = 1;
 
@@ -185,7 +291,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
         id: counter++,
         sfField: existingMapping?.sfField || "",
         externalField: field.value,
-        syncDirection: this.getAvailableDirectionValue(existingMapping?.syncDirection),
+        syncDirection: this.getAvailableDirectionValue(
+          existingMapping?.syncDirection
+        ),
         isMandatory: true
       });
     });
@@ -300,9 +408,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   handleSFFieldChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) =>
-      row.id === rowId ? { ...row, sfField: value } : row
-    );
+    this.mappingRows = this.mappingRows.map((row) => {
+      return row.id === rowId ? { ...row, sfField: value } : row;
+    });
     this.updateRowDropdowns();
     this.notifyMappingContextChange();
   }
@@ -335,14 +443,22 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   handleSyncDirectionChange(event) {
     const rowId = Number(event.currentTarget.dataset.rowId);
     const value = event.target.value;
-    this.mappingRows = this.mappingRows.map((row) =>
-      row.id === rowId ? { ...row, syncDirection: value } : row
-    );
+    this.mappingRows = this.mappingRows.map((row) => {
+      return row.id === rowId ? { ...row, syncDirection: value } : row;
+    });
     this.updateRowDropdowns();
     this.notifyMappingContextChange();
   }
 
   handleSave() {
+    if (this.isMappingBlocked) {
+      this.showToast(
+        "Validation Error",
+        "Select both Salesforce and external objects before configuring mappings.",
+        "error"
+      );
+      return;
+    }
     const duplicateExternalFields = this.getDuplicateExternalFields();
     if (duplicateExternalFields.length > 0) {
       this.showToast("Validation Error", this.duplicateErrorMessage, "error");
@@ -373,6 +489,13 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
       mappingsJson: JSON.stringify(rowsToSave)
     })
       .then((result) => {
+        if (rowsToSave.length) {
+          this.sfObjectOptions = registerConfiguredPair(
+            this.sfObjectOptions,
+            this.selectedSFObject,
+            this.selectedExternalObject
+          );
+        }
         this.isLoading = false;
         this.showToast("Success", result, "success");
         this.notifyMappingContextChange();
@@ -381,6 +504,43 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
         this.isLoading = false;
         this.showToast("Error", this.reduceError(error), "error");
       });
+  }
+
+  get isMappingBlocked() {
+    return !this.selectedSFObject || !this.selectedExternalObject;
+  }
+
+  get isExternalObjectBlank() {
+    return !this.selectedExternalObject;
+  }
+
+  get externalObjectLabel() {
+    return `${this.externalLabel} Object`;
+  }
+
+  get externalObjectSelectOptions() {
+    return [
+      { label: `Select a ${this.externalLabel} object`, value: "" },
+      ...this.externalObjectOptions.map(({ label, value }) => ({
+        label,
+        value
+      }))
+    ];
+  }
+
+  get showMappingOnlyWarning() {
+    return (
+      Boolean(this.selectedSFObject && this.selectedExternalObject) &&
+      !isConfiguredPair(
+        this.sfObjectOptions,
+        this.selectedSFObject,
+        this.selectedExternalObject
+      )
+    );
+  }
+
+  get mappingOnlyWarning() {
+    return `This pair is not registered yet. Saving valid field mappings will register it. Automated ${this.externalLabel} processing remains limited to supported runtime objects.`;
   }
 
   handleResetClick() {
@@ -415,7 +575,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
   }
 
   resetMappingRows() {
-    const requiredFields = this.externalFieldOptions.filter((field) => field.required);
+    const requiredFields = this.externalFieldOptions.filter(
+      (field) => field.required
+    );
     const defaultDirection = this.getDefaultSyncDirection();
     let counter = 1;
     const rows = requiredFields.map((field) => ({
@@ -453,7 +615,8 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
       if (!sfField || !externalField) return;
       if (
         rows.some(
-          (row) => row.sfField === sfField && row.externalField === externalField
+          (row) =>
+            row.sfField === sfField && row.externalField === externalField
         )
       ) {
         return;
@@ -476,7 +639,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
         id: this.rowCounter++,
         sfField,
         externalField,
-        syncDirection: this.getAvailableDirectionValue(suggestion.syncDirection),
+        syncDirection: this.getAvailableDirectionValue(
+          suggestion.syncDirection
+        ),
         isMandatory: suggestion.required === true
       });
       changed = true;
@@ -500,7 +665,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
           salesforceObject: this.selectedSFObject,
           externalObject: this.selectedExternalObject,
           syncDirection: null,
-          allowApply: Boolean(this.selectedSFObject && this.selectedExternalObject),
+          allowApply: Boolean(
+            this.selectedSFObject && this.selectedExternalObject
+          ),
           mappings: this.mappingRows.map((row) => ({
             sfField: row.sfField,
             externalField: row.externalField,
@@ -514,7 +681,9 @@ export default class ConnectorFieldMappingComponent extends LightningElement {
 
   getAllowedSyncDirectionOptions() {
     const connector = this.normalizedConnectorKey;
-    const direction = String(this.selectedObjectMapDirection || "").toLowerCase();
+    const direction = String(
+      this.selectedObjectMapDirection || ""
+    ).toLowerCase();
     let options;
     if (connector === "meta") {
       options = [

@@ -1,11 +1,24 @@
 global with sharing class GenericScheduleDispatcher implements Schedulable {
   private static final Integer DEFAULT_LEASE_MINUTES = 10;
+  private static final Integer MAX_DISPATCH_SIZE = 20;
 
   global void execute(SchedulableContext context) {
     dispatchDue();
   }
 
   public static void dispatchDue() {
+    Integer availableQueueableJobs =
+      Limits.getLimitQueueableJobs() - Limits.getQueueableJobs();
+    dispatchDue(availableQueueableJobs);
+  }
+
+  @TestVisible
+  private static void dispatchDue(Integer availableQueueableJobs) {
+    if (availableQueueableJobs <= 0) {
+      return;
+    }
+
+    Integer dispatchSize = Math.min(MAX_DISPATCH_SIZE, availableQueueableJobs);
     Datetime nowValue = Datetime.now();
     String leaseToken = generateLeaseToken();
     Datetime leaseExpiresAt = nowValue.addMinutes(DEFAULT_LEASE_MINUTES);
@@ -29,7 +42,7 @@ global with sharing class GenericScheduleDispatcher implements Schedulable {
         OR Next_Run_At__c <= :nowValue))
         OR (Status__c = 'Claimed'
         AND Lease_Expires_At__c < :nowValue)
-      LIMIT 20
+      LIMIT :dispatchSize
       FOR UPDATE
     ];
     if (dueJobs.isEmpty()) {

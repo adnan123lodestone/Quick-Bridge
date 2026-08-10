@@ -56,14 +56,26 @@ public with sharing class FieldMappingController {
         );
       }
 
-      Map<String, Schema.SObjectField> fieldMap = sObjectType.getDescribe()
-        .fields.getMap();
+      Schema.DescribeSObjectResult objectDescribe = sObjectType.getDescribe(
+        SObjectDescribeOptions.DEFERRED
+      );
+      if (!objectDescribe.isAccessible() || !objectDescribe.isQueryable()) {
+        throw new IllegalArgumentException(
+          'Object is not accessible and queryable: ' + objectName
+        );
+      }
+
+      Map<String, Schema.SObjectField> fieldMap = objectDescribe.fields.getMap();
 
       for (String fieldName : fieldMap.keySet()) {
         Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName)
           .getDescribe();
-        if (fieldDescribe.isAccessible()
-            && MappingFieldEligibilityService.isSalesforceFieldAllowed(fieldDescribe.getName())) {
+        if (
+          fieldDescribe.isAccessible() &&
+          MappingFieldEligibilityService.isSalesforceFieldAllowed(
+            fieldDescribe.getName()
+          )
+        ) {
           fields.add(
             new FieldWrapper(
               fieldDescribe.getLabel(),
@@ -110,7 +122,9 @@ public with sharing class FieldMappingController {
     String netSuiteObject
   ) {
     return convertQBFieldDefinitions(
-      getFallbackNetSuiteFieldDefinitions(resolveNetSuiteEntity(sfObject, netSuiteObject))
+      getFallbackNetSuiteFieldDefinitions(
+        resolveNetSuiteEntity(sfObject, netSuiteObject)
+      )
     );
   }
 
@@ -129,7 +143,9 @@ public with sharing class FieldMappingController {
     }
     if (normalizedIntegration == INTEGRATION_META) {
       return convertQBFieldDefinitions(
-        getFallbackMetaFieldDefinitions(resolveMetaEntity(sfObject, externalObject))
+        getFallbackMetaFieldDefinitions(
+          resolveMetaEntity(sfObject, externalObject)
+        )
       );
     }
     return getQuickBooksFields(sfObject, externalObject);
@@ -354,13 +370,17 @@ public with sharing class FieldMappingController {
     List<Field_Mapping__mdt> active = [
       SELECT DeveloperName, SF_Field__c
       FROM Field_Mapping__mdt
-      WHERE Is_Active__c = true
+      WHERE Is_Active__c = TRUE
     ];
     String nsPrefix = getNamespacePrefix();
     Metadata.DeployContainer container = new Metadata.DeployContainer();
     Integer count = 0;
     for (Field_Mapping__mdt rec : active) {
-      if (!MappingFieldEligibilityService.isSalesforceFieldAllowed(rec.SF_Field__c)) {
+      if (
+        !MappingFieldEligibilityService.isSalesforceFieldAllowed(
+          rec.SF_Field__c
+        )
+      ) {
         Metadata.CustomMetadata md = new Metadata.CustomMetadata();
         md.fullName = nsPrefix + 'Field_Mapping__mdt.' + rec.DeveloperName;
         md.label = rec.DeveloperName;
@@ -385,27 +405,30 @@ public with sharing class FieldMappingController {
     try {
       if (
         integration == INTEGRATION_QBO &&
-        (sfObject == 'Order' || sfObject.endsWith('Invoice__c'))
+        resolveQBEntity(sfObject, qbObject) == 'Invoice'
       ) {
-        String ns = getNamespacePrefix();
-        String otherObject = (sfObject == 'Order')
-          ? (ns + 'Invoice__c')
-          : 'Order';
-        List<Field_Mapping__mdt> existingConflict = [
-          SELECT Id
-          FROM Field_Mapping__mdt
-          WHERE
-            Integration__c = 'qbonline'
-            AND SF_Object__c = :otherObject
-            AND Is_Active__c = TRUE
-          LIMIT 1
-        ];
-        if (!existingConflict.isEmpty()) {
+        List<Field_Mapping__mdt> invoiceMappings = getActiveQboMappingsForConflict();
+        String conflictingObject;
+        for (Field_Mapping__mdt existingMapping : invoiceMappings) {
+          if (
+            existingMapping.SF_Object__c != sfObject &&
+            resolveQBEntity(
+              existingMapping.SF_Object__c,
+              existingMapping.Target_Object_API_Name__c
+            ) == 'Invoice'
+          ) {
+            conflictingObject = existingMapping.SF_Object__c;
+            break;
+          }
+        }
+        if (String.isNotBlank(conflictingObject)) {
           throw new AuraHandledException(
-            'Conflict Error: You cannot map both Order and ' +
-              otherObject +
+            'Conflict Error: You cannot map both ' +
+              sfObject +
+              ' and ' +
+              conflictingObject +
               ' to QuickBooks Invoice. Please clear ' +
-              otherObject +
+              conflictingObject +
               ' mappings first.'
           );
         }
@@ -440,8 +463,12 @@ public with sharing class FieldMappingController {
       }
 
       List<String> sfFieldNames = new List<String>();
-      for (MappingRow row : requestedMappings) { sfFieldNames.add(row.sfField); }
-      MappingFieldEligibilityService.assertNoBlockedSalesforceFields(sfFieldNames);
+      for (MappingRow row : requestedMappings) {
+        sfFieldNames.add(row.sfField);
+      }
+      MappingFieldEligibilityService.assertNoBlockedSalesforceFields(
+        sfFieldNames
+      );
 
       validateObjectDirectionAvailability(
         integration,
@@ -491,6 +518,14 @@ public with sharing class FieldMappingController {
 
       String nsPrefix = getNamespacePrefix();
       Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
+      if (!requestedMappings.isEmpty()) {
+        IntegrationObjectMapRegistrationService.addMissingPair(
+          mdContainer,
+          integration,
+          sfObject,
+          qbObject
+        );
+      }
       for (String developerName : recordsToDeactivate) {
         Metadata.CustomMetadata inactiveMetadata = new Metadata.CustomMetadata();
         inactiveMetadata.fullName =
@@ -567,48 +602,29 @@ public with sharing class FieldMappingController {
   @AuraEnabled(cacheable=true)
   public static List<Map<String, String>> getSalesforceObjects() {
     List<Map<String, String>> objects = new List<Map<String, String>>();
-    List<String> allowedObjects = new List<String>{
-      'Account',
-      'Contact',
-      'Order',
-      'OrderItem',
-      'OrderSummary',
-      'OrderItemSummary',
-      'Quote',
-      'QuoteLineItem',
-      'Invoice__c',
-      'Product2',
-      'Credit_Memo__c',
-      'Purchase_Order__c',
-      'Stocking_Location__c',
-      'Item_Sales_Tax__c',
-      'Case',
-      'ReturnOrder',
-      'Shipment',
-      'Carrier_Shipment__c',
-      'Carrier_Package__c',
-      'Carrier_Rate_Quote__c',
-      'Carrier_Tracking_Event__c'
-    };
-
-    Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
-
-    for (String objApiName : allowedObjects) {
-      try {
-        Schema.SObjectType sType = getSObjectType(objApiName);
-        if (sType == null)
-          continue;
-
-        Schema.DescribeSObjectResult describe = sType.getDescribe();
-        Map<String, String> objectData = new Map<String, String>();
-        objectData.put('label', describe.getLabel());
-        objectData.put('value', describe.getName());
-        objects.add(objectData);
-      } catch (Exception e) {
-        System.debug('Object not found: ' + objApiName);
+    for (
+      Map<String, Object> option : SalesforceObjectDiscoveryService.discover(
+        null
+      )
+    ) {
+      if (option.get('available') != true) {
+        continue;
       }
+      objects.add(
+        new Map<String, String>{
+          'label' => (String) option.get('label'),
+          'value' => (String) option.get('value')
+        }
+      );
     }
     return objects;
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static List<Map<String, Object>> getSalesforceObjectDiscovery(
+    String connectorKey
+  ) {
+    return SalesforceObjectDiscoveryService.discover(connectorKey);
   }
 
   private static String getNamespacePrefix() {
@@ -617,6 +633,27 @@ public with sharing class FieldMappingController {
       return className.substringBefore('.') + '__';
     }
     return '';
+  }
+
+  private static List<Field_Mapping__mdt> getActiveQboMappingsForConflict() {
+    if (Test.isRunningTest() && testActiveMappings != null) {
+      List<Field_Mapping__mdt> testMappings = new List<Field_Mapping__mdt>();
+      for (Field_Mapping__mdt mapping : testActiveMappings) {
+        if (
+          mapping != null &&
+          mapping.Integration__c == INTEGRATION_QBO &&
+          mapping.Is_Active__c == true
+        ) {
+          testMappings.add(mapping);
+        }
+      }
+      return testMappings;
+    }
+    return [
+      SELECT SF_Object__c, Target_Object_API_Name__c
+      FROM Field_Mapping__mdt
+      WHERE Integration__c = 'qbonline' AND Is_Active__c = TRUE
+    ];
   }
 
   /**
@@ -752,10 +789,14 @@ public with sharing class FieldMappingController {
       fieldDefs = getFallbackShopifyFieldDefinitions(shopifyEntity);
       integrationLabel = 'Shopify';
     } else if (integration == INTEGRATION_NETSUITE) {
-      fieldDefs = getFallbackNetSuiteFieldDefinitions(resolveNetSuiteEntity(sfObject, extObject));
+      fieldDefs = getFallbackNetSuiteFieldDefinitions(
+        resolveNetSuiteEntity(sfObject, extObject)
+      );
       integrationLabel = 'NetSuite';
     } else if (integration == INTEGRATION_META) {
-      fieldDefs = getFallbackMetaFieldDefinitions(resolveMetaEntity(sfObject, extObject));
+      fieldDefs = getFallbackMetaFieldDefinitions(
+        resolveMetaEntity(sfObject, extObject)
+      );
       integrationLabel = 'Meta';
     } else {
       String qbEntity = resolveQBEntity(sfObject, extObject);
@@ -803,10 +844,14 @@ public with sharing class FieldMappingController {
       extFields = getFallbackShopifyFieldDefinitions(shopifyEntity);
       integrationLabel = 'Shopify';
     } else if (integration == INTEGRATION_NETSUITE) {
-      extFields = getFallbackNetSuiteFieldDefinitions(resolveNetSuiteEntity(sfObject, extObject));
+      extFields = getFallbackNetSuiteFieldDefinitions(
+        resolveNetSuiteEntity(sfObject, extObject)
+      );
       integrationLabel = 'NetSuite';
     } else if (integration == INTEGRATION_META) {
-      extFields = getFallbackMetaFieldDefinitions(resolveMetaEntity(sfObject, extObject));
+      extFields = getFallbackMetaFieldDefinitions(
+        resolveMetaEntity(sfObject, extObject)
+      );
       integrationLabel = 'Meta';
     } else {
       extFields = fetchQBFieldDefinitionsSafe(
@@ -1073,7 +1118,11 @@ public with sharing class FieldMappingController {
     String syncDirection
   ) {
     String normalizedIntegration = normalizeIntegration(integration);
-    if (!isQboOrShopify(integration) && normalizedIntegration != INTEGRATION_NETSUITE && normalizedIntegration != INTEGRATION_META) {
+    if (
+      !isQboOrShopify(integration) &&
+      normalizedIntegration != INTEGRATION_NETSUITE &&
+      normalizedIntegration != INTEGRATION_META
+    ) {
       return syncDirection;
     }
 
@@ -1524,18 +1573,78 @@ public with sharing class FieldMappingController {
         false
       );
     } else if (qbEntity == 'Estimate') {
-      addQBFieldDefinition(qbFields, 'QB - CustomerRef.value', 'CustomerRef.value', 'STRING', true);
-      addQBFieldDefinition(qbFields, 'QB - DocNumber', 'DocNumber', 'STRING', false);
-      addQBFieldDefinition(qbFields, 'QB - TotalAmt', 'TotalAmt', 'NUMBER', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - CustomerRef.value',
+        'CustomerRef.value',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - DocNumber',
+        'DocNumber',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - TotalAmt',
+        'TotalAmt',
+        'NUMBER',
+        false
+      );
       addQBFieldDefinition(qbFields, 'QB - TxnDate', 'TxnDate', 'DATE', false);
-      addQBFieldDefinition(qbFields, 'QB - ExpirationDate', 'ExpirationDate', 'DATE', false);
-      addQBFieldDefinition(qbFields, 'QB - Customer Memo', 'CustomerMemo.value', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - ExpirationDate',
+        'ExpirationDate',
+        'DATE',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Customer Memo',
+        'CustomerMemo.value',
+        'STRING',
+        false
+      );
     } else if (qbEntity == 'EstimateLine') {
-      addQBFieldDefinition(qbFields, 'QB - Product/Service ID', 'Line.SalesItemLineDetail.ItemRef.value', 'STRING', true);
-      addQBFieldDefinition(qbFields, 'QB - Amount', 'Line.Amount', 'NUMBER', true);
-      addQBFieldDefinition(qbFields, 'QB - Quantity', 'Line.SalesItemLineDetail.Qty', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Unit Price', 'Line.SalesItemLineDetail.UnitPrice', 'NUMBER', false);
-      addQBFieldDefinition(qbFields, 'QB - Description', 'Line.Description', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Product/Service ID',
+        'Line.SalesItemLineDetail.ItemRef.value',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Amount',
+        'Line.Amount',
+        'NUMBER',
+        true
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Quantity',
+        'Line.SalesItemLineDetail.Qty',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Unit Price',
+        'Line.SalesItemLineDetail.UnitPrice',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Description',
+        'Line.Description',
+        'STRING',
+        false
+      );
     }
 
     return qbFields;
@@ -1580,7 +1689,10 @@ public with sharing class FieldMappingController {
   ) {
     List<Map<String, Object>> qbFields = new List<Map<String, Object>>();
 
-    String realmId = ConnectorConfigResolver.getValue('qbo', 'QuickBooks_Realm_ID__c');
+    String realmId = ConnectorConfigResolver.getValue(
+      'qbo',
+      'QuickBooks_Realm_ID__c'
+    );
     if (String.isBlank(realmId)) {
       throw new CalloutException('Realm ID is missing in configuration.');
     }
@@ -1885,25 +1997,39 @@ public with sharing class FieldMappingController {
       return normalizeMetaEntity(metaObject);
     }
     String objectKey = normalizeObjectToken(sfObject);
-    if (objectKey == 'campaign') return 'campaign';
-    if (objectKey == 'metaadset') return 'adset';
-    if (objectKey == 'metaad') return 'ad';
-    if (objectKey == 'lead') return 'leadad';
-    if (objectKey == 'campaignmember') return 'campaignmemberattribution';
-    if (objectKey == 'socialinteraction') return 'commentattribution';
-    if (objectKey == 'metainsight' || objectKey == 'campaigninsight') return 'insights';
+    if (objectKey == 'campaign')
+      return 'campaign';
+    if (objectKey == 'metaadset')
+      return 'adset';
+    if (objectKey == 'metaad')
+      return 'ad';
+    if (objectKey == 'lead')
+      return 'leadad';
+    if (objectKey == 'campaignmember')
+      return 'campaignmemberattribution';
+    if (objectKey == 'socialinteraction')
+      return 'commentattribution';
+    if (objectKey == 'metainsight' || objectKey == 'campaigninsight')
+      return 'insights';
     return 'campaign';
   }
 
   private static String normalizeMetaEntity(String metaObject) {
     String value = normalizeObjectToken(metaObject);
-    if (value == 'campaign') return 'campaign';
-    if (value == 'adset' || value == 'adsets') return 'adset';
-    if (value == 'ad' || value == 'ads') return 'ad';
-    if (value == 'lead' || value == 'leadad' || value == 'leadads') return 'leadad';
-    if (value == 'campaignmemberattribution') return 'campaignmemberattribution';
-    if (value == 'commentattribution') return 'commentattribution';
-    if (value == 'insight' || value == 'insights') return 'insights';
+    if (value == 'campaign')
+      return 'campaign';
+    if (value == 'adset' || value == 'adsets')
+      return 'adset';
+    if (value == 'ad' || value == 'ads')
+      return 'ad';
+    if (value == 'lead' || value == 'leadad' || value == 'leadads')
+      return 'leadad';
+    if (value == 'campaignmemberattribution')
+      return 'campaignmemberattribution';
+    if (value == 'commentattribution')
+      return 'commentattribution';
+    if (value == 'insight' || value == 'insights')
+      return 'insights';
     return metaObject;
   }
 
@@ -1930,56 +2056,236 @@ public with sharing class FieldMappingController {
 
     if (normalizedEntity == 'campaign') {
       addQBFieldDefinition(fields, 'Meta - Campaign ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Campaign Name', 'name', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Ad Account ID', 'account_id', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Objective', 'objective', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Campaign Name',
+        'name',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Ad Account ID',
+        'account_id',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Objective',
+        'objective',
+        'STRING',
+        false
+      );
       addQBFieldDefinition(fields, 'Meta - Status', 'status', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Daily Budget', 'daily_budget', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'Meta - Lifetime Budget', 'lifetime_budget', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Daily Budget',
+        'daily_budget',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Lifetime Budget',
+        'lifetime_budget',
+        'NUMBER',
+        false
+      );
     } else if (normalizedEntity == 'adset') {
       addQBFieldDefinition(fields, 'Meta - Ad Set ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Ad Set Name', 'name', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Campaign ID', 'campaign_id', 'STRING', true);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Ad Set Name',
+        'name',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Campaign ID',
+        'campaign_id',
+        'STRING',
+        true
+      );
       addQBFieldDefinition(fields, 'Meta - Status', 'status', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Optimization Goal', 'optimization_goal', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Daily Budget', 'daily_budget', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'Meta - Lifetime Budget', 'lifetime_budget', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Optimization Goal',
+        'optimization_goal',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Daily Budget',
+        'daily_budget',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Lifetime Budget',
+        'lifetime_budget',
+        'NUMBER',
+        false
+      );
     } else if (normalizedEntity == 'ad') {
       addQBFieldDefinition(fields, 'Meta - Ad ID', 'id', 'STRING', true);
       addQBFieldDefinition(fields, 'Meta - Ad Name', 'name', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Campaign ID', 'campaign_id', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Ad Set ID', 'adset_id', 'STRING', true);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Campaign ID',
+        'campaign_id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Ad Set ID',
+        'adset_id',
+        'STRING',
+        true
+      );
       addQBFieldDefinition(fields, 'Meta - Status', 'status', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Creative ID', 'creative.id', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Preview Link', 'preview_shareable_link', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Creative ID',
+        'creative.id',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Preview Link',
+        'preview_shareable_link',
+        'STRING',
+        false
+      );
     } else if (normalizedEntity == 'leadad') {
       addQBFieldDefinition(fields, 'Meta - Lead ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Campaign ID', 'campaign_id', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Ad Set ID', 'adset_id', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Campaign ID',
+        'campaign_id',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Ad Set ID',
+        'adset_id',
+        'STRING',
+        false
+      );
       addQBFieldDefinition(fields, 'Meta - Ad ID', 'ad_id', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Form ID', 'form_id', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Form ID',
+        'form_id',
+        'STRING',
+        false
+      );
       addQBFieldDefinition(fields, 'Meta - Email', 'email', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Phone Number', 'phone_number', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Full Name', 'full_name', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - First Name', 'first_name', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Last Name', 'last_name', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Phone Number',
+        'phone_number',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Full Name',
+        'full_name',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - First Name',
+        'first_name',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Last Name',
+        'last_name',
+        'STRING',
+        false
+      );
     } else if (normalizedEntity == 'campaignmemberattribution') {
-      addQBFieldDefinition(fields, 'Meta - Leadgen ID', 'leadgen_id', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Campaign ID', 'campaign_id', 'STRING', true);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Leadgen ID',
+        'leadgen_id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Campaign ID',
+        'campaign_id',
+        'STRING',
+        true
+      );
       addQBFieldDefinition(fields, 'Meta - Status', 'status', 'STRING', false);
     } else if (normalizedEntity == 'commentattribution') {
-      addQBFieldDefinition(fields, 'Meta - Comment ID', 'comment_id', 'STRING', true);
-      addQBFieldDefinition(fields, 'Meta - Post ID', 'post_id', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Campaign ID', 'campaign_id', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Comment Text', 'comment_text', 'STRING', false);
-      addQBFieldDefinition(fields, 'Meta - Commenter Name', 'commenter_name', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Comment ID',
+        'comment_id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Post ID',
+        'post_id',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Campaign ID',
+        'campaign_id',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Comment Text',
+        'comment_text',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'Meta - Commenter Name',
+        'commenter_name',
+        'STRING',
+        false
+      );
     } else if (normalizedEntity == 'insights') {
       addQBFieldDefinition(fields, 'Meta - Insight ID', 'id', 'STRING', true);
       addQBFieldDefinition(fields, 'Meta - Spend', 'spend', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'Meta - Impressions', 'impressions', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Impressions',
+        'impressions',
+        'NUMBER',
+        false
+      );
       addQBFieldDefinition(fields, 'Meta - Clicks', 'clicks', 'NUMBER', false);
       addQBFieldDefinition(fields, 'Meta - Reach', 'reach', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'Meta - Lead Actions', 'actions.lead', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'Meta - Lead Actions',
+        'actions.lead',
+        'NUMBER',
+        false
+      );
     }
     return fields;
   }
@@ -1989,86 +2295,467 @@ public with sharing class FieldMappingController {
   ) {
     Map<String, QBFieldDefinition> fields = new Map<String, QBFieldDefinition>();
     if (entity == 'Customer') {
-      addQBFieldDefinition(fields, 'NetSuite - Internal ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Entity ID', 'entityid', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Company Name', 'companyname', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - First Name', 'firstname', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Last Name', 'lastname', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Email', 'email', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Phone', 'phone', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Billing City', 'billcity', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Subsidiary', 'subsidiary', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Currency', 'currency', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Taxable', 'taxable', 'BOOLEAN', false);
-      addQBFieldDefinition(fields, 'NetSuite - Status', 'entitystatus', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Last Modified Date', 'lastmodifieddate', 'DATETIME', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Internal ID',
+        'id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Entity ID',
+        'entityid',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Company Name',
+        'companyname',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - First Name',
+        'firstname',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Last Name',
+        'lastname',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Email',
+        'email',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Phone',
+        'phone',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Billing City',
+        'billcity',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Subsidiary',
+        'subsidiary',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Currency',
+        'currency',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Taxable',
+        'taxable',
+        'BOOLEAN',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Status',
+        'entitystatus',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Last Modified Date',
+        'lastmodifieddate',
+        'DATETIME',
+        false
+      );
     } else if (entity == 'Item') {
-      addQBFieldDefinition(fields, 'NetSuite - Internal ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - SKU / Item ID', 'itemid', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Display Name', 'displayname', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Description', 'salesdescription', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Item Type', 'itemtype', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Base Price', 'baseprice', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Currency', 'currency', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Price Level', 'pricelevel', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Tax Schedule', 'taxschedule', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Inactive', 'isinactive', 'BOOLEAN', false);
-      addQBFieldDefinition(fields, 'NetSuite - Quantity Available', 'quantityavailable', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Last Modified Date', 'lastmodifieddate', 'DATETIME', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Internal ID',
+        'id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - SKU / Item ID',
+        'itemid',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Display Name',
+        'displayname',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Description',
+        'salesdescription',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Item Type',
+        'itemtype',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Base Price',
+        'baseprice',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Currency',
+        'currency',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Price Level',
+        'pricelevel',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Tax Schedule',
+        'taxschedule',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Inactive',
+        'isinactive',
+        'BOOLEAN',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Quantity Available',
+        'quantityavailable',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Last Modified Date',
+        'lastmodifieddate',
+        'DATETIME',
+        false
+      );
     } else if (entity == 'SalesOrder') {
-      addQBFieldDefinition(fields, 'NetSuite - Internal ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Transaction ID', 'tranid', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Entity', 'entity', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Transaction Date', 'trandate', 'DATE', false);
-      addQBFieldDefinition(fields, 'NetSuite - Status', 'status', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Total', 'total', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Subsidiary', 'subsidiary', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Department', 'department', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Class', 'class', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Location', 'location', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Internal ID',
+        'id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Transaction ID',
+        'tranid',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Entity',
+        'entity',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Transaction Date',
+        'trandate',
+        'DATE',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Status',
+        'status',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Total',
+        'total',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Subsidiary',
+        'subsidiary',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Department',
+        'department',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Class',
+        'class',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Location',
+        'location',
+        'STRING',
+        false
+      );
     } else if (entity == 'SalesOrderLine') {
-      addQBFieldDefinition(fields, 'NetSuite - Line ID', 'line', 'STRING', true);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Line ID',
+        'line',
+        'STRING',
+        true
+      );
       addQBFieldDefinition(fields, 'NetSuite - Item', 'item', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Description', 'description', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Quantity', 'quantity', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Description',
+        'description',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Quantity',
+        'quantity',
+        'NUMBER',
+        false
+      );
       addQBFieldDefinition(fields, 'NetSuite - Rate', 'rate', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Amount', 'amount', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Amount',
+        'amount',
+        'NUMBER',
+        false
+      );
     } else if (entity == 'Invoice') {
-      addQBFieldDefinition(fields, 'NetSuite - Internal ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Transaction ID', 'tranid', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Entity', 'entity', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Transaction Date', 'trandate', 'DATE', false);
-      addQBFieldDefinition(fields, 'NetSuite - Total', 'total', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Amount Remaining', 'amountremaining', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Status', 'status', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Internal ID',
+        'id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Transaction ID',
+        'tranid',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Entity',
+        'entity',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Transaction Date',
+        'trandate',
+        'DATE',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Total',
+        'total',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Amount Remaining',
+        'amountremaining',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Status',
+        'status',
+        'STRING',
+        false
+      );
     } else if (entity == 'InvoiceLine') {
-      addQBFieldDefinition(fields, 'NetSuite - Line ID', 'line', 'STRING', true);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Line ID',
+        'line',
+        'STRING',
+        true
+      );
       addQBFieldDefinition(fields, 'NetSuite - Item', 'item', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Description', 'description', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Quantity', 'quantity', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Description',
+        'description',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Quantity',
+        'quantity',
+        'NUMBER',
+        false
+      );
       addQBFieldDefinition(fields, 'NetSuite - Rate', 'rate', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Amount', 'amount', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Amount',
+        'amount',
+        'NUMBER',
+        false
+      );
     } else if (entity == 'Payment') {
-      addQBFieldDefinition(fields, 'NetSuite - Internal ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Transaction ID', 'tranid', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Customer', 'customer', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Amount', 'payment', 'NUMBER', false);
-      addQBFieldDefinition(fields, 'NetSuite - Account', 'account', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Applied Invoice', 'appliedto', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Internal ID',
+        'id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Transaction ID',
+        'tranid',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Customer',
+        'customer',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Amount',
+        'payment',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Account',
+        'account',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Applied Invoice',
+        'appliedto',
+        'STRING',
+        false
+      );
     } else if (entity == 'Fulfillment') {
-      addQBFieldDefinition(fields, 'NetSuite - Internal ID', 'id', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Created From', 'createdfrom', 'STRING', true);
-      addQBFieldDefinition(fields, 'NetSuite - Tracking Number', 'trackingnumbers', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Ship Date', 'shipdate', 'DATE', false);
-      addQBFieldDefinition(fields, 'NetSuite - Status', 'status', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Location', 'location', 'STRING', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Internal ID',
+        'id',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Created From',
+        'createdfrom',
+        'STRING',
+        true
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Tracking Number',
+        'trackingnumbers',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Ship Date',
+        'shipdate',
+        'DATE',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Status',
+        'status',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Location',
+        'location',
+        'STRING',
+        false
+      );
       addQBFieldDefinition(fields, 'NetSuite - Item', 'item', 'STRING', false);
-      addQBFieldDefinition(fields, 'NetSuite - Quantity', 'quantity', 'NUMBER', false);
+      addQBFieldDefinition(
+        fields,
+        'NetSuite - Quantity',
+        'quantity',
+        'NUMBER',
+        false
+      );
     }
     return fields;
   }
 
-  private static String resolveNetSuiteEntity(String sfObject, String netSuiteObject) {
+  private static String resolveNetSuiteEntity(
+    String sfObject,
+    String netSuiteObject
+  ) {
     if (String.isNotBlank(netSuiteObject)) {
       return netSuiteObject;
     }
@@ -2080,14 +2767,36 @@ public with sharing class FieldMappingController {
     ) {
       normalizedObject = normalizedObject.split('__')[1] + '__c';
     }
-    if (normalizedObject == 'Account' || normalizedObject == 'Contact') return 'Customer';
-    if (normalizedObject == 'Product2') return 'Item';
-    if (normalizedObject == 'Order' || normalizedObject == 'Quote' || normalizedObject == 'OrderSummary') return 'SalesOrder';
-    if (normalizedObject == 'OrderItem' || normalizedObject == 'QuoteLineItem' || normalizedObject == 'OrderItemSummary') return 'SalesOrderLine';
-    if (normalizedObject == 'Invoice__c') return 'Invoice';
-    if (normalizedObject == 'Invoice_Line__c') return 'InvoiceLine';
-    if (normalizedObject == 'Payment' || normalizedObject == 'Portal_Payment_Transaction__c') return 'Payment';
-    if (normalizedObject == 'Shipment' || normalizedObject == 'Carrier_Shipment__c') return 'Fulfillment';
+    if (normalizedObject == 'Account' || normalizedObject == 'Contact')
+      return 'Customer';
+    if (normalizedObject == 'Product2')
+      return 'Item';
+    if (
+      normalizedObject == 'Order' ||
+      normalizedObject == 'Quote' ||
+      normalizedObject == 'OrderSummary'
+    )
+      return 'SalesOrder';
+    if (
+      normalizedObject == 'OrderItem' ||
+      normalizedObject == 'QuoteLineItem' ||
+      normalizedObject == 'OrderItemSummary'
+    )
+      return 'SalesOrderLine';
+    if (normalizedObject == 'Invoice__c')
+      return 'Invoice';
+    if (normalizedObject == 'Invoice_Line__c')
+      return 'InvoiceLine';
+    if (
+      normalizedObject == 'Payment' ||
+      normalizedObject == 'Portal_Payment_Transaction__c'
+    )
+      return 'Payment';
+    if (
+      normalizedObject == 'Shipment' ||
+      normalizedObject == 'Carrier_Shipment__c'
+    )
+      return 'Fulfillment';
     return 'Customer';
   }
 
@@ -2190,8 +2899,12 @@ public with sharing class FieldMappingController {
       }
 
       List<String> carrierSfFields = new List<String>();
-      for (MappingRow row : requestedMappings) { carrierSfFields.add(row.sfField); }
-      MappingFieldEligibilityService.assertNoBlockedSalesforceFields(carrierSfFields);
+      for (MappingRow row : requestedMappings) {
+        carrierSfFields.add(row.sfField);
+      }
+      MappingFieldEligibilityService.assertNoBlockedSalesforceFields(
+        carrierSfFields
+      );
 
       Map<String, QBFieldDefinition> fieldDefs = getCarrierFieldDefinitions(
         integration,
@@ -2241,6 +2954,14 @@ public with sharing class FieldMappingController {
 
       String nsPrefix = getNamespacePrefix();
       Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
+      if (!requestedMappings.isEmpty()) {
+        IntegrationObjectMapRegistrationService.addMissingCarrierPair(
+          mdContainer,
+          integration,
+          sfObject,
+          actionName
+        );
+      }
       for (String developerName : recordsToDeactivate) {
         Metadata.CustomMetadata inactiveMetadata = new Metadata.CustomMetadata();
         inactiveMetadata.fullName =
@@ -2471,13 +3192,17 @@ public with sharing class FieldMappingController {
       return externalField;
     }
     if (
-      (integration != 'fedex' && integration != 'dhl') ||
+      (integration != 'fedex' &&
+      integration != 'dhl') ||
       actionName != 'validateAddress' ||
       canonicalDirection != 'Carrier to SF'
     ) {
       return externalField;
     }
-    if (externalField.startsWith('validatedAddress[') && externalField.endsWith(']')) {
+    if (
+      externalField.startsWith('validatedAddress[') &&
+      externalField.endsWith(']')
+    ) {
       externalField =
         'validatedAddress.' +
         externalField.substring(
@@ -2511,11 +3236,14 @@ public with sharing class FieldMappingController {
     String act = String.isBlank(actionName) ? '' : actionName;
 
     if (act == 'validateAddress') {
-      Boolean inbound = toCanonicalCarrierDirection(direction) == 'Carrier to SF';
+      Boolean inbound =
+        toCanonicalCarrierDirection(direction) == 'Carrier to SF';
       String responsePrefix = inbound ? 'validatedAddress.' : '';
       addQBFieldDefinition(
         fields,
-        inbound ? 'FedEx - validatedAddress.streetLines[0]' : 'FedEx - streetLines[0]',
+        inbound
+          ? 'FedEx - validatedAddress.streetLines[0]'
+          : 'FedEx - streetLines[0]',
         responsePrefix + 'streetLines[0]',
         'STRING',
         true
@@ -2545,21 +3273,27 @@ public with sharing class FieldMappingController {
       );
       addQBFieldDefinition(
         fields,
-        inbound ? 'FedEx - validatedAddress.countryCode' : 'FedEx - countryCode',
+        inbound
+          ? 'FedEx - validatedAddress.countryCode'
+          : 'FedEx - countryCode',
         responsePrefix + 'countryCode',
         'STRING',
         true
       );
       addQBFieldDefinition(
         fields,
-        inbound ? 'FedEx - validatedAddress.streetLines[1]' : 'FedEx - streetLines[1]',
+        inbound
+          ? 'FedEx - validatedAddress.streetLines[1]'
+          : 'FedEx - streetLines[1]',
         responsePrefix + 'streetLines[1]',
         'STRING',
         false
       );
       addQBFieldDefinition(
         fields,
-        inbound ? 'FedEx - validatedAddress.classification' : 'FedEx - classification',
+        inbound
+          ? 'FedEx - validatedAddress.classification'
+          : 'FedEx - classification',
         responsePrefix + 'classification',
         'STRING',
         false
@@ -3589,7 +4323,10 @@ public with sharing class FieldMappingController {
   @AuraEnabled(cacheable=true)
   public static Boolean getDraftOrderSetting() {
     try {
-      return ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
+      return ConnectorConfigResolver.getBoolean(
+        'qbo',
+        'Map_Draft_Orders_as_Estimates__c'
+      );
     } catch (Exception e) {
       return false;
     }

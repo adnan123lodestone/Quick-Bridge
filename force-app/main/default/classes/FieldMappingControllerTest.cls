@@ -290,6 +290,7 @@ public class FieldMappingControllerTest {
 
   @isTest
   static void testSaveAndLoadCarrierMappings() {
+    IntegrationObjectMapRegistrationService.testObjectMaps = new List<Integration_Object_Map__mdt>();
     String outboundJson = '[{"sfField":"Name","externalField":"masterTrackingNumber","syncDirection":"SF to FedEx"}]';
     String inboundJson = '[{"sfField":"Name","externalField":"label.trackingNumber","syncDirection":"FedEx to SF"}]';
     String upsJson = '[{"sfField":"Name","externalField":"masterTrackingNumber","syncDirection":"SF to UPS"}]';
@@ -325,6 +326,10 @@ public class FieldMappingControllerTest {
     Assert.isTrue(upsResponse.contains('Deployment Started'));
     Assert.isNotNull(fedexMappings);
     Assert.isNotNull(upsMappings);
+    Assert.isNotNull(
+      IntegrationObjectMapRegistrationService.lastBuiltMetadata,
+      'Carrier saves should add an unconfigured pair to their deployment container.'
+    );
   }
 
   @isTest
@@ -344,6 +349,7 @@ public class FieldMappingControllerTest {
   @isTest
   static void testSaveFieldMappingsSuccess() {
     FieldMappingController.testActiveMappings = new List<Field_Mapping__mdt>();
+    IntegrationObjectMapRegistrationService.testObjectMaps = new List<Integration_Object_Map__mdt>();
     String mappingsJson = '[{"sfField":"Name","externalField":"DisplayName"}]';
 
     Test.startTest();
@@ -356,6 +362,41 @@ public class FieldMappingControllerTest {
     Test.stopTest();
 
     Assert.isTrue(response.contains('Deployment Started'));
+    Assert.isNotNull(
+      IntegrationObjectMapRegistrationService.lastBuiltMetadata,
+      'Shared saves should add an unconfigured pair to their deployment container.'
+    );
+  }
+
+  @isTest
+  static void saveFieldMappingsRejectsSecondExternalInvoicePair() {
+    FieldMappingController.testActiveMappings = new List<Field_Mapping__mdt>{
+      new Field_Mapping__mdt(
+        Integration__c = 'qbonline',
+        SF_Object__c = 'Order',
+        Target_Object_API_Name__c = 'Invoice',
+        Is_Active__c = true
+      )
+    };
+
+    Boolean didThrow = false;
+    Test.startTest();
+    try {
+      FieldMappingController.saveFieldMappings(
+        'qbonline',
+        'Unlisted_Billing_Object__c',
+        'Invoice',
+        '[]'
+      );
+    } catch (AuraHandledException e) {
+      didThrow = true;
+    }
+    Test.stopTest();
+
+    Assert.isTrue(
+      didThrow,
+      'Invoice conflicts must be based on the configured external pair, not Salesforce object suffixes.'
+    );
   }
 
   @isTest
@@ -499,64 +540,101 @@ public class FieldMappingControllerTest {
 
     // Blocked fields must be absent
     List<String> blocked = new List<String>{
-      'ownerid', 'createddate', 'createdbyid',
-      'lastmodifieddate', 'lastmodifiedbyid', 'systemmodstamp',
-      'isdeleted', 'recordtypeid', 'currencyisocode',
-      'lastvieweddate', 'lastreferenceddate'
+      'ownerid',
+      'createddate',
+      'createdbyid',
+      'lastmodifieddate',
+      'lastmodifiedbyid',
+      'systemmodstamp',
+      'isdeleted',
+      'recordtypeid',
+      'currencyisocode',
+      'lastvieweddate',
+      'lastreferenceddate'
     };
     for (String b : blocked) {
-      Assert.isFalse(fieldValues.contains(b), b + ' should not appear in getObjectFields results');
+      Assert.isFalse(
+        fieldValues.contains(b),
+        b + ' should not appear in getObjectFields results'
+      );
     }
 
     // Allowed fields must still be present
     Assert.isTrue(fieldValues.contains('id'), 'Id must remain in field list');
-    Assert.isTrue(fieldValues.contains('ordernumber'), 'OrderNumber must remain in field list');
+    Assert.isTrue(
+      fieldValues.contains('ordernumber'),
+      'OrderNumber must remain in field list'
+    );
   }
 
   @isTest
   static void saveFieldMappingsRejectsBlockedSfField() {
-    String mappingsJson = JSON.serialize(new List<Object>{
-      new Map<String, Object>{
-        'sfField' => 'CreatedById',
-        'externalField' => 'DisplayName',
-        'syncDirection' => 'Two-Way'
+    String mappingsJson = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'sfField' => 'CreatedById',
+          'externalField' => 'DisplayName',
+          'syncDirection' => 'Two-Way'
+        }
       }
-    });
+    );
 
     Test.startTest();
     Boolean didThrow = false;
     try {
-      FieldMappingController.saveFieldMappings('qbonline', 'Account', 'Customer', mappingsJson);
+      FieldMappingController.saveFieldMappings(
+        'qbonline',
+        'Account',
+        'Customer',
+        mappingsJson
+      );
     } catch (AuraHandledException e) {
       didThrow = true;
-      Assert.isTrue(e.getMessage().contains('CreatedById'), 'Exception message should name the blocked field');
+      Assert.isTrue(
+        e.getMessage().contains('CreatedById'),
+        'Exception message should name the blocked field'
+      );
     }
     Test.stopTest();
 
-    Assert.isTrue(didThrow, 'saveFieldMappings should reject a blocked sfField');
+    Assert.isTrue(
+      didThrow,
+      'saveFieldMappings should reject a blocked sfField'
+    );
   }
 
   @isTest
   static void saveFieldMappingsAllowsSalesforceId() {
     // Salesforce record Id must never be blocked
-    String mappingsJson = JSON.serialize(new List<Object>{
-      new Map<String, Object>{
-        'sfField' => 'Id',
-        'externalField' => 'id',
-        'syncDirection' => 'Two-Way'
+    String mappingsJson = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'sfField' => 'Id',
+          'externalField' => 'id',
+          'syncDirection' => 'Two-Way'
+        }
       }
-    });
+    );
 
     Test.startTest();
     Boolean threw = false;
     try {
-      FieldMappingController.saveFieldMappings('qbonline', 'Account', 'Customer', mappingsJson);
+      FieldMappingController.saveFieldMappings(
+        'qbonline',
+        'Account',
+        'Customer',
+        mappingsJson
+      );
     } catch (AuraHandledException e) {
-      if (e.getMessage().contains('cannot be used in a mapping')) threw = true;
+      if (e.getMessage().contains('cannot be used in a mapping'))
+        threw = true;
     }
     Test.stopTest();
 
-    Assert.isFalse(threw, 'Salesforce Id should never be blocked by eligibility check');
+    Assert.isFalse(
+      threw,
+      'Salesforce Id should never be blocked by eligibility check'
+    );
   }
 
   @isTest
@@ -579,10 +657,19 @@ public class FieldMappingControllerTest {
       customerValues.add(String.valueOf(fieldInfo.get('value')));
     }
 
-    Assert.isTrue(customerFields.size() > 0, 'Customer fields should be available.');
-    Assert.isTrue(customerValues.contains('id'), 'Customer fields should include NetSuite id.');
+    Assert.isTrue(
+      customerFields.size() > 0,
+      'Customer fields should be available.'
+    );
+    Assert.isTrue(
+      customerValues.contains('id'),
+      'Customer fields should include NetSuite id.'
+    );
     Assert.isTrue(itemFields.size() > 0, 'Item fields should be available.');
-    Assert.isTrue(invoiceFields.size() > 0, 'Invoice roadmap fields should be available.');
+    Assert.isTrue(
+      invoiceFields.size() > 0,
+      'Invoice roadmap fields should be available.'
+    );
   }
 
   @isTest
@@ -634,9 +721,18 @@ public class FieldMappingControllerTest {
       'Customer'
     );
 
-    Assert.isTrue(values(metaCampaignFields).contains('id'), 'Meta campaign fields should include id.');
-    Assert.isTrue(values(metaCampaignFields).contains('name'), 'Meta campaign fields should include name.');
-    Assert.isTrue(values(netSuiteCustomerFields).contains('companyname'), 'NetSuite customer fields should include companyname.');
+    Assert.isTrue(
+      values(metaCampaignFields).contains('id'),
+      'Meta campaign fields should include id.'
+    );
+    Assert.isTrue(
+      values(metaCampaignFields).contains('name'),
+      'Meta campaign fields should include name.'
+    );
+    Assert.isTrue(
+      values(netSuiteCustomerFields).contains('companyname'),
+      'NetSuite customer fields should include companyname.'
+    );
   }
 
   @isTest
@@ -655,7 +751,10 @@ public class FieldMappingControllerTest {
         sfObject,
         metaObjects.get(sfObject)
       );
-      Assert.isFalse(fields.isEmpty(), 'Expected Meta fields for ' + metaObjects.get(sfObject));
+      Assert.isFalse(
+        fields.isEmpty(),
+        'Expected Meta fields for ' + metaObjects.get(sfObject)
+      );
     }
 
     Map<String, String> netSuiteObjects = new Map<String, String>{
@@ -672,7 +771,10 @@ public class FieldMappingControllerTest {
         sfObject,
         netSuiteObjects.get(sfObject)
       );
-      Assert.isFalse(fields.isEmpty(), 'Expected NetSuite fields for ' + netSuiteObjects.get(sfObject));
+      Assert.isFalse(
+        fields.isEmpty(),
+        'Expected NetSuite fields for ' + netSuiteObjects.get(sfObject)
+      );
     }
 
     String clearResult = FieldMappingController.clearFieldMappingsForTargetObject(
@@ -680,23 +782,29 @@ public class FieldMappingControllerTest {
       'Campaign',
       'campaign'
     );
-    Assert.isTrue(clearResult.startsWith('Mappings Cleared') || clearResult == 'No active mappings to clear.', 'Unexpected result: ' + clearResult);
+    Assert.isTrue(
+      clearResult.startsWith('Mappings Cleared') ||
+      clearResult == 'No active mappings to clear.',
+      'Unexpected result: ' + clearResult
+    );
   }
 
   @isTest
   static void saveMetaMappingsSupportsMetaDirectionsAndValidation() {
-    String validJson = JSON.serialize(new List<Object>{
-      new Map<String, Object>{
-        'sfField' => 'Id',
-        'externalField' => 'id',
-        'syncDirection' => 'Meta to SF'
-      },
-      new Map<String, Object>{
-        'sfField' => 'Name',
-        'externalField' => 'name',
-        'syncDirection' => 'SF to Meta'
+    String validJson = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'sfField' => 'Id',
+          'externalField' => 'id',
+          'syncDirection' => 'Meta to SF'
+        },
+        new Map<String, Object>{
+          'sfField' => 'Name',
+          'externalField' => 'name',
+          'syncDirection' => 'SF to Meta'
+        }
       }
-    });
+    );
 
     Test.startTest();
     String response = FieldMappingController.saveFieldMappings(
@@ -712,18 +820,20 @@ public class FieldMappingControllerTest {
 
   @isTest
   static void saveMetaMappingsRejectsInvalidDirection() {
-    String invalidJson = JSON.serialize(new List<Object>{
-      new Map<String, Object>{
-        'sfField' => 'Id',
-        'externalField' => 'id',
-        'syncDirection' => 'QBO to SF'
-      },
-      new Map<String, Object>{
-        'sfField' => 'Name',
-        'externalField' => 'name',
-        'syncDirection' => 'Meta to SF'
+    String invalidJson = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'sfField' => 'Id',
+          'externalField' => 'id',
+          'syncDirection' => 'QBO to SF'
+        },
+        new Map<String, Object>{
+          'sfField' => 'Name',
+          'externalField' => 'name',
+          'syncDirection' => 'Meta to SF'
+        }
       }
-    });
+    );
 
     Boolean didThrow = false;
     Test.startTest();

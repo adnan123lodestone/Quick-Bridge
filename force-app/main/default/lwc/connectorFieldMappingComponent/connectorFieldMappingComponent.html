@@ -17,35 +17,37 @@
       </template>
 
       <template if:true={hasObjectMaps}>
-        <div class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large">
-          <div class="slds-grid slds-grid_vertical-align-end slds-gutters">
-            <div class="slds-col slds-size_3-of-5">
-              <label class="custom-label">Object Map</label>
-              <select
-                class="custom-select"
-                name="objectMap"
-                onchange={handleObjectMapChange}
-              >
-                <template for:each={objectMapOptions} for:item="option">
-                  <option
-                    key={option.value}
-                    value={option.value}
-                    selected={option.selected}
-                  >
-                    {option.label}
-                  </option>
-                </template>
-              </select>
+        <div
+          class="ui-card top-selector-card slds-m-bottom_large slds-p-around_large"
+        >
+          <div class="selector-grid selector-grid_two-column">
+            <div class="selector-field">
+              <lightning-select
+                name="sfObject"
+                label="Salesforce Object"
+                value={selectedSFObject}
+                options={sfObjectOptions}
+                onchange={handleSalesforceObjectChange}
+              ></lightning-select>
             </div>
-            <div class="slds-col slds-size_1-of-5">
-              <label class="custom-label">Salesforce</label>
-              <div class="readonly-pill">{selectedSFObject}</div>
-            </div>
-            <div class="slds-col slds-size_1-of-5">
-              <label class="custom-label">{externalLabel}</label>
-              <div class="readonly-pill">{selectedExternalObject}</div>
+            <div class="selector-field">
+              <lightning-select
+                name="externalObject"
+                label={externalObjectLabel}
+                value={selectedExternalObject}
+                options={externalObjectSelectOptions}
+                onchange={handleExternalObjectChange}
+              ></lightning-select>
             </div>
           </div>
+          <template if:true={showMappingOnlyWarning}>
+            <div
+              class="slds-notify slds-notify_alert slds-alert_warning slds-m-top_medium"
+              role="alert"
+            >
+              <span>{mappingOnlyWarning}</span>
+            </div>
+          </template>
         </div>
 
         <div class="ui-card table-card slds-p-around_large">
@@ -54,7 +56,11 @@
               <h3 class="box-title">{tableTitle}</h3>
               <p class="slds-text-color_weak font-size-sm">{helperText}</p>
             </div>
-            <button class="btn-primary btn-inline" onclick={handleAddRow}>
+            <button
+              class="btn-primary btn-inline"
+              onclick={handleAddRow}
+              disabled={isMappingBlocked}
+            >
               Add Field
             </button>
           </div>
@@ -104,7 +110,9 @@
                           </template>
                         </select>
                         <template if:true={row.isMandatory}>
-                          <span class="required-star" title={requiredTitle}>*</span>
+                          <span class="required-star" title={requiredTitle}
+                            >*</span
+                          >
                         </template>
                       </div>
                     </td>
@@ -140,7 +148,10 @@
                         <option value="" selected={row.isSfFieldBlank}>
                           -- None --
                         </option>
-                        <template for:each={row.sfFieldOptions} for:item="option">
+                        <template
+                          for:each={row.sfFieldOptions}
+                          for:item="option"
+                        >
                           <option
                             key={option.value}
                             value={option.value}
@@ -181,7 +192,9 @@
           </div>
         </div>
 
-        <div class="slds-m-top_large slds-grid slds-grid_align-spread footer-actions">
+        <div
+          class="slds-m-top_large slds-grid slds-grid_align-spread footer-actions"
+        >
           <p class="slds-text-color_weak font-size-sm">{footerText}</p>
           <div class="slds-grid slds-gutters">
             <div class="slds-col">
@@ -190,7 +203,11 @@
               </button>
             </div>
             <div class="slds-col">
-              <button class="btn-primary" onclick={handleSave}>
+              <button
+                class="btn-primary"
+                onclick={handleSave}
+                disabled={isMappingBlocked}
+              >
                 Save Mappings
               </button>
             </div>

@@ -1,11 +1,18 @@
 import { LightningElement, api, track } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
-import getSalesforceObjects from "@salesforce/apex/FieldMappingController.getSalesforceObjects";
+import getSalesforceObjectDiscovery from "@salesforce/apex/FieldMappingController.getSalesforceObjectDiscovery";
 import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFields";
 import getShopifyFields from "@salesforce/apex/FieldMappingController.getShopifyFields";
 import getExistingMappings from "@salesforce/apex/FieldMappingController.getExistingMappings";
 import saveFieldMappings from "@salesforce/apex/FieldMappingController.saveFieldMappings";
 import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
+import {
+  buildObjectOptions,
+  firstAvailableObject,
+  isConfiguredPair,
+  registerConfiguredPair,
+  selectConfiguredExternalObject
+} from "c/mappingObjectDiscovery";
 
 export default class ShopifyFieldMappingComponent extends LightningElement {
   @track selectedIntegration = "shopify";
@@ -32,9 +39,6 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
     { label: "Line Item", value: "LineItem", selected: false }
   ];
 
-  // Only expose the SF objects relevant for Shopify
-  shopifyAllowedSFObjects = ["Account", "Order", "Product2", "OrderItem"];
-
   connectedCallback() {
     this.loadInitialData();
   }
@@ -53,15 +57,22 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   loadSalesforceObjects() {
-    return getSalesforceObjects().then((result) => {
-      // Filter to only Shopify-supported objects
-      const filtered = result.filter((obj) =>
-        this.shopifyAllowedSFObjects.includes(obj.value)
-      );
-      this.sfObjectOptions = filtered.map((obj) => ({
-        label: obj.label,
-        value: obj.value,
-        selected: obj.value === this.selectedSFObject
+    return getSalesforceObjectDiscovery({
+      connectorKey: this.selectedIntegration
+    }).then((result) => {
+      this.sfObjectOptions = buildObjectOptions(result, this.selectedSFObject);
+      if (
+        !this.sfObjectOptions.some(
+          (option) =>
+            option.value === this.selectedSFObject && option.available !== false
+        )
+      ) {
+        this.selectedSFObject = firstAvailableObject(this.sfObjectOptions);
+      }
+      this.updateShopifyObjectSelection(this.selectedSFObject);
+      this.sfObjectOptions = this.sfObjectOptions.map((option) => ({
+        ...option,
+        selected: option.value === this.selectedSFObject
       }));
     });
   }
@@ -76,6 +87,10 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   loadShopifyFields() {
+    if (!this.selectedShopifyObject) {
+      this.shopifyFieldOptions = [];
+      return Promise.resolve();
+    }
     return getShopifyFields({
       sfObject: this.selectedSFObject,
       shopifyObject: this.selectedShopifyObject
@@ -89,13 +104,12 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   updateShopifyObjectSelection(sfObject) {
-    const objectMap = {
-      Account: "Customer",
-      Order: "Order",
-      Product2: "Product",
-      OrderItem: "LineItem"
-    };
-    this.selectedShopifyObject = objectMap[sfObject] || "Customer";
+    this.selectedShopifyObject = selectConfiguredExternalObject(
+      this.sfObjectOptions,
+      sfObject,
+      this.shopifyObjectOptions,
+      this.selectedShopifyObject
+    );
     this.shopifyObjectOptions = this.shopifyObjectOptions.map((opt) => ({
       ...opt,
       selected: opt.value === this.selectedShopifyObject
@@ -154,7 +168,7 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   handleSalesforceObjectChange(event) {
-    const objectName = event.target ? event.target.value : event.detail.value;
+    const objectName = event.detail?.value ?? event.target?.value ?? "";
     this.selectedSFObject = objectName;
     this.isLoading = true;
 
@@ -171,11 +185,13 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
       .then(() =>
         Promise.all([
           this.loadObjectFields(objectName),
-          getExistingMappings({
-            integration: this.selectedIntegration,
-            sfObject: objectName,
-            qbObject: null
-          })
+          this.selectedShopifyObject
+            ? getExistingMappings({
+                integration: this.selectedIntegration,
+                sfObject: objectName,
+                qbObject: this.selectedShopifyObject
+              })
+            : Promise.resolve([])
         ])
       )
       .then(([, savedMappings]) => {
@@ -189,7 +205,8 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   handleShopifyObjectChange(event) {
-    this.selectedShopifyObject = event.target.value;
+    this.selectedShopifyObject =
+      event.detail?.value ?? event.target?.value ?? "";
     this.shopifyObjectOptions = this.shopifyObjectOptions.map((opt) => ({
       ...opt,
       selected: opt.value === this.selectedShopifyObject
@@ -199,13 +216,15 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
     // loadShopifyFields must complete first so this.shopifyFieldOptions is set
     // before buildMappingRows reads it.
     this.loadShopifyFields()
-      .then(() =>
-        getExistingMappings({
-          integration: this.selectedIntegration,
-          sfObject: this.selectedSFObject,
-          qbObject: null
-        })
-      )
+      .then(() => {
+        return this.selectedShopifyObject
+          ? getExistingMappings({
+              integration: this.selectedIntegration,
+              sfObject: this.selectedSFObject,
+              qbObject: this.selectedShopifyObject
+            })
+          : Promise.resolve([]);
+      })
       .then((savedMappings) => {
         this.buildMappingRows(savedMappings || []);
         this.isLoading = false;
@@ -328,6 +347,14 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
   }
 
   handleSave() {
+    if (this.isMappingBlocked) {
+      this.showToast(
+        "Validation Error",
+        "Select a Shopify object before configuring field mappings.",
+        "error"
+      );
+      return;
+    }
     const duplicateExternalFields = this.getDuplicateExternalFields();
     if (duplicateExternalFields.length > 0) {
       this.showToast(
@@ -368,6 +395,13 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
       mappingsJson: JSON.stringify(rowsToSave)
     })
       .then((result) => {
+        if (rowsToSave.length) {
+          this.sfObjectOptions = registerConfiguredPair(
+            this.sfObjectOptions,
+            this.selectedSFObject,
+            this.selectedShopifyObject
+          );
+        }
         this.isLoading = false;
         this.showToast("Success", result, "success");
       })
@@ -375,6 +409,36 @@ export default class ShopifyFieldMappingComponent extends LightningElement {
         this.isLoading = false;
         this.showToast("Error", error.body?.message || error.message, "error");
       });
+  }
+
+  get isMappingBlocked() {
+    return !this.selectedSFObject || !this.selectedShopifyObject;
+  }
+
+  get isShopifyObjectBlank() {
+    return !this.selectedShopifyObject;
+  }
+
+  get shopifyObjectSelectOptions() {
+    return [
+      { label: "Select a Shopify object", value: "" },
+      ...this.shopifyObjectOptions.map(({ label, value }) => ({ label, value }))
+    ];
+  }
+
+  get showMappingOnlyWarning() {
+    return (
+      Boolean(this.selectedSFObject && this.selectedShopifyObject) &&
+      !isConfiguredPair(
+        this.sfObjectOptions,
+        this.selectedSFObject,
+        this.selectedShopifyObject
+      )
+    );
+  }
+
+  get mappingOnlyWarning() {
+    return "This pair is not registered yet. Saving valid field mappings will register it. Automated Shopify processing remains limited to supported runtime objects.";
   }
 
   handleResetClick() {

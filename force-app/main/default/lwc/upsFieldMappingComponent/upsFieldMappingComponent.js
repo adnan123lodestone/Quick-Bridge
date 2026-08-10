@@ -1,14 +1,19 @@
 import { LightningElement, api, track } from "lwc";
 import { ShowToastEvent } from "lightning/platformShowToastEvent";
-import getSalesforceObjects from "@salesforce/apex/FieldMappingController.getSalesforceObjects";
+import getSalesforceObjectDiscovery from "@salesforce/apex/FieldMappingController.getSalesforceObjectDiscovery";
 import getObjectFields from "@salesforce/apex/FieldMappingController.getObjectFields";
 import getUPSFields from "@salesforce/apex/FieldMappingController.getUPSFields";
 import getExistingUPSMappings from "@salesforce/apex/FieldMappingController.getExistingUPSMappings";
 import saveUPSFieldMappings from "@salesforce/apex/FieldMappingController.saveUPSFieldMappings";
 import clearFieldMappings from "@salesforce/apex/FieldMappingController.clearFieldMappings";
+import {
+  buildObjectOptions,
+  firstAvailableObject,
+  isConfiguredPair,
+  registerConfiguredPair
+} from "c/mappingObjectDiscovery";
 
 const SHIPMENT_ONLY_ACTIONS = new Set(["voidShipment", "syncTrackingStatus"]);
-const SHIPMENT_OBJECT = "QuickBridgeTLG__Carrier_Shipment__c";
 
 const ACTIONS = [
   {
@@ -54,10 +59,19 @@ export default class UpsFieldMappingComponent extends LightningElement {
   @track selectedDirection = "SF to UPS";
   @track selectedSFObject = "Case";
   @track allSFObjectOptions = [];
+  @track shipmentObjectApiName = "";
 
   get sfObjectOptions() {
     if (SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)) {
-      return [{ label: "Shipment", value: SHIPMENT_OBJECT, selected: true }];
+      return this.shipmentObjectApiName
+        ? [
+            {
+              label: "Shipment",
+              value: this.shipmentObjectApiName,
+              selected: true
+            }
+          ]
+        : [];
     }
     return this.allSFObjectOptions;
   }
@@ -132,40 +146,44 @@ export default class UpsFieldMappingComponent extends LightningElement {
   }
 
   loadSalesforceObjects() {
-    return getSalesforceObjects().then((result) => {
-      const preferredObjects = [
-        "Case",
-        "Shipment",
-        "QuickBridgeTLG__Carrier_Shipment__c",
-        "Carrier_Package__c",
-        "Carrier_Rate_Quote__c",
-        "ReturnOrder",
-        "Account",
-        "Order"
-      ];
-      const filtered = (result || []).filter((obj) =>
-        preferredObjects.includes(obj.value)
-      );
-      const optionsSource = filtered.length ? filtered : result || [];
-      this.allSFObjectOptions = optionsSource.map((obj) => ({
-        label: obj.label,
-        value: obj.value,
-        selected: obj.value === this.selectedSFObject
-      }));
-      if (
-        !this.allSFObjectOptions.some(
-          (obj) => obj.value === this.selectedSFObject
-        ) &&
-        this.allSFObjectOptions.length
-      ) {
-        this.selectedSFObject = this.allSFObjectOptions[0].value;
-        this.allSFObjectOptions[0].selected = true;
+    return getSalesforceObjectDiscovery({ connectorKey: "ups" }).then(
+      (result) => {
+        this.allSFObjectOptions = buildObjectOptions(
+          result,
+          this.selectedSFObject
+        );
+        this.shipmentObjectApiName =
+          this.allSFObjectOptions.find(
+            (option) =>
+              option.available !== false &&
+              option.configuredExternalObjects.includes("Shipment")
+          )?.value || "";
+        if (
+          !this.allSFObjectOptions.some(
+            (obj) =>
+              obj.value === this.selectedSFObject && obj.available !== false
+          ) &&
+          this.allSFObjectOptions.length
+        ) {
+          this.selectedSFObject = firstAvailableObject(this.allSFObjectOptions);
+        }
+        this.allSFObjectOptions = this.allSFObjectOptions.map((option) => ({
+          ...option,
+          selected: option.value === this.selectedSFObject
+        }));
       }
-    });
+    );
   }
 
   reloadMappings() {
     this.isLoading = true;
+    if (!this.selectedSFObject) {
+      this.sfFieldOptions = [];
+      this.upsFieldOptions = [];
+      this.mappingRows = [];
+      this.isLoading = false;
+      return Promise.resolve();
+    }
     return Promise.all([
       getObjectFields({ objectName: this.selectedSFObject }),
       getUPSFields({
@@ -258,7 +276,7 @@ export default class UpsFieldMappingComponent extends LightningElement {
         ? "UPS to SF"
         : this.selectedDirection;
     if (SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)) {
-      this.selectedSFObject = SHIPMENT_OBJECT;
+      this.selectedSFObject = this.shipmentObjectApiName;
     }
     this.reloadMappings();
   }
@@ -269,7 +287,7 @@ export default class UpsFieldMappingComponent extends LightningElement {
   }
 
   handleSalesforceObjectChange(event) {
-    this.selectedSFObject = event.target.value;
+    this.selectedSFObject = event.detail?.value ?? event.target?.value ?? "";
     this.allSFObjectOptions = this.allSFObjectOptions.map((option) => ({
       ...option,
       selected: option.value === this.selectedSFObject
@@ -376,6 +394,13 @@ export default class UpsFieldMappingComponent extends LightningElement {
       mappingsJson: JSON.stringify(rowsToSave)
     })
       .then((result) => {
+        if (rowsToSave.length) {
+          this.allSFObjectOptions = registerConfiguredPair(
+            this.allSFObjectOptions,
+            this.selectedSFObject,
+            this.registrationExternalObject
+          );
+        }
         this.isLoading = false;
         this.showToast("Success", result, "success");
       })
@@ -528,6 +553,41 @@ export default class UpsFieldMappingComponent extends LightningElement {
       seen.add(row.externalField);
     });
     return duplicates;
+  }
+
+  get isMappingBlocked() {
+    return !this.selectedSFObject;
+  }
+
+  get showMappingOnlyWarning() {
+    if (
+      SHIPMENT_ONLY_ACTIONS.has(this.selectedAction) &&
+      !this.shipmentObjectApiName
+    ) {
+      return true;
+    }
+    if (!this.selectedSFObject) return false;
+    return !isConfiguredPair(
+      this.allSFObjectOptions,
+      this.selectedSFObject,
+      this.registrationExternalObject
+    );
+  }
+
+  get mappingOnlyWarning() {
+    if (
+      SHIPMENT_ONLY_ACTIONS.has(this.selectedAction) &&
+      !this.shipmentObjectApiName
+    ) {
+      return "The configured Salesforce shipment object is unavailable. This shipment-only action cannot be configured.";
+    }
+    return "This pair is not registered yet. Saving valid field mappings will register it. Automated UPS processing remains limited to supported runtime objects.";
+  }
+
+  get registrationExternalObject() {
+    return SHIPMENT_ONLY_ACTIONS.has(this.selectedAction)
+      ? "Shipment"
+      : "Package";
   }
 
   normalizeType(type) {
