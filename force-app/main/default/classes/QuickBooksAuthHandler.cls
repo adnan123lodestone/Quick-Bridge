@@ -24,10 +24,12 @@ public without sharing class QuickBooksAuthHandler {
         QuickBooksConnectionConfig result = new QuickBooksConnectionConfig();
 
         if (Test.isRunningTest()) {
-            result.realmId = String.isNotBlank(testRealmId) ? testRealmId.trim() : '123456789';
-            result.namedCredential = String.isNotBlank(testNamedCredential) ? testNamedCredential.trim() : 'QuickBooksNC';
-            result.minorVersion = String.isNotBlank(testMinorVersion) ? testMinorVersion.trim() : '65';
-            return result;
+            if (testRealmId != null || testNamedCredential != null || testMinorVersion != null) {
+                result.realmId = String.isNotBlank(testRealmId) ? testRealmId.trim() : '123456789';
+                result.namedCredential = String.isNotBlank(testNamedCredential) ? testNamedCredential.trim() : 'QuickBooksNC';
+                result.minorVersion = String.isNotBlank(testMinorVersion) ? testMinorVersion.trim() : '65';
+                return result;
+            }
         }
 
         ConnectorConfigService.ConnectorConfig cfg;

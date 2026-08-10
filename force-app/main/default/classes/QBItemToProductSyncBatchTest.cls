@@ -1,4 +1,4 @@
-@isTest
+@isTest(isParallel=false)
 private class QBItemToProductSyncBatchTest {
     private class QBOItemSyncMock implements HttpCalloutMock {
         private Boolean isError;
@@ -49,6 +49,7 @@ private class QBItemToProductSyncBatchTest {
     static void testBatchExecutionSuccessWithPBE() {
         QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new QBOItemSyncMock(false));
+        delete [SELECT Id FROM Product2];
 
         Test.startTest();
         Database.executeBatch(new QBItemToProductSyncBatch(), 1);

@@ -1,4 +1,4 @@
-@IsTest
+@IsTest(IsParallel=false)
 private class QBOInvoiceSyncQueueableTest {
     
     private class BulkInvoiceMock implements HttpCalloutMock {

@@ -29,20 +29,47 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
   public Database.QueryLocator start(Database.BatchableContext bc) {
     String orderFields = buildOrderQueryFields();
+    String accountFields = getAccountQboIdQueryFields();
+    String productFields = getProductQboIdQueryFields();
     String query =
       'SELECT ' + orderFields +
-      ', AccountId, Account.QuickbookID__c' +
-      ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice,' +
-      ' Product2.QuickbookID__c, QB_LineiTemID__c' +
+      (String.isNotBlank(accountFields) ? ', ' + accountFields : '') +
+      ', (SELECT Id, Product2Id, Quantity, UnitPrice, Description, TotalPrice' +
+      getOrderItemQbLineIdQueryFields() +
+      (String.isNotBlank(productFields) ? ', ' + productFields : '') +
       buildOrderItemQueryFields() +
       ' FROM OrderItems)' +
       ' FROM Order WHERE Id IN :orderIds';
     return Database.getQueryLocator(query);
   }
 
+  private static String getOrderItemQbLineIdQueryFields() {
+    Map<String, Schema.SObjectField> flds = Schema.SObjectType.OrderItem.fields.getMap();
+    List<String> res = new List<String>();
+    if (flds.containsKey('qb_lineitemid__c')) res.add('QB_LineiTemID__c');
+    if (flds.containsKey('quickbridgetlg__qb_lineitemid__c')) res.add('QuickBridgeTLG__QB_LineiTemID__c');
+    return res.isEmpty() ? '' : ', ' + String.join(res, ', ');
+  }
+
+  private static String getAccountQboIdQueryFields() {
+    Map<String, Schema.SObjectField> flds = Schema.SObjectType.Account.fields.getMap();
+    List<String> res = new List<String>();
+    if (flds.containsKey('quickbookid__c')) res.add('Account.QuickbookID__c');
+    if (flds.containsKey('quickbridgetlg__quickbookid__c')) res.add('Account.QuickBridgeTLG__QuickbookID__c');
+    return String.join(res, ', ');
+  }
+
+  private static String getProductQboIdQueryFields() {
+    Map<String, Schema.SObjectField> flds = Schema.SObjectType.Product2.fields.getMap();
+    List<String> res = new List<String>();
+    if (flds.containsKey('quickbookid__c')) res.add('Product2.QuickbookID__c');
+    if (flds.containsKey('quickbridgetlg__quickbookid__c')) res.add('Product2.QuickBridgeTLG__QuickbookID__c');
+    return String.join(res, ', ');
+  }
+
   public static String buildOrderQueryFields() {
     Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Order.fields.getMap();
-    Set<String> names = new Set<String>{ 'Id', 'Status', 'QuickbookID__c', 'SyncToken__c' };
+    Set<String> names = new Set<String>{ 'Id', 'Status', 'AccountId', 'EffectiveDate', 'Description', 'Pricebook2Id', 'QuickbookID__c', 'SyncToken__c' };
     for (String sfField : QBObjectMappings.getOrderToInvoiceMapping().keySet()) {
       if (!sfField.contains('.')) {
         names.add(sfField);
@@ -101,6 +128,35 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
       Map<String, String> headerMap = QBObjectMappings.getOrderToInvoiceMapping();
       Map<String, String> lineMap = QBObjectMappings.getOrderItemMapping();
 
+      Set<Id> allAccountIds = new Set<Id>();
+      Set<Id> allProductIds = new Set<Id>();
+      for (Order ord : scope) {
+        if (ord.AccountId != null) {
+          allAccountIds.add(ord.AccountId);
+        }
+        if (ord.OrderItems != null) {
+          for (OrderItem item : ord.OrderItems) {
+            if (item.Product2Id != null) {
+              allProductIds.add(item.Product2Id);
+            }
+          }
+        }
+      }
+      Map<Id, Account> accountMap = new Map<Id, Account>();
+      if (!allAccountIds.isEmpty()) {
+        String aQuery = 'SELECT Id, ' + (getAccountQboIdQueryFields().replace('Account.', '')) + ' FROM Account WHERE Id IN :allAccountIds';
+        for (Account a : (List<Account>) Database.query(aQuery)) {
+          accountMap.put(a.Id, a);
+        }
+      }
+      Map<Id, Product2> productMap = new Map<Id, Product2>();
+      if (!allProductIds.isEmpty()) {
+        String pQuery = 'SELECT Id, ' + (getProductQboIdQueryFields().replace('Product2.', '')) + ' FROM Product2 WHERE Id IN :allProductIds';
+        for (Product2 p : (List<Product2>) Database.query(pQuery)) {
+          productMap.put(p.Id, p);
+        }
+      }
+
       for (Order ord : scope) {
         try {
           if (ord.OrderItems == null || ord.OrderItems.isEmpty()) {
@@ -111,7 +167,9 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
           }
 
           // Preflight: Account must have a QBO customer id before we can build CustomerRef.
-          if (ord.Account == null || String.isBlank(ord.Account.QuickbookID__c)) {
+          Account accRec = accountMap.get(ord.AccountId);
+          String accQboId = getQboId(accRec);
+          if (accRec == null || String.isBlank(accQboId)) {
             IntegrationWorkService.enqueueQuickBooksWork(
               'AccountUpsert',
               'Account',
@@ -133,9 +191,14 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
 
           // Preflight: every line product must have a QBO item id before we can build ItemRef.
           Set<Id> missingProductIds = new Set<Id>();
+          Map<Id, String> prodQboIdMap = new Map<Id, String>();
           for (OrderItem item : ord.OrderItems) {
-            if (item.Product2 == null || String.isBlank(item.Product2.QuickbookID__c)) {
+            Product2 prodRec = productMap.get(item.Product2Id);
+            String prodQboId = getQboId(prodRec);
+            if (prodRec == null || String.isBlank(prodQboId)) {
               missingProductIds.add(item.Product2Id);
+            } else {
+              prodQboIdMap.put(item.Product2Id, prodQboId);
             }
           }
           if (!missingProductIds.isEmpty()) {
@@ -183,7 +246,8 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
           // Build request body
           Map<String, Object> requestBody = new Map<String, Object>();
 
-          Boolean isCreate = String.isBlank(ord.QuickbookID__c) || isInitialSync;
+          String ordQboId = getQboId(ord);
+          Boolean isCreate = String.isBlank(ordQboId) || isInitialSync;
           for (String sfField : headerMap.keySet()) {
             String qboFieldMapping = headerMap.get(sfField);
             if (String.isBlank(qboFieldMapping)) {
@@ -218,15 +282,20 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
             }
           }
 
-          // Customer Reference
-          if (
-            ord.Account != null && String.isNotBlank(ord.Account.QuickbookID__c)
-          ) {
-            requestBody.put(
-              'CustomerRef',
-              new Map<String, String>{ 'value' => ord.Account.QuickbookID__c }
-            );
+          Object effDateObj = getFieldValue(ord, 'EffectiveDate');
+          if (!requestBody.containsKey('TxnDate') && effDateObj != null && effDateObj instanceof Date) {
+              putPath(requestBody, 'TxnDate', DateTime.newInstance((Date) effDateObj, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd'));
           }
+          Object descObj = getFieldValue(ord, 'Description');
+          if (!requestBody.containsKey('CustomerMemo') && descObj != null && String.isNotBlank(String.valueOf(descObj))) {
+              putPath(requestBody, 'CustomerMemo.value', String.valueOf(descObj));
+          }
+
+          // Customer Reference
+          requestBody.put(
+            'CustomerRef',
+            new Map<String, String>{ 'value' => accQboId }
+          );
 
           // Line items
           List<Map<String, Object>> lines = new List<Map<String, Object>>();
@@ -269,22 +338,21 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
               }
             }
             line.put('Amount', quantity * unitPrice);
-            if (
-              item.Product2 != null &&
-              String.isNotBlank(item.Product2.QuickbookID__c)
-            ) {
+            String itemQboId = prodQboIdMap.get(item.Product2Id);
+            if (String.isNotBlank(itemQboId)) {
               itemDetail.put(
                 'ItemRef',
-                new Map<String, String>{ 'value' => item.Product2.QuickbookID__c }
+                new Map<String, String>{ 'value' => itemQboId }
               );
             }
             line.put('SalesItemLineDetail', itemDetail);
+            String itemQbLineId = (String) getFieldValue(item, qbLineItemIdField());
             if (
-              String.isNotBlank(item.QB_LineiTemID__c) &&
-              item.QB_LineiTemID__c.contains(':')
+              String.isNotBlank(itemQbLineId) &&
+              itemQbLineId.contains(':')
             ) {
               if (qboObjectName != 'Invoice') {
-                line.put('Id', item.QB_LineiTemID__c.split(':')[1]);
+                line.put('Id', itemQbLineId.split(':')[1]);
               }
             }
             lines.add(line);
@@ -292,14 +360,17 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
           requestBody.put('Line', lines);
 
           // Handle existing QBO ID for updates / conversion
-          if (String.isNotBlank(ord.QuickbookID__c) && !isInitialSync) {
+          String existingOrdQboId = getQboId(ord);
+          if (String.isNotBlank(existingOrdQboId) && !isInitialSync) {
             if (ord.Status == 'Activated' && qboObjectName == 'Invoice') {
               System.debug('Converting Estimate to Invoice.');
             } else {
-              requestBody.put('Id', ord.QuickbookID__c);
+              requestBody.put('Id', existingOrdQboId);
+              Object syncTokVal = getFieldValue(ord, getSyncTokenField('Order'));
+              String ordSyncToken = syncTokVal != null ? String.valueOf(syncTokVal) : null;
               requestBody.put(
                 'SyncToken',
-                String.isBlank(ord.SyncToken__c) ? '0' : ord.SyncToken__c
+                String.isBlank(ordSyncToken) ? '0' : ordSyncToken
               );
               requestBody.put('sparse', true);
             }
@@ -323,8 +394,10 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
             );
 
             Order ordToUpdate = new Order(Id = ord.Id);
-            ordToUpdate.QuickbookID__c = (String) qboResponseObj.get('Id');
-            ordToUpdate.SyncToken__c = (String) qboResponseObj.get('SyncToken');
+            String newQbId = (String) qboResponseObj.get('Id');
+            String newSyncToken = (String) qboResponseObj.get('SyncToken');
+            try { ordToUpdate.put(getQboIdField('Order'), newQbId); } catch(Exception e){}
+            try { ordToUpdate.put(getSyncTokenField('Order'), newSyncToken); } catch(Exception e){}
             ordersToUpdate.add(ordToUpdate);
 
             List<Object> qboLines = (List<Object>) qboResponseObj.get('Line');
@@ -337,10 +410,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
                   ];
                   if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
                     OrderItem itemToUpdate = new OrderItem(Id = item.Id);
-                    itemToUpdate.QB_LineiTemID__c =
-                      ordToUpdate.QuickbookID__c +
-                      ':' +
-                      (String) qbLine.get('Id');
+                    try { itemToUpdate.put(qbLineItemIdField(), newQbId + ':' + (String) qbLine.get('Id')); } catch(Exception e){}
                     itemsToUpdate.add(itemToUpdate);
                     qboLineIndex++;
                     break;
@@ -480,5 +550,49 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
         return null;
     }
     return currentObj.get(fields[fields.size() - 1]);
+  }
+
+  private String getQboId(SObject record) {
+    if (record == null) {
+      return null;
+    }
+    Map<String, Schema.SObjectField> flds = record.getSObjectType().getDescribe().fields.getMap();
+    for (String key : flds.keySet()) {
+      if (key.endsWith('quickbookid__c')) {
+        try {
+          String val = (String) record.get(flds.get(key).getDescribe().getName());
+          if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+      }
+    }
+    return null;
+  }
+
+  private static String qbLineItemIdField() {
+    Map<String, Schema.SObjectField> flds = Schema.SObjectType.OrderItem.fields.getMap();
+    for (String key : flds.keySet()) {
+      if (key.endsWith('qb_lineitemid__c')) return flds.get(key).getDescribe().getName();
+    }
+    return 'QB_LineiTemID__c';
+  }
+
+  private String getQboIdField(String sObjectName) {
+    Map<String, Schema.SObjectField> flds = sObjectName == 'Account'
+      ? Schema.SObjectType.Account.fields.getMap()
+      : sObjectName == 'Product2'
+        ? Schema.SObjectType.Product2.fields.getMap()
+        : Schema.SObjectType.Order.fields.getMap();
+    for (String key : flds.keySet()) {
+      if (key.endsWith('quickbookid__c')) return flds.get(key).getDescribe().getName();
+    }
+    return 'QuickbookID__c';
+  }
+
+  private String getSyncTokenField(String sObjectName) {
+    Map<String, Schema.SObjectField> flds = Schema.SObjectType.Order.fields.getMap();
+    for (String key : flds.keySet()) {
+      if (key.endsWith('synctoken__c')) return flds.get(key).getDescribe().getName();
+    }
+    return 'SyncToken__c';
   }
 }

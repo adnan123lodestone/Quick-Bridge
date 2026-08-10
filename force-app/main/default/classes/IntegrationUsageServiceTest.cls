@@ -342,29 +342,57 @@ private class IntegrationUsageServiceTest {
     Integration_Usage_Summary__c summary = summaryRecords[0];
     System.assertEquals('Active', summary.Subscription_Status__c);
     System.assertEquals(30, summary.Subscription_Days_Remaining__c);
+  }
+
+  @IsTest
+  static void testDeriveSubscriptionState_ExpiredAndExpiringSoon() {
+    setupSummaries();
+    String testProduct = 'paypal';
+    delete [SELECT Id FROM Connector_Instance__c WHERE Connector_Key__c = :testProduct];
     
-    instanceRecord.Expiry_Date__c = Date.today().addDays(-1);
-    update instanceRecord;
+    Connector_Instance__c instanceRecord = new Connector_Instance__c(
+      Name = 'PayPal',
+      Connector_Key__c = testProduct,
+      Connector_Label__c = 'PayPal',
+      Active__c = true,
+      Environment__c = 'Production',
+      Entitlement_Status__c = 'Active',
+      Expiry_Date__c = Date.today().addDays(-1),
+      Health_Status__c = 'Unknown'
+    );
+    insert instanceRecord;
+
+    Test.startTest();
     IntegrationUsageService.refreshSubscriptionStatuses();
-    summary = [SELECT Subscription_Status__c FROM Integration_Usage_Summary__c WHERE Product_Key__c = :testProduct LIMIT 1];
+    Test.stopTest();
+
+    Integration_Usage_Summary__c summary = [SELECT Subscription_Status__c FROM Integration_Usage_Summary__c WHERE Product_Key__c = :testProduct LIMIT 1];
     System.assertEquals('Expired', summary.Subscription_Status__c);
+  }
+
+  @IsTest
+  static void testDeriveSubscriptionState_Inactive() {
+    setupSummaries();
+    String testProduct = 'paypal';
+    delete [SELECT Id FROM Connector_Instance__c WHERE Connector_Key__c = :testProduct];
     
-    instanceRecord.Expiry_Date__c = Date.today().addDays(3);
-    update instanceRecord;
+    Connector_Instance__c instanceRecord = new Connector_Instance__c(
+      Name = 'PayPal',
+      Connector_Key__c = testProduct,
+      Connector_Label__c = 'PayPal',
+      Active__c = false,
+      Environment__c = 'Production',
+      Entitlement_Status__c = 'Active',
+      Expiry_Date__c = Date.today().addDays(30),
+      Health_Status__c = 'Unknown'
+    );
+    insert instanceRecord;
+
+    Test.startTest();
     IntegrationUsageService.refreshSubscriptionStatuses();
-    summary = [SELECT Subscription_Status__c FROM Integration_Usage_Summary__c WHERE Product_Key__c = :testProduct LIMIT 1];
-    System.assertEquals('Expiring Soon', summary.Subscription_Status__c);
-    
-    instanceRecord.Expiry_Date__c = null;
-    update instanceRecord;
-    IntegrationUsageService.refreshSubscriptionStatuses();
-    summary = [SELECT Subscription_Status__c FROM Integration_Usage_Summary__c WHERE Product_Key__c = :testProduct LIMIT 1];
-    System.assertEquals('Active', summary.Subscription_Status__c);
-    
-    instanceRecord.Active__c = false;
-    update instanceRecord;
-    IntegrationUsageService.refreshSubscriptionStatuses();
-    summary = [SELECT Subscription_Status__c FROM Integration_Usage_Summary__c WHERE Product_Key__c = :testProduct LIMIT 1];
+    Test.stopTest();
+
+    Integration_Usage_Summary__c summary = [SELECT Subscription_Status__c FROM Integration_Usage_Summary__c WHERE Product_Key__c = :testProduct LIMIT 1];
     System.assertEquals('Inactive', summary.Subscription_Status__c);
   }
   

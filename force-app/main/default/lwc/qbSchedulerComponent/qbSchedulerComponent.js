@@ -300,6 +300,13 @@ export default class QbSchedulerComponent extends LightningElement {
       btnClass: "obj-btn"
     },
     {
+      id: "OrderSummaries",
+      label: "Order Summaries",
+      icon: "utility:orders",
+      isSelected: false,
+      btnClass: "obj-btn"
+    },
+    {
       id: "Invoices",
       label: "Invoices",
       icon: "utility:file",

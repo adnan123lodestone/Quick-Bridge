@@ -96,6 +96,12 @@ public with sharing class QBOInvoicePdfActionController {
                     throw new AuraHandledException(resp.message);
                 }
                 return new ActionResponse(true, resp != null && String.isNotBlank(resp.message) ? resp.message : 'Order successfully synced to QBO.');
+            } else if (stripped.equalsIgnoreCase('ordersummary')) {
+                QBOrderSummaryRecordActionController.ActionResponse resp = QBOrderSummaryRecordActionController.syncToQuickBooks(recordId);
+                if (resp != null && !resp.success) {
+                    throw new AuraHandledException(resp.message);
+                }
+                return new ActionResponse(true, resp != null && String.isNotBlank(resp.message) ? resp.message : 'Order Summary successfully synced to QBO.');
             }
 
             String qboId = fetchFieldValue(recordId, objectApiName, resolved.qboIdField);
@@ -144,6 +150,12 @@ public with sharing class QBOInvoicePdfActionController {
                     throw new AuraHandledException(resp.message);
                 }
                 return new ActionResponse(true, resp != null && String.isNotBlank(resp.message) ? resp.message : 'Order successfully synced from QBO.');
+            } else if (stripped.equalsIgnoreCase('ordersummary')) {
+                QBOrderSummaryRecordActionController.ActionResponse resp = QBOrderSummaryRecordActionController.syncFromQuickBooks(recordId);
+                if (resp != null && !resp.success) {
+                    throw new AuraHandledException(resp.message);
+                }
+                return new ActionResponse(true, resp != null && String.isNotBlank(resp.message) ? resp.message : 'Order Summary successfully synced from QBO.');
             }
 
             String qboId = fetchFieldValue(recordId, objectApiName, resolved.qboIdField);

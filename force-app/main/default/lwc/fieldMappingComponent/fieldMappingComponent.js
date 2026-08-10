@@ -136,6 +136,7 @@ export default class FieldMappingComponent extends LightningElement {
       Contact: "Customer",
       Product2: "Item",
       Order: "Invoice",
+      OrderSummary: "Invoice",
       Invoice__c: "Invoice",
       Credit_Memo__c: "CreditMemo",
       Purchase_Order__c: "PurchaseOrder",
@@ -231,6 +232,7 @@ export default class FieldMappingComponent extends LightningElement {
 
     const childObjectMap = {
       Order: "OrderItem",
+      OrderSummary: "OrderItemSummary",
       Quote: "QuoteLineItem",
       QuickBridgeTLG__Invoice__c: "QuickBridgeTLG__Invoice_Line__c",
       Invoice__c: "Invoice_Line__c",
@@ -243,6 +245,7 @@ export default class FieldMappingComponent extends LightningElement {
 
     const childQbObjectMap = {
       OrderItem: "InvoiceLine",
+      OrderItemSummary: "InvoiceLine",
       QuoteLineItem: "EstimateLine",
       QuickBridgeTLG__Invoice_Line__c: "InvoiceLine",
       Invoice_Line__c: "InvoiceLine",

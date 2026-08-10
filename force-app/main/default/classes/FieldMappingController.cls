@@ -572,6 +572,8 @@ public with sharing class FieldMappingController {
       'Contact',
       'Order',
       'OrderItem',
+      'OrderSummary',
+      'OrderItemSummary',
       'Quote',
       'QuoteLineItem',
       'Invoice__c',
@@ -2080,8 +2082,8 @@ public with sharing class FieldMappingController {
     }
     if (normalizedObject == 'Account' || normalizedObject == 'Contact') return 'Customer';
     if (normalizedObject == 'Product2') return 'Item';
-    if (normalizedObject == 'Order' || normalizedObject == 'Quote') return 'SalesOrder';
-    if (normalizedObject == 'OrderItem' || normalizedObject == 'QuoteLineItem') return 'SalesOrderLine';
+    if (normalizedObject == 'Order' || normalizedObject == 'Quote' || normalizedObject == 'OrderSummary') return 'SalesOrder';
+    if (normalizedObject == 'OrderItem' || normalizedObject == 'QuoteLineItem' || normalizedObject == 'OrderItemSummary') return 'SalesOrderLine';
     if (normalizedObject == 'Invoice__c') return 'Invoice';
     if (normalizedObject == 'Invoice_Line__c') return 'InvoiceLine';
     if (normalizedObject == 'Payment' || normalizedObject == 'Portal_Payment_Transaction__c') return 'Payment';

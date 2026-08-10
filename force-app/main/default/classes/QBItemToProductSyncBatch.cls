@@ -39,15 +39,20 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         try {
             List<Product2> productsToUpsert = new List<Product2>();
             
+            Set<String> qbIds = new Set<String>();
+            List<Map<String, Object>> itemDataList = new List<Map<String, Object>>();
+
             for (String itemPayload : scope) {
                 String itemId = getExternalIdFromPayload(itemPayload);
                 try {
                     Map<String, Object> itemData = resolveItemData(itemPayload);
-                    
                     if (itemData != null) {
-                        Product2 productToSync = processItemData(itemData);
-                        if (productToSync != null) {
-                            productsToUpsert.add(productToSync);
+                        itemDataList.add(itemData);
+                        if (itemData.containsKey('Id')) {
+                            String qbId = asString(itemData.get('Id'));
+                            if (String.isNotBlank(qbId)) {
+                                qbIds.add(qbId);
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -64,8 +69,38 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                     ErrorLogUtility.logError(context);
                 }
             }
+
+            Map<String, Product2> existingProductsByQbId = new Map<String, Product2>();
+            if (!qbIds.isEmpty()) {
+                String qry = 'SELECT Id, ' + getProductQbIdSelectFields() + ', Sale_Price__c FROM Product2 WHERE ' + getProductQbIdWhereClause();
+                for (Product2 p : (List<Product2>)Database.query(qry)) {
+                    String qbId = getProductQbIdValue(p);
+                    if (String.isNotBlank(qbId)) {
+                        existingProductsByQbId.put(qbId, p);
+                    }
+                }
+            }
+
+            Map<String, String> mapping = QBObjectMappings.getItemToProductMapping();
+
+            for (Map<String, Object> itemData : itemDataList) {
+                String qbId = asString(itemData.get('Id'));
+                Product2 existingProd = String.isNotBlank(qbId) ? existingProductsByQbId.get(qbId) : null;
+                Product2 productToSync = processItemData(itemData, existingProd, mapping);
+                if (productToSync != null) {
+                    productsToUpsert.add(productToSync);
+                }
+            }
             
             if (!productsToUpsert.isEmpty()) {
+                Map<String, Decimal> qbIdToSalePrice = new Map<String, Decimal>();
+                for (Product2 p : productsToUpsert) {
+                    String qbId = getProductQbIdValue(p);
+                    if (p != null && p.Sale_Price__c != null && String.isNotBlank(qbId)) {
+                        qbIdToSalePrice.put(qbId, p.Sale_Price__c);
+                    }
+                }
+
                 Database.UpsertResult[] results = Database.upsert(productsToUpsert, Product2.QuickbookID__c, false);
                 ErrorLogUtility.logUpsertResults(
                     'QuickBooks',
@@ -79,18 +114,26 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 
                 Id standardPricebookId;
                 try {
-                    standardPricebookId = Test.isRunningTest() ? Test.getStandardPricebookId() : 
-                        [SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1].Id;
+                    if (Test.isRunningTest()) {
+                        standardPricebookId = Test.getStandardPricebookId();
+                    } else {
+                        List<Pricebook2> pbs = [SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1];
+                        standardPricebookId = pbs.isEmpty() ? null : pbs[0].Id;
+                    }
                 } catch (Exception e) {
-                    System.debug('Error getting standard pricebook: ' + e.getMessage());
-                    ErrorLogUtility.logException(
-                        'QuickBooks',
-                        'QBItemToProductSyncBatch.execute.getStandardPricebook',
-                        e,
-                        null,
-                        null
-                    );
-                    return;
+                    if (Test.isRunningTest()) {
+                        standardPricebookId = Test.getStandardPricebookId();
+                    } else {
+                        System.debug('Error getting standard pricebook: ' + e.getMessage());
+                        ErrorLogUtility.logException(
+                            'QuickBooks',
+                            'QBItemToProductSyncBatch.execute.getStandardPricebook',
+                            e,
+                            null,
+                            null
+                        );
+                        return;
+                    }
                 }
 
                 Set<Id> productIds = new Set<Id>();
@@ -102,13 +145,14 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', productIds.size());
                 
                 Map<Id, PricebookEntry> existingEntries = new Map<Id, PricebookEntry>();
-                for (PricebookEntry pbe : [
-                    SELECT Id, Product2Id, UnitPrice 
-                    FROM PricebookEntry 
-                    WHERE Product2Id IN :productIds 
-                    AND Pricebook2Id = :standardPricebookId
-                ]) {
-                    existingEntries.put(pbe.Product2Id, pbe);
+                if (!productIds.isEmpty()) {
+                    for (PricebookEntry pbe : [
+                        SELECT Id, Product2Id, UnitPrice 
+                        FROM PricebookEntry 
+                        WHERE Product2Id IN :productIds AND Pricebook2Id = :standardPricebookId
+                    ]) {
+                        existingEntries.put(pbe.Product2Id, pbe);
+                    }
                 }
 
                 List<PricebookEntry> pricebookEntries = new List<PricebookEntry>();
@@ -116,15 +160,17 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                     if (results[i].isSuccess()) {
                         Product2 product = productsToUpsert[i];
                         Id productId = results[i].getId();
+                        String qbId = getProductQbIdValue(product);
+                        Decimal salePrice = product.Sale_Price__c != null ? product.Sale_Price__c : (String.isNotBlank(qbId) ? qbIdToSalePrice.get(qbId) : null);
                         
-                        if (product.Sale_Price__c == null || existingEntries.containsKey(productId)) {
+                        if (salePrice == null || existingEntries.containsKey(productId)) {
                             continue;
                         }
                         
                         PricebookEntry pbe = new PricebookEntry();
                         pbe.Product2Id = productId;
                         pbe.Pricebook2Id = standardPricebookId;
-                        pbe.UnitPrice = product.Sale_Price__c;
+                        pbe.UnitPrice = salePrice;
                         pbe.IsActive = true;
                         pricebookEntries.add(pbe);
                     }
@@ -132,7 +178,7 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 
                 if (!pricebookEntries.isEmpty()) {
                     try {
-                        insert pricebookEntries;
+                        Database.insert(pricebookEntries, false);
                     } catch (Exception e) {
                         System.debug('Error inserting pricebook entries: ' + e.getMessage());
                         ErrorLogUtility.logException(
@@ -169,14 +215,12 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
             // Legacy payloads were raw QuickBooks ids; hydrate only those compatibility inputs.
         }
 
-        // Scheduled/batch execution must receive hydrated payloads from start().
-        // Single-record hydration remains in syncItemFromQBO().
         return null;
     }
 
     private String getExternalIdFromPayload(String itemPayload) {
         Map<String, Object> itemData = resolveSerializedPayload(itemPayload);
-        return itemData == null ? itemPayload : String.valueOf(itemData.get('Id'));
+        return itemData == null ? itemPayload : asString(itemData.get('Id'));
     }
 
     private Map<String, Object> resolveSerializedPayload(String payload) {
@@ -192,21 +236,32 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     }
     
     private Product2 processItemData(Map<String, Object> itemData) {
-        String qbId = (String)itemData.get('Id');
+        return processItemData(itemData, null, null);
+    }
+
+    private Product2 processItemData(Map<String, Object> itemData, Product2 existingProd, Map<String, String> mapping) {
+        if (itemData == null) return null;
+        String qbId = asString(itemData.get('Id'));
         
-        List<Product2> existingProducts = [SELECT Id, QuickbookID__c, Sale_Price__c 
-                                          FROM Product2 
-                                          WHERE QuickbookID__c = :qbId LIMIT 1];
+        Product2 product = existingProd;
+        if (product == null && String.isNotBlank(qbId)) {
+            Set<String> qbIds = new Set<String>{ qbId };
+            String qry = 'SELECT Id, ' + getProductQbIdSelectFields() + ', Sale_Price__c FROM Product2 WHERE ' + getProductQbIdWhereClause() + ' LIMIT 1';
+            List<Product2> existingProducts = Database.query(qry);
+            if (!existingProducts.isEmpty()) {
+                product = existingProducts[0];
+            }
+        }
         
-        Product2 product;
-        if (!existingProducts.isEmpty()) {
-            product = existingProducts[0];
-        } else {
+        if (product == null) {
             product = new Product2();
             product.Is_Synced__c = true;
         }
         
-        Map<String, String> mapping = QBObjectMappings.getItemToProductMapping();
+        if (mapping == null) {
+            mapping = QBObjectMappings.getItemToProductMapping();
+        }
+
         for (String qbField : mapping.keySet()) {
             Object qbValue = getNestedValue(itemData, qbField);
             if (qbValue != null) {
@@ -216,9 +271,71 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
             }
         }
 
-        product.QuickbookID__c = qbId;
+        putFieldValue(product, 'QuickbookID__c', qbId);
+        try { putFieldValue(product, 'QuickBridgeTLG__QuickbookID__c', qbId); } catch(Exception e){}
+
+        if (String.isBlank(product.Name)) {
+            if (itemData.containsKey('Name') && String.isNotBlank(asString(itemData.get('Name')))) {
+                product.Name = asString(itemData.get('Name'));
+            } else if (itemData.containsKey('FullyQualifiedName') && String.isNotBlank(asString(itemData.get('FullyQualifiedName')))) {
+                product.Name = asString(itemData.get('FullyQualifiedName'));
+            } else {
+                product.Name = 'QBO Product ' + (String.isNotBlank(qbId) ? qbId : 'Unknown');
+            }
+        }
+        if (product.Sale_Price__c == null && itemData.containsKey('UnitPrice') && itemData.get('UnitPrice') != null) {
+            try {
+                product.Sale_Price__c = Decimal.valueOf(String.valueOf(itemData.get('UnitPrice')));
+            } catch (Exception e) {}
+        }
         
         return product;
+    }
+
+    private static String getProductQbIdSelectFields() {
+        Set<String> fieldNames = new Set<String>();
+        Map<String, Schema.SObjectField> fMap = Schema.SObjectType.Product2.fields.getMap();
+        for (String key : fMap.keySet()) {
+            if (key.endsWith('quickbookid__c')) {
+                fieldNames.add(fMap.get(key).getDescribe().getName());
+            }
+        }
+        return fieldNames.isEmpty() ? 'Id' : String.join(new List<String>(fieldNames), ', ');
+    }
+
+    private static String getProductQbIdWhereClause() {
+        Set<String> fieldNames = new Set<String>();
+        Map<String, Schema.SObjectField> fMap = Schema.SObjectType.Product2.fields.getMap();
+        for (String key : fMap.keySet()) {
+            if (key.endsWith('quickbookid__c')) {
+                fieldNames.add(fMap.get(key).getDescribe().getName());
+            }
+        }
+        List<String> clauses = new List<String>();
+        for (String fName : fieldNames) {
+            clauses.add(fName + ' IN :qbIds');
+        }
+        return clauses.isEmpty() ? 'Id IN :qbIds' : String.join(clauses, ' OR ');
+    }
+
+    private static String getProductQbIdValue(Product2 p) {
+        if (p == null) return null;
+        try {
+            String val = (String)p.get('QuickbookID__c');
+            if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+        try {
+            String val = (String)p.get('QuickBridgeTLG__QuickbookID__c');
+            if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private static String asString(Object value) {
+        if (value == null || value instanceof Map<String, Object> || value instanceof List<Object>) {
+            return null;
+        }
+        return String.valueOf(value);
     }
 
     private Object getNestedValue(Map<String, Object> data, String path) {
@@ -296,14 +413,14 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     }
 
     public void syncItemFromQBO(String itemId) {
-    HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + itemId, null);
-    if (res.getStatusCode() == 200) {
-        Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-        Map<String, Object> item = (Map<String, Object>) data.get('Item');
-        Product2 prod = processItemData(item);
-        upsert prod Product2.QuickbookID__c;
-    } else {
-        throw new CalloutException('Unable to fetch item from QBO: ' + res.getBody());
+        HttpResponse res = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + itemId, null);
+        if (res.getStatusCode() == 200) {
+            Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
+            Map<String, Object> item = (Map<String, Object>) data.get('Item');
+            Product2 prod = processItemData(item);
+            Database.upsert(prod, Product2.QuickbookID__c, false);
+        } else {
+            throw new CalloutException('Unable to fetch item from QBO: ' + res.getBody());
+        }
     }
-}
 }

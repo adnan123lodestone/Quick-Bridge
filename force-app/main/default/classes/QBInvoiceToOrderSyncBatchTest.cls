@@ -1,4 +1,4 @@
-@isTest
+@isTest(isParallel=false)
 private class QBInvoiceToOrderSyncBatchTest {
 
     @testSetup

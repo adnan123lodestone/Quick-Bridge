@@ -101,6 +101,7 @@ private class QBSyncSchedulerTest {
         QuickBooksScheduledOperationAdapter.run('Invoice', 'In');
         QuickBooksScheduledOperationAdapter.run('Credit Memo', 'In');
         QuickBooksScheduledOperationAdapter.run('Purchase Order', 'In');
+        QuickBooksScheduledOperationAdapter.run('OrderSummary', 'In');
         Test.stopTest();
 
         System.assert(true, 'All inbound batch execution routes should be covered securely.');
@@ -120,6 +121,7 @@ private class QBSyncSchedulerTest {
         QuickBooksScheduledOperationAdapter.run('Credit Memo', 'Out');
         QuickBooksScheduledOperationAdapter.run('Purchase Order', 'Out');
         QuickBooksScheduledOperationAdapter.run('Item Sales Tax', 'Out');
+        QuickBooksScheduledOperationAdapter.run('OrderSummary', 'Out');
         Test.stopTest();
 
         System.assert(true, 'All outbound batch execution routes should be covered securely.');

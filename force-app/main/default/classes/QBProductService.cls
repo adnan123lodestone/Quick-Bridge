@@ -2,32 +2,27 @@ public class QBProductService {
     public static void syncProductsToQuickBooks(List<Product2> products, Boolean isInsert) {
         List<Product2> productsToUpdate = new List<Product2>();
         Map<Id, Product2> hydratedProductsById = hydrateProducts(products);
+        Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
 
         for (Product2 prod : products) {
             Product2 sourceProd = prod != null && prod.Id != null && hydratedProductsById.containsKey(prod.Id)
                 ? hydratedProductsById.get(prod.Id)
                 : prod;
             try {
-                // Safe way to get QB ID
-                String qbId = null;
-                try { qbId = (String)sourceProd.get('QuickbookID__c'); } catch(Exception e){}
-                if(qbId == null) {
-                    try { qbId = (String)sourceProd.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){}
-                }
+                String qbId = getProductQbIdValue(sourceProd);
 
                 if (isInsert || qbId == null) {
                     // Create new item in QuickBooks
-                    String qbItemId = createItemInQuickBooks(sourceProd);
+                    String qbItemId = createItemInQuickBooks(sourceProd, fieldMap);
 
                     if (qbItemId != null) {
                         Product2 prodToUpdate = new Product2(Id = sourceProd.Id);
-                        try { prodToUpdate.put('QuickbookID__c', qbItemId); } catch(Exception e){}
-                        try { prodToUpdate.put('QuickBridgeTLG__QuickbookID__c', qbItemId); } catch(Exception e){}
+                        setProductQbIdValue(prodToUpdate, qbItemId);
                         productsToUpdate.add(prodToUpdate);
                     }
                 } else {
                     // Update existing item in QuickBooks
-                    updateItemInQuickBooks(sourceProd, qbId);
+                    updateItemInQuickBooks(sourceProd, qbId, fieldMap);
                 }
             } catch (Exception e) {
                 System.debug('Error syncing product ID ' + (sourceProd == null ? null : sourceProd.Id) + ': ' + e.getMessage());
@@ -56,8 +51,14 @@ public class QBProductService {
     }
 
     private static String createItemInQuickBooks(Product2 prod) {
+        return createItemInQuickBooks(prod, QBObjectMappings.getProductToItemMapping());
+    }
+
+    private static String createItemInQuickBooks(Product2 prod, Map<String, String> fieldMap) {
         Map<String, Object> itemMap = new Map<String, Object>();
-        Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
+        if (fieldMap == null) {
+            fieldMap = QBObjectMappings.getProductToItemMapping();
+        }
 
         // DYNAMIC MAPPING LOGIC
         applyDynamicMappings(itemMap, prod, fieldMap);
@@ -85,13 +86,19 @@ public class QBProductService {
     }
 
     private static void updateItemInQuickBooks(Product2 prod, String qbId) {
+        updateItemInQuickBooks(prod, qbId, QBObjectMappings.getProductToItemMapping());
+    }
+
+    private static void updateItemInQuickBooks(Product2 prod, String qbId, Map<String, String> fieldMap) {
         HttpResponse queryRes = QuickBooksAuthHandler.makeApiCall('GET', '/item/' + qbId, null);
 
         if (queryRes != null && queryRes.getStatusCode() == 200) {
             Map<String, Object> existingItem = (Map<String, Object>)JSON.deserializeUntyped(queryRes.getBody());
             Map<String, Object> itemMap = (Map<String, Object>)existingItem.get('Item');
 
-            Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
+            if (fieldMap == null) {
+                fieldMap = QBObjectMappings.getProductToItemMapping();
+            }
 
             // DYNAMIC MAPPING LOGIC
             applyDynamicMappings(itemMap, prod, fieldMap);
@@ -133,18 +140,39 @@ public class QBProductService {
         }
 
         Set<String> fieldsToQuery = new Set<String>{
-            'Id', 'Name', 'IsActive', 'QuickbookID__c',
+            'Id', 'Name', 'IsActive',
             'Income_Account__c', 'Expense_Account__c',
             'COGS_Account_Ref__c', 'Asset_Account_Ref__c',
             'Quantity_On_Hand__c', 'Cost_Price__c'
         };
 
-        Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
-        if (fieldMap != null) {
-            fieldsToQuery.addAll(fieldMap.keySet());
+        Map<String, Schema.SObjectField> fMap = Schema.SObjectType.Product2.fields.getMap();
+        Set<String> safeFields = new Set<String>();
+        for (String f : fieldsToQuery) {
+            if (fMap.containsKey(f.toLowerCase())) {
+                safeFields.add(fMap.get(f.toLowerCase()).getDescribe().getName());
+            }
+            if (fMap.containsKey(('QuickBridgeTLG__' + f).toLowerCase())) {
+                safeFields.add(fMap.get(('QuickBridgeTLG__' + f).toLowerCase()).getDescribe().getName());
+            }
         }
 
-        String query = 'SELECT ' + String.join(new List<String>(fieldsToQuery), ', ')
+        for (String key : fMap.keySet()) {
+            if (key.endsWith('quickbookid__c')) {
+                safeFields.add(fMap.get(key).getDescribe().getName());
+            }
+        }
+
+        Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
+        if (fieldMap != null) {
+            for (String sfField : fieldMap.keySet()) {
+                if (fMap.containsKey(sfField.toLowerCase())) {
+                    safeFields.add(fMap.get(sfField.toLowerCase()).getDescribe().getName());
+                }
+            }
+        }
+
+        String query = 'SELECT ' + String.join(new List<String>(safeFields), ', ')
             + ' FROM Product2 WHERE Id IN :productIds';
 
         for (Product2 prod : Database.query(query)) {
@@ -152,6 +180,25 @@ public class QBProductService {
         }
 
         return hydratedById;
+    }
+
+    private static String getProductQbIdValue(Product2 prod) {
+        if (prod == null) return null;
+        try {
+            String val = (String)prod.get('QuickbookID__c');
+            if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+        try {
+            String val = (String)prod.get('QuickBridgeTLG__QuickbookID__c');
+            if (String.isNotBlank(val)) return val;
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private static void setProductQbIdValue(Product2 prod, String qbId) {
+        if (prod == null || String.isBlank(qbId)) return;
+        try { prod.put('QuickbookID__c', qbId); } catch(Exception e){}
+        try { prod.put('QuickBridgeTLG__QuickbookID__c', qbId); } catch(Exception e){}
     }
 
     private static void ensureRequiredItemFields(Map<String, Object> itemMap, Product2 prod) {
@@ -255,22 +302,27 @@ public class QBProductService {
         return asString(accountRef.get('value'));
     }
 
-    private static String getStringFieldValue(SObject record, String fieldName) {
+    private static Object getSObjectFieldValue(SObject record, String fieldName) {
+        if (record == null || String.isBlank(fieldName)) return null;
         try {
-            Object value = record.get(fieldName);
-            return value == null ? null : String.valueOf(value);
-        } catch (Exception e) {
-            return null;
-        }
+            Object val = record.get(fieldName);
+            if (val != null) return val;
+        } catch (Exception e) {}
+        try {
+            Object val = record.get('QuickBridgeTLG__' + fieldName);
+            if (val != null) return val;
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private static String getStringFieldValue(SObject record, String fieldName) {
+        Object val = getSObjectFieldValue(record, fieldName);
+        return val == null ? null : String.valueOf(val);
     }
 
     private static Decimal getDecimalFieldValue(SObject record, String fieldName) {
-        try {
-            Object value = record.get(fieldName);
-            return value instanceof Decimal ? (Decimal)value : null;
-        } catch (Exception e) {
-            return null;
-        }
+        Object val = getSObjectFieldValue(record, fieldName);
+        return val instanceof Decimal ? (Decimal)val : (val instanceof Integer ? Decimal.valueOf((Integer)val) : null);
     }
 
     private static String asString(Object value) {
@@ -293,8 +345,7 @@ public class QBProductService {
         if(fieldMap == null) return;
         for (String sfField : fieldMap.keySet()) {
             String qbField = fieldMap.get(sfField);
-            Object value = null;
-            try { value = record.get(sfField); } catch(Exception e) {}
+            Object value = getSObjectFieldValue(record, sfField);
 
             if (value != null) {
                 if (qbField.contains('.')) {

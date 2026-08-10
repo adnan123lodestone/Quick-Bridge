@@ -95,6 +95,8 @@ public with sharing class IntegrationEntityRegistry {
         add(rows, 'qbonline', 'OrderItem', 'InvoiceLine');
         add(rows, 'qbonline', 'Credit_Memo_Line__c', 'CreditMemoLine');
         add(rows, 'qbonline', 'Purchase_Order_Line__c', 'PurchaseOrderLine');
+        add(rows, 'qbonline', 'OrderSummary', 'Invoice');
+        add(rows, 'qbonline', 'OrderItemSummary', 'InvoiceLine');
         add(rows, 'shopify', 'Account', 'Customer');
         add(rows, 'shopify', 'Order', 'Order');
         add(rows, 'shopify', 'Product2', 'Product');

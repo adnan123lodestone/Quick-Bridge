@@ -81,6 +81,16 @@
                     <name>uiBehavior</name>
                     <value>none</value>
                 </fieldInstanceProperties>
+                <fieldItem>Record.StockKeepingUnit</fieldItem>
+                <identifier>RecordStockKeepingUnitField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
                 <fieldItem>Record.InvStartDate__c</fieldItem>
                 <identifier>RecordQuickBridgeTLG_InvStartDate_cField</identifier>
             </fieldInstance>
@@ -267,6 +277,16 @@
                 </fieldInstanceProperties>
                 <fieldItem>Record.Product_Type__c</fieldItem>
                 <identifier>RecordQuickBridgeTLG_Product_Type_cField</identifier>
+            </fieldInstance>
+        </itemInstances>
+        <itemInstances>
+            <fieldInstance>
+                <fieldInstanceProperties>
+                    <name>uiBehavior</name>
+                    <value>none</value>
+                </fieldInstanceProperties>
+                <fieldItem>Record.Income_Account__c</fieldItem>
+                <identifier>RecordQuickBridgeTLG_Income_Account_cField2</identifier>
             </fieldInstance>
         </itemInstances>
         <name>Facet-084b76df-5f53-4026-bd82-7bdaaaf10af6</name>
@@ -474,6 +494,10 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
+                <componentInstanceProperties>
+                    <name>label</name>
+                    <value>Tabs</value>
+                </componentInstanceProperties>
                 <componentInstanceProperties>
                     <name>tabs</name>
                     <value>tabs</value>

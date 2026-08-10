@@ -175,6 +175,45 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
             );
           }
         }
+      } else if (
+        targetObject == 'OrderSummary' ||
+        targetObject == 'OrderSummaries'
+      ) {
+        if (Schema.getGlobalDescribe().containsKey('OrderSummary')) {
+          if (safeDirection == 'In') {
+            String query = 'SELECT Id FROM OrderSummary WHERE QuickbookID__c != NULL';
+            List<SObject> syncedSummaries = Database.query(query);
+            for (SObject s : syncedSummaries) {
+              try {
+                QBOrderSummaryRecordActionController.syncFromQuickBooks(s.Id);
+              } catch (Exception ex) {
+                ErrorLogUtility.logException(
+                  'QuickBooks',
+                  'QuickBooksScheduledOperationAdapter.run.OrderSummary.Inbound',
+                  ex,
+                  'OrderSummary',
+                  s.Id
+                );
+              }
+            }
+          } else {
+            String query = 'SELECT Id FROM OrderSummary WHERE QuickbookID__c = NULL';
+            List<SObject> unsyncedSummaries = Database.query(query);
+            for (SObject s : unsyncedSummaries) {
+              try {
+                QBOrderSummaryRecordActionController.syncToQuickBooks(s.Id);
+              } catch (Exception ex) {
+                ErrorLogUtility.logException(
+                  'QuickBooks',
+                  'QuickBooksScheduledOperationAdapter.run.OrderSummary.Outbound',
+                  ex,
+                  'OrderSummary',
+                  s.Id
+                );
+              }
+            }
+          }
+        }
       }
     } catch (Exception e) {
       ErrorLogUtility.logException(
