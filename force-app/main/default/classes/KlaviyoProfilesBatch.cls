@@ -2,6 +2,8 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
 
     private String endpoint;
     private String nextUrl;
+    private Boolean sharedExecution = false;
+    private ConnectorExecutionResult sharedResult;
 
     @TestVisible private static Integer mockDaysAgo = 0;
     @TestVisible private static Boolean forceBusinessAccountTest = false;
@@ -18,6 +20,10 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
     }
 
     public void execute(Database.BatchableContext BC, List<Integer> scope) {
+        if (sharedExecution == true) {
+            sharedResult = ConnectorExecutionResult.success();
+            nextUrl = null;
+        }
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
@@ -55,6 +61,14 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
             if (res.getStatusCode() == 200) {
                 Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
                 List<Object> dataList = (List<Object>) jsonResponse.get('data');
+                if (dataList == null) {
+                    if (sharedExecution == true) {
+                        recordFailure('Klaviyo profile response is missing the data collection.', false, null);
+                        return;
+                    }
+                    // Preserve the legacy Batchable path, which logs malformed payloads.
+                    throw new KlaviyoProfilesBatchException('Klaviyo profile response is missing the data collection.');
+                }
 
                 Set<String> emailSet = new Set<String>();
                 Set<String> klaviyoIdSet = new Set<String>();
@@ -177,7 +191,8 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
                 }
 
                 if (!toUpsert.isEmpty()) {
-                    Database.upsert(toUpsert, false);
+                    Database.UpsertResult[] results = Database.upsert(toUpsert, false);
+                    recordDmlResults(results);
                 }
 
                 Map<String, Object> links = (Map<String, Object>) jsonResponse.get('links');
@@ -194,10 +209,30 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
                 }
             } else {
                 System.debug('HTTP callout failed: ' + res.getStatusCode());
+                recordHttpFailure(res);
             }
         } catch (Exception e) {
             HandleCustomException.LogException(e, this.endpoint);
+            recordFailure(e.getMessage(), false, null);
         }
+    }
+
+    /**
+     * Executes exactly one page for the prefix-free shared inbound runtime.
+     * The existing Batchable lifecycle and constructors remain unchanged.
+     */
+    public ConnectorExecutionResult executeSharedPage() {
+        sharedExecution = true;
+        execute(null, new List<Integer>{ 1 });
+        if (sharedResult == null) {
+            sharedResult = ConnectorExecutionResult.failed(
+                'Klaviyo profile synchronization returned no result.',
+                false,
+                null
+            );
+        }
+        sharedResult.nextCursor = nextUrl;
+        return sharedResult;
     }
 
     public void finish(Database.BatchableContext BC) {
@@ -205,6 +240,40 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
             Database.executeBatch(new KlaviyoProfilesBatch(this.nextUrl), 1);
         } else {
             System.debug('No nextUrl. All records processed.');
+        }
+    }
+
+    private void recordDmlResults(Database.UpsertResult[] results) {
+        if (sharedExecution != true || results == null) {
+            return;
+        }
+        sharedResult.processedCount += results.size();
+        for (Database.UpsertResult resultValue : results) {
+            if (resultValue.isSuccess()) {
+                sharedResult.successfulCount++;
+            } else {
+                sharedResult.failedCount++;
+                for (Database.Error errorValue : resultValue.getErrors()) {
+                    sharedResult.addError(errorValue.getMessage());
+                }
+            }
+        }
+    }
+
+    private void recordHttpFailure(HttpResponse response) {
+        Integer statusCode = response == null ? null : response.getStatusCode();
+        recordFailure(
+            'Klaviyo profile request failed with status ' + String.valueOf(statusCode) + '.',
+            ConnectorInboundOperationExecutor.isRetryableStatus(statusCode),
+            ConnectorInboundOperationExecutor.retryAfterSeconds(response)
+        );
+    }
+
+    private void recordFailure(String message, Boolean retryable, Integer retryDelaySeconds) {
+        if (sharedExecution == true) {
+            sharedResult.mergeFrom(
+                ConnectorExecutionResult.failed(message, retryable, retryDelaySeconds)
+            );
         }
     }
 
@@ -260,4 +329,6 @@ public class KlaviyoProfilesBatch implements Database.Batchable<Integer>, Databa
         String formattedDateTime = pastDateTime.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'+00:00\'');
         return formattedDateTime;
     }
+
+    private class KlaviyoProfilesBatchException extends Exception {}
 }

@@ -1,6 +1,8 @@
 public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, Database.AllowsCallouts {
 
     private String lastSyncDate;
+    private ConnectorExecutionResult sharedExecutionResult;
+    private Set<String> sharedFailedReferences = new Set<String>();
 
     public QBVendorToAccountSyncBatch() {
         Datetime yesterday = Datetime.now().addDays(-1);
@@ -9,6 +11,19 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
 
     public QBVendorToAccountSyncBatch(String syncDate) {
         this.lastSyncDate = syncDate;
+    }
+
+    public ConnectorExecutionResult executeSharedScope(List<String> scope) {
+        sharedExecutionResult = ConnectorExecutionResult.success();
+        sharedFailedReferences.clear();
+        Integer submittedCount = scope == null ? 0 : scope.size();
+        execute(null, scope);
+        sharedExecutionResult.processedCount = submittedCount;
+        sharedExecutionResult.failedCount = Math.min(submittedCount, sharedFailedReferences.size());
+        sharedExecutionResult.successfulCount = Math.max(0, submittedCount - sharedExecutionResult.failedCount);
+        ConnectorExecutionResult result = sharedExecutionResult;
+        sharedExecutionResult = null;
+        return result;
     }
 
     public Iterable<String> start(Database.BatchableContext bc) {
@@ -50,7 +65,11 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
 
                         if (accountToSync != null) {
                             accountsToUpsert.add(accountToSync);
+                        } else {
+                            recordSharedFailure(vendorId, 'QuickBooks vendor did not produce an Account record.');
                         }
+                    } else {
+                        recordSharedFailure(vendorId, 'QuickBooks vendor payload was blank or malformed.');
                     }
                 } catch (Exception e) {
                     System.debug('Error processing vendor ' + vendorId + ': ' + e.getMessage());
@@ -64,6 +83,11 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
                     context.errorCategory = 'Code Exception';
                     context.externalReference = vendorId;
                     ErrorLogUtility.logError(context);
+                    recordSharedFailure(
+                        vendorId,
+                        e.getMessage(),
+                        ConnectorInboundOperationExecutor.isRetryableException(e)
+                    );
                 }
             }
 
@@ -79,15 +103,41 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
                     null
                 );
                 Integer successCount = 0;
-                for (Database.UpsertResult result : results) {
-                    if (result.isSuccess()) {
+                for (Integer i = 0; i < results.size(); i++) {
+                    if (results[i].isSuccess()) {
                         successCount++;
+                    } else {
+                        Database.Error firstError = results[i].getErrors()[0];
+                        recordSharedFailure(
+                            accountsToUpsert[i].QuickbookID__c,
+                            firstError.getStatusCode() + ': ' + firstError.getMessage()
+                        );
                     }
                 }
                 IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', successCount);
             }
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
+        }
+    }
+
+    private void recordSharedFailure(String externalReference, String message) {
+        recordSharedFailure(externalReference, message, false);
+    }
+
+    private void recordSharedFailure(String externalReference, String message, Boolean retryable) {
+        if (sharedExecutionResult == null) {
+            return;
+        }
+        sharedFailedReferences.add(
+            String.isBlank(externalReference)
+                ? 'anonymous-' + String.valueOf(sharedFailedReferences.size())
+                : externalReference
+        );
+        sharedExecutionResult.addError(message);
+        if (retryable == true) {
+            sharedExecutionResult.retryable = true;
+            sharedExecutionResult.retryDelaySeconds = 60;
         }
     }
 

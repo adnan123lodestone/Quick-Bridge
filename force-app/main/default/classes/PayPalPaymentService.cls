@@ -151,7 +151,7 @@ public with sharing class PayPalPaymentService {
                 response.success = true;
                 response.resultCode = 'Ok';
                 response.message = 'PayPal order created successfully.';
-                IntegrationUsageService.recordSuccessfulPaymentTask('PayPal');
+
                 return response;
             }
             
@@ -234,42 +234,13 @@ public with sharing class PayPalPaymentService {
                 response.success = true;
                 response.resultCode = 'Ok';
                 response.message = 'Transaction Successful';
-                IntegrationUsageService.recordSuccessfulPaymentTask('PayPal');
-
-                // --- Invoice Creation ---
-                try {
-                    Order ord = [SELECT TotalAmount, AccountId FROM Order WHERE Id = :request.orderId LIMIT 1];
-                    
-                    Map<String, Object> invoiceData = new Map<String, Object>();
-                    invoiceData.put('Amount__c', ord.TotalAmount);
-                    invoiceData.put('Order__c', request.orderId);
-                    invoiceData.put('Related_Account__c', ord.AccountId);
-                    invoiceData.put('Reference_number__c', response.transId);
-                    
-                    QuickBridgeRecordEngine.processIncomingInvoice(invoiceData);
-                } catch(Exception ex) {
-                    System.debug('Invoice creation failed: ' + ex.getMessage());
-                    ErrorLogUtility.logException('PayPal', 'PayPalPaymentService.captureOrder.invoiceCreation', ex, 'Order', parseId(request.orderId));
-                }
-                // ------
-
-                if (String.isNotBlank(request.orderId)) {
-                    try {
-                        update new Order(Id = request.orderId, Payment_Gateway__c = 'PayPal');
-                    } catch(Exception ex) {
-                        System.debug('Gateway update failed: ' + ex.getMessage());
-                        ErrorLogUtility.logDmlFailure(
-                            'PayPal',
-                            'PayPalPaymentService.captureOrder.updateOrderGateway',
-                            'update',
-                            'Order',
-                            parseId(request.orderId),
-                            ex.getTypeName() + ': ' + ex.getMessage(),
-                            'Order',
-                            parseId(request.orderId)
-                        );
-                    }
-                }
+                PaymentSettlementService.SettlementRequest settlementRequest =
+                    new PaymentSettlementService.SettlementRequest();
+                settlementRequest.providerName = 'PayPal';
+                settlementRequest.sourceMethod = 'PayPalPaymentService.captureOrder';
+                settlementRequest.orderId = request.orderId;
+                settlementRequest.transactionId = response.transId;
+                PaymentSettlementService.settleApprovedPayment(settlementRequest);
                 
                 return response;
             }

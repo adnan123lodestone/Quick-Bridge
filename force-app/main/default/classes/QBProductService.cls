@@ -1,6 +1,15 @@
 public class QBProductService {
+    private class QBProductServiceException extends Exception {}
+
     public static void syncProductsToQuickBooks(List<Product2> products, Boolean isInsert) {
+        syncProductsToQuickBooksShared(products, isInsert);
+    }
+
+    public static ConnectorExecutionResult syncProductsToQuickBooksShared(List<Product2> products, Boolean isInsert) {
+        ConnectorExecutionResult result = ConnectorExecutionResult.success();
+        result.processedCount = products == null ? 0 : products.size();
         List<Product2> productsToUpdate = new List<Product2>();
+        Map<Id, Id> sourceIdByPendingUpdateId = new Map<Id, Id>();
         Map<Id, Product2> hydratedProductsById = hydrateProducts(products);
         Map<String, String> fieldMap = QBObjectMappings.getProductToItemMapping();
 
@@ -19,6 +28,7 @@ public class QBProductService {
                         Product2 prodToUpdate = new Product2(Id = sourceProd.Id);
                         setProductQbIdValue(prodToUpdate, qbItemId);
                         productsToUpdate.add(prodToUpdate);
+                        sourceIdByPendingUpdateId.put(prodToUpdate.Id, sourceProd.Id);
                     }
                 } else {
                     // Update existing item in QuickBooks
@@ -33,6 +43,7 @@ public class QBProductService {
                     'Product2',
                     sourceProd == null ? null : sourceProd.Id
                 );
+                recordSharedFailure(result, sourceProd == null ? null : sourceProd.Id, e);
             }
         }
 
@@ -47,6 +58,36 @@ public class QBProductService {
                 null,
                 null
             );
+            for (Integer i = 0; i < updateResults.size(); i++) {
+                if (updateResults[i].isSuccess()) {
+                    result.successfulCount++;
+                } else {
+                    Database.Error firstError = updateResults[i].getErrors()[0];
+                    recordSharedFailure(
+                        result,
+                        sourceIdByPendingUpdateId.get(productsToUpdate[i].Id),
+                        new QBProductServiceException(firstError.getStatusCode() + ': ' + firstError.getMessage())
+                    );
+                }
+            }
+        }
+        result.successfulCount += result.processedCount - result.failedCount - result.successfulCount;
+        return result;
+    }
+
+    private static void recordSharedFailure(
+        ConnectorExecutionResult result,
+        Id recordId,
+        Exception exceptionValue
+    ) {
+        result.failedCount++;
+        result.addError(exceptionValue == null ? null : exceptionValue.getMessage());
+        if (IntegrationRetryPolicy.isRetryable(exceptionValue)) {
+            result.retryable = true;
+            result.retryDelaySeconds = 60;
+            if (recordId != null) {
+                result.retryRecordIds.add(recordId);
+            }
         }
     }
 
@@ -81,7 +122,10 @@ public class QBProductService {
                 'Product2',
                 prod == null ? null : prod.Id
             );
-            return null;
+            throw IntegrationRetryPolicy.exceptionForStatus(
+                res == null ? null : res.getStatusCode(),
+                'QuickBooks item create failed: ' + (res != null ? res.getBody() : 'Null Response')
+            );
         }
     }
 
@@ -118,7 +162,16 @@ public class QBProductService {
                     'Product2',
                     prod == null ? null : prod.Id
                 );
+                throw IntegrationRetryPolicy.exceptionForStatus(
+                    updateRes.getStatusCode(),
+                    'QuickBooks item update failed: ' + updateRes.getBody()
+                );
             }
+        } else {
+            throw IntegrationRetryPolicy.exceptionForStatus(
+                queryRes == null ? null : queryRes.getStatusCode(),
+                'QuickBooks item query failed: ' + (queryRes == null ? 'Null Response' : queryRes.getBody())
+            );
         }
     }
 

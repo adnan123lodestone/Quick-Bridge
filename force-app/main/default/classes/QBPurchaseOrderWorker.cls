@@ -9,7 +9,17 @@ public with sharing class QBPurchaseOrderWorker implements IntegrationWorkHandle
             throw new QBPurchaseOrderWorkerException('Purchase order work item has no Salesforce Id.');
         }
         QuickBooksPurchaseOrderBatch batch = new QuickBooksPurchaseOrderBatch(new Set<Id>{ purchaseOrderId }, isInitialSync(item));
-        batch.execute(null, new List<SObject>{ new Purchase_Order__c(Id = purchaseOrderId) });
+        ConnectorExecutionResult result = batch.executeSharedScope(
+            new List<SObject>{ new Purchase_Order__c(Id = purchaseOrderId) }
+        );
+        if (result == null || result.hasFailures()) {
+            throw new QBPurchaseOrderWorkerException(
+                'Purchase order synchronization failed. ' +
+                ConnectorExecutionResult.sanitizeError(
+                    result == null ? null : result.errorSummary
+                )
+            );
+        }
     }
 
     private static Boolean isInitialSync(Integration_Work_Item__c item) {

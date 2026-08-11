@@ -3,6 +3,9 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
     private Boolean isInitialSync;
 
     public static Boolean isProcessing = false;
+    private ConnectorExecutionResult sharedExecutionResult;
+    private Set<Id> sharedSuccessfulRecordIds = new Set<Id>();
+    private Set<Id> sharedFailedRecordIds = new Set<Id>();
 
     // QBO Estimate server-calculated read-only properties that must not be sent
     private static final Set<String> QBO_READONLY_PROPS = new Set<String>{
@@ -23,18 +26,7 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
     }
 
     public Database.QueryLocator start(Database.BatchableContext bc) {
-        String quoteFields = buildQuoteQueryFields();
-        String accQbIdField = getAccountQbIdFieldName();
-        String prodQbIdField = getProductQbIdFieldName();
-
-        String query = 'SELECT ' + quoteFields +
-            ', AccountId, Account.' + accQbIdField +
-            ', OpportunityId, Opportunity.AccountId, Opportunity.Account.' + accQbIdField +
-            ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice' +
-            ', PricebookEntryId, PricebookEntry.Product2Id, PricebookEntry.Product2.' + prodQbIdField + ', PricebookEntry.Product2.Name' +
-            buildQuoteLineItemQueryFields() +
-            ' FROM QuoteLineItems)' +
-            ' FROM Quote';
+        String query = buildQuoteScopeQuery();
 
         String qbIdField = getQbIdFieldName();
 
@@ -45,6 +37,54 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
         }
 
         return Database.getQueryLocator(query);
+    }
+
+    public static List<Quote> loadQuotesForSharedExecution(Set<Id> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return new List<Quote>();
+        }
+        return (List<Quote>) Database.query(
+            buildQuoteScopeQuery() + ' WHERE Id IN :ids'
+        );
+    }
+
+    public ConnectorExecutionResult executeSharedScope(List<Quote> scope) {
+        sharedExecutionResult = ConnectorExecutionResult.success();
+        sharedSuccessfulRecordIds.clear();
+        sharedFailedRecordIds.clear();
+        try {
+            execute(null, scope == null ? new List<Quote>() : scope);
+        } catch (Exception exceptionValue) {
+            for (Quote quoteRecord : scope == null ? new List<Quote>() : scope) {
+                recordSharedFailure(
+                    quoteRecord == null ? null : quoteRecord.Id,
+                    exceptionValue.getMessage(),
+                    IntegrationRetryPolicy.isRetryable(exceptionValue) ||
+                        IntegrationRetryPolicy.isRetryableMessage(exceptionValue.getMessage())
+                );
+            }
+        }
+        sharedExecutionResult.processedCount = scope == null ? 0 : scope.size();
+        sharedExecutionResult.failedCount = sharedFailedRecordIds.size();
+        sharedSuccessfulRecordIds.removeAll(sharedFailedRecordIds);
+        sharedExecutionResult.successfulCount = sharedSuccessfulRecordIds.size();
+        ConnectorExecutionResult result = sharedExecutionResult;
+        sharedExecutionResult = null;
+        return result;
+    }
+
+    private static String buildQuoteScopeQuery() {
+        String quoteFields = buildQuoteQueryFields();
+        String accQbIdField = getAccountQbIdFieldName();
+        String prodQbIdField = getProductQbIdFieldName();
+        return 'SELECT ' + quoteFields +
+            ', AccountId, Account.' + accQbIdField +
+            ', OpportunityId, Opportunity.AccountId, Opportunity.Account.' + accQbIdField +
+            ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice' +
+            ', PricebookEntryId, PricebookEntry.Product2Id, PricebookEntry.Product2.' + prodQbIdField + ', PricebookEntry.Product2.Name' +
+            buildQuoteLineItemQueryFields() +
+            ' FROM QuoteLineItems)' +
+            ' FROM Quote';
     }
 
     private static String getQbIdFieldName() {
@@ -235,6 +275,7 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
 
                     if (String.isBlank(customerQbId)) {
                         ErrorLogUtility.logCalloutFailure('QuickBooks', 'QBQuoteToEstimateSyncBatch.execute', 'Parent Account has no QuickbookID__c for Quote ' + quoteRecord.Id, 400, 'Quote', quoteRecord.Id);
+                        recordSharedFailure(quoteRecord.Id, 'Parent Account has no QuickbookID__c for Quote ' + quoteRecord.Id, false);
                         continue;
                     }
 
@@ -321,6 +362,7 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
 
                     if (linesJson.isEmpty()) {
                         System.debug('Skipping QBO Estimate sync for Quote ' + quoteRecord.Id + ' because it has no line items yet.');
+                        recordSharedFailure(quoteRecord.Id, 'Quote has no line items.', false);
                         continue;
                     }
 
@@ -367,23 +409,57 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
                                     }
                                 }
                                 if (!qliUpdates.isEmpty()) {
-                                    Database.update(qliUpdates, false);
+                                    Database.SaveResult[] lineResults = Database.update(qliUpdates, false);
+                                    for (Database.SaveResult lineResult : lineResults) {
+                                        if (!lineResult.isSuccess()) {
+                                            recordSharedFailure(
+                                                quoteRecord.Id,
+                                                lineResult.getErrors()[0].getMessage(),
+                                                IntegrationRetryPolicy.isRetryableMessage(lineResult.getErrors()[0].getMessage())
+                                            );
+                                        }
+                                    }
                                 }
                             }
+                        } else {
+                            recordSharedFailure(quoteRecord.Id, 'QuickBooks returned an empty Estimate response.', false);
                         }
                     } else {
                         String errBody = response != null ? response.getBody() : 'Null Response';
                         Integer statusCode = response != null ? response.getStatusCode() : 0;
                         ErrorLogUtility.logCalloutFailure('QuickBooks', 'QBQuoteToEstimateSyncBatch.execute', 'Failed QBO Estimate sync: ' + errBody, statusCode, 'Quote', quoteRecord.Id);
+                        recordSharedFailure(
+                            quoteRecord.Id,
+                            'Failed QBO Estimate sync: ' + errBody,
+                            IntegrationRetryPolicy.isRetryable(response)
+                        );
                     }
                 } catch (Exception ex) {
                     ErrorLogUtility.logException('QuickBooks', 'QBQuoteToEstimateSyncBatch.execute', ex, 'Quote', quoteRecord.Id);
+                    recordSharedFailure(
+                        quoteRecord.Id,
+                        ex.getMessage(),
+                        IntegrationRetryPolicy.isRetryable(ex) ||
+                            IntegrationRetryPolicy.isRetryableMessage(ex.getMessage())
+                    );
                 }
             }
 
             if (!quotesToUpdate.isEmpty()) {
                 Database.SaveResult[] results = Database.update(quotesToUpdate, false);
                 ErrorLogUtility.logDmlResults('QuickBooks', 'QBQuoteToEstimateSyncBatch.execute.updateQuotes', 'update', quotesToUpdate, results, null, null);
+                for (Integer resultIndex = 0; resultIndex < results.size(); resultIndex++) {
+                    if (results[resultIndex].isSuccess()) {
+                        sharedSuccessfulRecordIds.add(quotesToUpdate[resultIndex].Id);
+                    } else {
+                        String errorMessage = results[resultIndex].getErrors()[0].getMessage();
+                        recordSharedFailure(
+                            quotesToUpdate[resultIndex].Id,
+                            errorMessage,
+                            IntegrationRetryPolicy.isRetryableMessage(errorMessage)
+                        );
+                    }
+                }
             }
         } finally {
             isProcessing = false;
@@ -393,6 +469,23 @@ public class QBQuoteToEstimateSyncBatch implements Database.Batchable<sObject>, 
 
     public void finish(Database.BatchableContext bc) {
         System.debug('QBQuoteToEstimateSyncBatch finished.');
+    }
+
+    private void recordSharedFailure(Id recordId, String message, Boolean retryable) {
+        if (sharedExecutionResult == null) {
+            return;
+        }
+        if (recordId != null) {
+            sharedFailedRecordIds.add(recordId);
+        }
+        sharedExecutionResult.addError(message);
+        if (retryable == true) {
+            sharedExecutionResult.retryable = true;
+            sharedExecutionResult.retryDelaySeconds = 60;
+            if (recordId != null && !sharedExecutionResult.retryRecordIds.contains(recordId)) {
+                sharedExecutionResult.retryRecordIds.add(recordId);
+            }
+        }
     }
 
     private static String buildAccountQueryFields() {

@@ -11,19 +11,21 @@ public with sharing class QBInvoiceWorker implements IntegrationWorkHandler {
 
         // Dynamically routing based on SObject type of the Source Salesforce Id
         if (invoiceId.getSObjectType() == Order.SObjectType) {
-            // Dynamic query to retrieve all mapped Order and OrderItem fields
-            String orderFields = QBSalesOrderSyncBatch.buildOrderQueryFields();
-            String orderItemFields = QBSalesOrderSyncBatch.buildOrderItemQueryFields();
-            String query = 'SELECT ' + orderFields +
-                           ', AccountId, Account.QuickbookID__c' +
-                           ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice, Product2.QuickbookID__c, QB_LineiTemID__c' +
-                           orderItemFields +
-                           ' FROM OrderItems)' +
-                           ' FROM Order WHERE Id = :invoiceId';
-            
-            List<Order> scope = (List<Order>) Database.query(query);
+            // Reuse the batch selector so scheduled and single-record work hydrate
+            // the exact same header, relationship, and line fields.
+            List<Order> scope = QBSalesOrderSyncBatch.loadOrdersForSharedExecution(
+                new Set<Id>{ invoiceId }
+            );
             QBSalesOrderSyncBatch batch = new QBSalesOrderSyncBatch(new Set<Id>{ invoiceId }, isInitialSync(item));
-            batch.execute(null, scope);
+            ConnectorExecutionResult result = batch.executeSharedScope(scope);
+            if (result == null || result.hasFailures()) {
+                throw new QBInvoiceWorkerException(
+                    'Order invoice synchronization failed. ' +
+                    ConnectorExecutionResult.sanitizeError(
+                        result == null ? null : result.errorSummary
+                    )
+                );
+            }
         } else {
             // Dynamic SObject construction to support any other mapped Invoice object (e.g. Invoice__c)
             SObject scopeRecord = invoiceId.getSObjectType().newSObject(invoiceId);

@@ -2,6 +2,8 @@ public class KlaviyoListsBatch implements Database.Batchable<Integer>, Database.
     
     private String endpoint;
     private String nextUrl;
+    private Boolean sharedExecution = false;
+    private ConnectorExecutionResult sharedResult;
 
     public KlaviyoListsBatch(String endpoint) {
         this.endpoint = endpoint;
@@ -15,7 +17,10 @@ public class KlaviyoListsBatch implements Database.Batchable<Integer>, Database.
     }
 
     public void execute(Database.BatchableContext BC, List<Integer> scope) {
-        
+        if (sharedExecution == true) {
+            sharedResult = ConnectorExecutionResult.success();
+            nextUrl = null;
+        }
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
@@ -55,6 +60,10 @@ public class KlaviyoListsBatch implements Database.Batchable<Integer>, Database.
                 // Deserialize the JSON response.
                 Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
                 List<Object> dataList = (List<Object>) jsonResponse.get('data');
+                if (dataList == null && sharedExecution == true) {
+                    recordFailure('Klaviyo list response is missing the data collection.', false, null);
+                    return;
+                }
                 
                 // Process the current page records.
                 if (dataList != null) {
@@ -100,6 +109,7 @@ public class KlaviyoListsBatch implements Database.Batchable<Integer>, Database.
                 }
             } else {
                 System.debug('HTTP callout failed. Status Code: ' + res.getStatusCode());
+                recordHttpFailure(res);
                 endpoint = null;
             }
         
@@ -113,17 +123,41 @@ public class KlaviyoListsBatch implements Database.Batchable<Integer>, Database.
                     	successCount++;
                 	} else {
                     	failureCount++;
-                    	for (Database.Error err : results[i].getErrors()) {
-                        	System.debug('Error for record with Klaviyo_ID__c ' + campaignsToUpsert[i].Klaviyo_ID__c + ' : ' + err.getMessage());
-                    	}
+                    for (Database.Error err : results[i].getErrors()) {
+                        System.debug('Error for record with Klaviyo_ID__c ' + campaignsToUpsert[i].Klaviyo_ID__c + ' : ' + err.getMessage());
+                        if (sharedExecution == true) {
+                            sharedResult.addError(err.getMessage());
+                        }
+                    }
                 	}
             	}
-            	System.debug('Successful upserts: ' + successCount);
-            	System.debug('Failed upserts: ' + failureCount);
+                System.debug('Successful upserts: ' + successCount);
+                System.debug('Failed upserts: ' + failureCount);
+                if (sharedExecution == true) {
+                    sharedResult.processedCount += results.size();
+                    sharedResult.successfulCount += successCount;
+                    sharedResult.failedCount += failureCount;
+                }
         	}
         } catch (Exception e) {
             HandleCustomException.LogException(e, this.endpoint);
+            recordFailure(e.getMessage(), false, null);
         }
+    }
+
+    /** Executes one list page for ConnectorInboundBatch without legacy chaining. */
+    public ConnectorExecutionResult executeSharedPage() {
+        sharedExecution = true;
+        execute(null, new List<Integer>{ 1 });
+        if (sharedResult == null) {
+            sharedResult = ConnectorExecutionResult.failed(
+                'Klaviyo list synchronization returned no result.',
+                false,
+                null
+            );
+        }
+        sharedResult.nextCursor = nextUrl;
+        return sharedResult;
     }
 
     public void finish(Database.BatchableContext BC) {
@@ -131,6 +165,23 @@ public class KlaviyoListsBatch implements Database.Batchable<Integer>, Database.
             Database.executeBatch(new KlaviyoListsBatch(this.nextUrl), 1);
         } else {
             System.debug('No nextUrl. All records processed.');
+        }
+    }
+
+    private void recordHttpFailure(HttpResponse response) {
+        Integer statusCode = response == null ? null : response.getStatusCode();
+        recordFailure(
+            'Klaviyo list request failed with status ' + String.valueOf(statusCode) + '.',
+            ConnectorInboundOperationExecutor.isRetryableStatus(statusCode),
+            ConnectorInboundOperationExecutor.retryAfterSeconds(response)
+        );
+    }
+
+    private void recordFailure(String message, Boolean retryable, Integer retryDelaySeconds) {
+        if (sharedExecution == true) {
+            sharedResult.mergeFrom(
+                ConnectorExecutionResult.failed(message, retryable, retryDelaySeconds)
+            );
         }
     }
     

@@ -16,11 +16,15 @@ public with sharing class MetaApiClient {
         List<Map<String, Object>> rows = new List<Map<String, Object>>();
         String nextPath = appendQuery(path, params);
         Integer guard = 0;
+        Set<String> visitedPages = new Set<String>();
         while (String.isNotBlank(nextPath)) {
             guard++;
-            if (guard > 50) {
-                throw new MetaApiClientException('Meta API pagination exceeded the safety limit.');
+            assertPageWithinLimit(guard);
+            String pageIdentity = nextPath.trim();
+            if (visitedPages.contains(pageIdentity)) {
+                throw new MetaApiClientException('Meta API pagination repeated the same page.');
             }
+            visitedPages.add(pageIdentity);
             MetaApiResponse response = sendGet(nextPath);
             rows.addAll(response.data);
             nextPath = response.nextUrl;
@@ -77,9 +81,16 @@ public with sharing class MetaApiClient {
             return safePath;
         }
         if (safePath.toLowerCase().startsWith('http://') || safePath.toLowerCase().startsWith('https://')) {
-            Integer schemeIndex = safePath.indexOf('://');
-            Integer pathIndex = safePath.indexOf('/', schemeIndex + 3);
-            safePath = pathIndex >= 0 ? safePath.substring(pathIndex) : '';
+            try {
+                safePath = ConnectorHttpClient.safeRelativeNext(
+                    'https://graph.facebook.com/' + graphApiVersion,
+                    safePath
+                );
+            } catch (Exception exceptionValue) {
+                throw new MetaApiClientException(
+                    'Meta API pagination left the approved Graph API boundary.'
+                );
+            }
             if (safePath.startsWith('/' + graphApiVersion + '/')) {
                 safePath = safePath.substring(graphApiVersion.length() + 1);
             }
@@ -113,6 +124,19 @@ public with sharing class MetaApiClient {
 
     private static String urlEncode(String value) {
         return EncodingUtil.urlEncode(value, 'UTF-8').replace('+', '%20');
+    }
+
+    private static void assertPageWithinLimit(Integer pageNumber) {
+        try {
+            ConnectorHttpClient.assertPageWithinLimit(
+                pageNumber,
+                ConnectorHttpClient.DEFAULT_MAX_PAGES
+            );
+        } catch (Exception exceptionValue) {
+            throw new MetaApiClientException(
+                'Meta API pagination exceeded the safety limit.'
+            );
+        }
     }
 
     public class MetaApiClientException extends Exception {}

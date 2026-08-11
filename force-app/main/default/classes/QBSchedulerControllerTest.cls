@@ -360,13 +360,14 @@ private class QBSchedulerControllerTest {
     Test.startTest();
     ScheduledIntegrationHeartbeat.dispatchDueSchedules();
     Test.stopTest();
-    Scheduled_Integration_Job__c afterRun = [SELECT Last_Run_At__c, Last_Claimed_At__c, Last_Dispatched_At__c, Next_Run_At__c, Processor_Job_Id__c, Status__c, Lease_Token__c, Lease_Expires_At__c FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'Noop Sync - Account' LIMIT 1];
+    Scheduled_Integration_Job__c afterRun = [SELECT Last_Run_At__c, Last_Claimed_At__c, Last_Dispatched_At__c, Next_Run_At__c, Processor_Job_Id__c, Status__c, Lease_Token__c, Lease_Expires_At__c, Last_Error__c FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'Noop Sync - Account' LIMIT 1];
     System.assertNotEquals(null, afterRun.Last_Run_At__c);
     System.assertNotEquals(null, afterRun.Last_Claimed_At__c);
-    System.assertNotEquals(null, afterRun.Last_Dispatched_At__c);
+    System.assertEquals(null, afterRun.Last_Dispatched_At__c);
     System.assertNotEquals(null, afterRun.Next_Run_At__c);
     System.assertNotEquals(null, afterRun.Processor_Job_Id__c);
-    System.assertEquals('Ready', afterRun.Status__c);
+    System.assertEquals('Failed', afterRun.Status__c);
+    System.assert(afterRun.Last_Error__c.contains('No scheduled operation adapter'));
     System.assertEquals(null, afterRun.Lease_Token__c);
     System.assertEquals(null, afterRun.Lease_Expires_At__c);
   }

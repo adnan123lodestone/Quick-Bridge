@@ -2,6 +2,13 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
     
     private String endpoint;
     private String nextUrl;
+    private Integer sharedProcessedCount = 0;
+    private Integer sharedFailureCount = 0;
+    private String sharedErrorSummary;
+    private Boolean sharedRetryable = false;
+    private Integer sharedRetryDelaySeconds;
+
+    @TestVisible private static Boolean bypassAuthCheckForTest = false;
     
     public ShopifyOrdersBatch(String endpoint) {
         this.endpoint = endpoint;
@@ -16,12 +23,14 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
     
     global void execute(Database.BatchableContext BC, List<Integer> scope) {
         
-        if (!PaymentGatewayService.isClientAuthorized('Shopify')) {
+        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
             System.debug('Skipping execution. Shopify license not active.');
             return;
         }
         
-        IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
+        if (!bypassAuthCheckForTest) {
+            IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
+        }
         
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
@@ -54,6 +63,14 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             HttpResponse res = http.send(req);
             
             if (res.getStatusCode() != 200) {
+                sharedFailureCount = 1;
+                sharedErrorSummary = 'Shopify orders API returned HTTP ' + res.getStatusCode() + '.';
+                sharedRetryable = ConnectorInboundOperationExecutor.isRetryableStatus(
+                    res.getStatusCode()
+                );
+                sharedRetryDelaySeconds = sharedRetryable
+                    ? ConnectorInboundOperationExecutor.retryAfterSeconds(res)
+                    : null;
                 System.debug('HTTP callout failed: ' + res.getStatusCode());
                 ErrorLogUtility.logCalloutFailure(
                     'Shopify',
@@ -69,6 +86,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
             List<Object> orders = (List<Object>) jsonResponse.get('orders');
             if (orders == null) orders = new List<Object>();
+            sharedProcessedCount = orders.size();
             
             Set<String> emailSet      = new Set<String>();
             Set<String> shopifyIdSet  = new Set<String>();
@@ -154,6 +172,15 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             
             if (!accountsToUpsert.isEmpty()) {
                 Database.UpsertResult[] accountResults = Database.upsert(accountsToUpsert, false);
+                for (Database.UpsertResult accountResult : accountResults) {
+                    if (!accountResult.isSuccess()) {
+                        recordSharedFailure(
+                            1,
+                            'A Shopify order customer could not be saved. ' +
+                            firstDmlError(accountResult.getErrors())
+                        );
+                    }
+                }
                 ErrorLogUtility.logUpsertResults(
                     'Shopify',
                 'ShopifyOrdersBatch.execute.upsertAccounts',
@@ -278,6 +305,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                 try {
                     upsert ordersToUpsert Shopify_ID__c;
                 } catch (DmlException e) {
+                    recordSharedFailure(Math.max(1, e.getNumDml()), e.getMessage());
                     logShopifyDmlException(
                         'ShopifyOrdersBatch.execute.upsertOrders',
                     'upsert',
@@ -382,6 +410,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
                 try {
                     upsert orderItemsToUpsert Shopify_ID__c;
                 } catch (DmlException e) {
+                    recordSharedFailure(Math.max(1, e.getNumDml()), e.getMessage());
                     logShopifyDmlException(
                         'ShopifyOrdersBatch.execute.upsertOrderItems',
                     'upsert',
@@ -397,6 +426,7 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             this.nextUrl = getNextPageUrl(res);
             
         } catch (Exception e) {
+            recordSharedFailure(1, e.getMessage());
             ErrorLogUtility.logException(
                 'Shopify',
             'ShopifyOrdersBatch.execute',
@@ -413,6 +443,50 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
         } else {
             System.debug('No nextUrl. All Shopify orders processed.');
         }
+    }
+
+    public static ConnectorExecutionResult executeSharedPage(
+        ConnectorExecutionRequest request
+    ) {
+        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
+            return ConnectorExecutionResult.failed(
+                'Shopify license is not active.',
+                false,
+                null
+            );
+        }
+        ShopifyOrdersBatch batchValue = new ShopifyOrdersBatch(
+            request == null ? null : request.cursor
+        );
+        batchValue.execute(null, new List<Integer>{ 1 });
+        ConnectorExecutionResult result = ConnectorExecutionResult.success();
+        result.processedCount = batchValue.sharedProcessedCount > 0
+            ? batchValue.sharedProcessedCount
+            : (batchValue.sharedFailureCount > 0 ? 1 : 0);
+        result.failedCount = Math.min(
+            result.processedCount,
+            batchValue.sharedFailureCount
+        );
+        result.successfulCount = Math.max(0, result.processedCount - result.failedCount);
+        result.errorSummary = batchValue.sharedErrorSummary;
+        result.retryable = batchValue.sharedRetryable;
+        result.retryDelaySeconds = batchValue.sharedRetryDelaySeconds;
+        result.nextCursor = batchValue.nextUrl;
+        return result;
+    }
+
+    private void recordSharedFailure(Integer failureCount, String message) {
+        sharedFailureCount += Math.max(1, failureCount == null ? 1 : failureCount);
+        ConnectorExecutionResult summary = ConnectorExecutionResult.success();
+        summary.errorSummary = sharedErrorSummary;
+        summary.addError(message);
+        sharedErrorSummary = summary.errorSummary;
+    }
+
+    private static String firstDmlError(Database.Error[] errors) {
+        return errors == null || errors.isEmpty()
+            ? 'No Salesforce DML diagnostic was returned.'
+            : errors[0].getMessage();
     }
     
     private API_Callout_Control__mdt getCalloutControl() {

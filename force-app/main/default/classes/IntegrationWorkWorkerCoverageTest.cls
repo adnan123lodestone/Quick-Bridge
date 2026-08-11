@@ -87,10 +87,19 @@ private class IntegrationWorkWorkerCoverageTest {
         Product2 productRecord = new Product2(Name = 'Shopify Product Queue', IsActive = true);
         insert productRecord;
 
-        ShopifyIntegrationWorker.process(workItem('Shopify', 'CustomerUpsert', 'Account', accountRecord.Id));
-        ShopifyIntegrationWorker.process(workItem('Shopify', 'OrderUpsert', 'Order', accountRecord.Id));
-        ShopifyIntegrationWorker.process(workItem('Shopify', 'ProductUpsert', 'Product2', productRecord.Id));
-
+        try {
+            ShopifyIntegrationWorker.process(
+                workItem('Shopify', 'OrderUpsert', 'Order', accountRecord.Id)
+            );
+            System.assert(false, 'Expected Shopify to reject an Account ID for Order work.');
+        } catch (Exception exceptionValue) {
+            System.assert(
+                exceptionValue.getMessage().contains(
+                    'does not belong to the configured Salesforce object'
+                ),
+                exceptionValue.getMessage()
+            );
+        }
         CarrierIntegrationWorker.process(new Integration_Work_Item__c(Integration__c = 'Carrier', Operation__c = 'TrackingSync'));
 
         Invoice__c invoiceRecord = new Invoice__c(Related_Account__c = accountRecord.Id);

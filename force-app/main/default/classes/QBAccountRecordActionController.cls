@@ -77,7 +77,8 @@ public with sharing class QBAccountRecordActionController {
             try {
                 Account accountToUpdate = new Account(
                     Id = existingAccount.Id,
-                    QuickbookID__c = existingAccount.QuickbookID__c
+                    QuickbookID__c = existingAccount.QuickbookID__c,
+                    RecordTypeId = existingAccount.RecordTypeId
                 );
 
                 if (isVendorAccount) {
@@ -170,13 +171,24 @@ public with sharing class QBAccountRecordActionController {
 
     private static void applyQuickBooksAccountData(Account accountToUpdate, Map<String, Object> accountData, Map<String, String> mapping) {
         Map<String, Schema.SObjectField> sfFieldMap = Schema.SObjectType.Account.fields.getMap();
+        Boolean isPersonAccountRecord = isPersonAccountRecordType(accountToUpdate.RecordTypeId);
 
         for (String qbField : mapping.keySet()) {
             String sfField = mapping.get(qbField);
             Object qbValue = getNestedValue(accountData, qbField);
             
             if (qbValue != null && sfFieldMap.containsKey(sfField)) {
-                Schema.DisplayType fieldType = sfFieldMap.get(sfField).getDescribe().getType();
+                Schema.DescribeFieldResult fieldDescribe = sfFieldMap.get(sfField).getDescribe();
+                String resolvedFieldName = fieldDescribe.getName();
+                Boolean isPersonOnlyField = resolvedFieldName.startsWith('Person')
+                    || resolvedFieldName == 'FirstName'
+                    || resolvedFieldName == 'LastName'
+                    || resolvedFieldName.endsWith('__pc');
+                if (isPersonOnlyField && !isPersonAccountRecord) {
+                    continue;
+                }
+
+                Schema.DisplayType fieldType = fieldDescribe.getType();
                 
                 try {
                     if (fieldType == Schema.DisplayType.CURRENCY || fieldType == Schema.DisplayType.DOUBLE || fieldType == Schema.DisplayType.PERCENT) {
@@ -199,6 +211,20 @@ public with sharing class QBAccountRecordActionController {
                 }
             }
         }
+    }
+
+    private static Boolean isPersonAccountRecordType(Id recordTypeId) {
+        if (recordTypeId == null) {
+            return false;
+        }
+
+        List<RecordType> recordTypes = [
+            SELECT IsPersonType
+            FROM RecordType
+            WHERE Id = :recordTypeId
+            LIMIT 1
+        ];
+        return !recordTypes.isEmpty() && recordTypes[0].IsPersonType;
     }
 
     private static Boolean isVendorAccount(Account accountRecord) {

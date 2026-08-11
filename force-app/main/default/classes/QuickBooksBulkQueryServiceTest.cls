@@ -1,76 +1,187 @@
 @isTest
 private class QuickBooksBulkQueryServiceTest {
-    private static Integer queryCalls = 0;
-    private static String mockMode = 'chunk';
+  private static Integer queryCalls = 0;
+  private static String mockMode = 'chunk';
 
-    private class BulkQueryMock implements HttpCalloutMock {
-        public HttpResponse respond(HttpRequest req) {
-            queryCalls++;
-            String endpoint = req.getEndpoint() == null ? '' : req.getEndpoint().toLowerCase();
-            System.assert(endpoint.contains('/query?query='), 'Bulk query service must use the QuickBooks query endpoint.');
+  private class BulkQueryMock implements HttpCalloutMock {
+    public HttpResponse respond(HttpRequest req) {
+      queryCalls++;
+      String endpoint = req.getEndpoint() == null
+        ? ''
+        : req.getEndpoint().toLowerCase();
+      System.assert(
+        endpoint.contains('/query?query='),
+        'Bulk query service must use the QuickBooks query endpoint.'
+      );
 
-            HttpResponse response = new HttpResponse();
-            response.setStatusCode(200);
-            response.setHeader('Content-Type', 'application/json');
-            if (mockMode == 'paginate' && endpoint.contains('startposition+1+')) {
-                response.setBody(buildQueryResponse('Customer', 1000));
-            } else if (mockMode == 'paginate' && endpoint.contains('startposition+1001+')) {
-                response.setBody(buildQueryResponse('Customer', 1));
-            } else {
-                response.setBody(buildQueryResponse('Invoice', 1));
-            }
-            return response;
-        }
+      HttpResponse response = new HttpResponse();
+      response.setStatusCode(200);
+      response.setHeader('Content-Type', 'application/json');
+      if (mockMode == 'paginate' && endpoint.contains('startposition+1+')) {
+        response.setBody(buildQueryResponse('Customer', 1000));
+      } else if (
+        mockMode == 'paginate' && endpoint.contains('startposition+1001+')
+      ) {
+        response.setBody(buildQueryResponse('Customer', 1));
+      } else {
+        response.setBody(buildQueryResponse('Invoice', 1));
+      }
+      return response;
+    }
+  }
+
+  private class BoundedPageMock implements HttpCalloutMock {
+    public HttpResponse respond(HttpRequest req) {
+      String endpoint = req.getEndpoint() == null
+        ? ''
+        : req.getEndpoint().toLowerCase();
+      System.assert(endpoint.contains('startposition+51+maxresults+50'));
+      System.assert(endpoint.contains('metadata.lastupdatedtime'));
+      HttpResponse response = new HttpResponse();
+      response.setStatusCode(200);
+      response.setHeader('Content-Type', 'application/json');
+      response.setBody(buildQueryResponse('Item', 2));
+      return response;
+    }
+  }
+
+  @isTest
+  static void queryByIdsChunksLargeIdLists() {
+    QuickBooksAuthHandler.configureConnectionForTest(
+      '12345',
+      'QuickBooks_Test',
+      '65'
+    );
+    queryCalls = 0;
+    mockMode = 'chunk';
+    Test.setMock(HttpCalloutMock.class, new BulkQueryMock());
+
+    Set<String> ids = new Set<String>();
+    for (Integer index = 0; index < 101; index++) {
+      ids.add('INV-' + index);
     }
 
-    @isTest
-    static void queryByIdsChunksLargeIdLists() {
-        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
-        queryCalls = 0;
-        mockMode = 'chunk';
-        Test.setMock(HttpCalloutMock.class, new BulkQueryMock());
+    List<Map<String, Object>> records = QuickBooksBulkQueryService.queryByIds(
+      'Invoice',
+      ids
+    );
 
-        Set<String> ids = new Set<String>();
-        for (Integer index = 0; index < 101; index++) {
-            ids.add('INV-' + index);
-        }
+    System.assertEquals(
+      2,
+      queryCalls,
+      '101 ids should be split into two QBO query calls.'
+    );
+    System.assertEquals(
+      2,
+      records.size(),
+      'Each chunk response should be aggregated.'
+    );
+  }
 
-        List<Map<String, Object>> records = QuickBooksBulkQueryService.queryByIds('Invoice', ids);
+  @isTest
+  static void queryUpdatedSincePaginatesUntilShortPage() {
+    QuickBooksAuthHandler.configureConnectionForTest(
+      '12345',
+      'QuickBooks_Test',
+      '65'
+    );
+    queryCalls = 0;
+    mockMode = 'paginate';
+    Test.setMock(HttpCalloutMock.class, new BulkQueryMock());
 
-        System.assertEquals(2, queryCalls, '101 ids should be split into two QBO query calls.');
-        System.assertEquals(2, records.size(), 'Each chunk response should be aggregated.');
+    List<Map<String, Object>> records = QuickBooksBulkQueryService.queryUpdatedSince(
+      'Customer',
+      '2026-05-24'
+    );
+
+    System.assertEquals(
+      2,
+      queryCalls,
+      'A full page must request the next QBO query page.'
+    );
+    System.assertEquals(
+      1001,
+      records.size(),
+      'Paged results should be aggregated.'
+    );
+  }
+
+  @isTest
+  static void unsupportedEntityIsRejectedBeforeCallout() {
+    Boolean rejected = false;
+    try {
+      QuickBooksBulkQueryService.queryUpdatedSince('Payment', '2026-05-24');
+    } catch (Exception e) {
+      rejected = true;
+      System.assert(e.getMessage().contains('Unsupported QuickBooks entity'));
     }
+    System.assertEquals(
+      true,
+      rejected,
+      'Only known QBO sync entities should be accepted.'
+    );
+  }
 
-    @isTest
-    static void queryUpdatedSincePaginatesUntilShortPage() {
-        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
-        queryCalls = 0;
-        mockMode = 'paginate';
-        Test.setMock(HttpCalloutMock.class, new BulkQueryMock());
+  @isTest
+  static void queryUpdatedSincePageExecutesExactlyOneBoundedPage() {
+    QuickBooksAuthHandler.configureConnectionForTest(
+      '12345',
+      'QuickBooks_Test',
+      '65'
+    );
+    Test.setMock(HttpCalloutMock.class, new BoundedPageMock());
 
-        List<Map<String, Object>> records = QuickBooksBulkQueryService.queryUpdatedSince('Customer', '2026-05-24');
+    List<Map<String, Object>> records = QuickBooksBulkQueryService.queryUpdatedSincePage(
+      'Item',
+      '2026-05-24',
+      51,
+      50
+    );
 
-        System.assertEquals(2, queryCalls, 'A full page must request the next QBO query page.');
-        System.assertEquals(1001, records.size(), 'Paged results should be aggregated.');
+    System.assertEquals(2, records.size());
+    System.assertEquals('ITE-0', records[0].get('Id'));
+  }
+
+  @isTest
+  static void queryUpdatedSincePageRejectsUnsafeBounds() {
+    for (
+      List<Integer> bounds : new List<List<Integer>>{
+        new List<Integer>{ 0, 50 },
+        new List<Integer>{ 1, 0 },
+        new List<Integer>{ 1, 1001 }
+      }
+    ) {
+      try {
+        QuickBooksBulkQueryService.queryUpdatedSincePage(
+          'Customer',
+          null,
+          bounds[0],
+          bounds[1]
+        );
+        System.assert(
+          false,
+          'Invalid QuickBooks page bounds must be rejected.'
+        );
+      } catch (QuickBooksBulkQueryService.UnsupportedQuickBooksEntityException expected) {
+        System.assert(String.isNotBlank(expected.getMessage()));
+      }
     }
+  }
 
-    @isTest
-    static void unsupportedEntityIsRejectedBeforeCallout() {
-        Boolean rejected = false;
-        try {
-            QuickBooksBulkQueryService.queryUpdatedSince('Payment', '2026-05-24');
-        } catch (Exception e) {
-            rejected = true;
-            System.assert(e.getMessage().contains('Unsupported QuickBooks entity'));
-        }
-        System.assertEquals(true, rejected, 'Only known QBO sync entities should be accepted.');
+  private static String buildQueryResponse(
+    String entityName,
+    Integer countRows
+  ) {
+    List<String> rows = new List<String>();
+    for (Integer index = 0; index < countRows; index++) {
+      rows.add(
+        '{"Id":"' + entityName.left(3).toUpperCase() + '-' + index + '"}'
+      );
     }
-
-    private static String buildQueryResponse(String entityName, Integer countRows) {
-        List<String> rows = new List<String>();
-        for (Integer index = 0; index < countRows; index++) {
-            rows.add('{"Id":"' + entityName.left(3).toUpperCase() + '-' + index + '"}');
-        }
-        return '{"QueryResponse":{"' + entityName + '":[' + String.join(rows, ',') + ']}}';
-    }
+    return '{"QueryResponse":{"' +
+      entityName +
+      '":[' +
+      String.join(rows, ',') +
+      ']}}';
+  }
 }

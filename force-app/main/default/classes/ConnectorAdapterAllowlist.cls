@@ -12,6 +12,8 @@ public with sharing class ConnectorAdapterAllowlist {
     'QuickBooksScheduledOperationAdapter',
     'ShopifyScheduledOperationAdapter',
     'KlaviyoScheduledOperationAdapter',
+    'ConnectorInboundOperationExecutor',
+    'ConnectorOutboundOperationExecutor',
     'QBSchedulerConfigValidator',
     'QBAccountWorker',
     'QBProductWorker',

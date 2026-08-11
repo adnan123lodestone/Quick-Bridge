@@ -168,6 +168,16 @@ private class PayPalPaymentServiceTest {
 
         System.assertEquals(true, response.success, response.message);
         System.assertEquals('5O190127TN364715T', response.paypalOrderId);
+        System.assertEquals(
+            0,
+            [
+                SELECT COUNT()
+                FROM Integration_Usage_Event__c
+                WHERE Product_Key__c = 'paypal'
+                  AND Event_Type__c = 'Task Usage'
+            ],
+            'Creating a PayPal order is not an approved payment.'
+        );
     }
 
     @IsTest
@@ -278,6 +288,16 @@ private class PayPalPaymentServiceTest {
 
         System.assertEquals(true, response.success, response.message);
         System.assertEquals('3C679366HH908993F', response.transId);
+        System.assertEquals(
+            1,
+            [
+                SELECT COUNT()
+                FROM Integration_Usage_Event__c
+                WHERE Product_Key__c = 'paypal'
+                  AND Event_Type__c = 'Task Usage'
+            ],
+            'Terminal capture must record exactly one successful payment task.'
+        );
     }
 
     @IsTest

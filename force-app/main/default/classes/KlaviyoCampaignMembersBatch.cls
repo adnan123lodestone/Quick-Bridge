@@ -3,6 +3,8 @@ public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
     private Id campaignId;
     private String endpoint;
     private String nextUrl;
+    private Boolean sharedExecution = false;
+    private ConnectorExecutionResult sharedResult;
 
     public KlaviyoCampaignMembersBatch(Id campaignId) {
         this.campaignId = campaignId;
@@ -26,12 +28,16 @@ public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
     }
 
     public void execute(Database.BatchableContext BC, List<SObject> scope) {
+        if (sharedExecution == true) {
+            sharedResult = ConnectorExecutionResult.success();
+        }
         try {
             Http http = new Http();
             String workingEndpoint = (String.isNotBlank(this.nextUrl)) ? this.nextUrl : this.endpoint;
             
             if (String.isBlank(workingEndpoint)) {
                 System.debug('No endpoint to process.');
+                recordFailure('Klaviyo campaign member endpoint is missing.', false, null);
                 return;
             }
             
@@ -41,6 +47,10 @@ public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
             if (httpRes.getStatusCode() == 200) {
                 Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(httpRes.getBody());
                 List<Object> dataList = (List<Object>) jsonResponse.get('data');
+                if (dataList == null && sharedExecution == true) {
+                    recordFailure('Klaviyo campaign member response is missing the data collection.', false, null);
+                    return;
+                }
 
                 Set<String> profileIds = new Set<String>();
 
@@ -68,11 +78,32 @@ public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
 
             } else {
                 System.debug('HTTP callout failed with status code: ' + httpRes.getStatusCode());
+                recordFailure(
+                    'Klaviyo campaign member request failed with status ' + httpRes.getStatusCode() + '.',
+                    ConnectorInboundOperationExecutor.isRetryableStatus(httpRes.getStatusCode()),
+                    ConnectorInboundOperationExecutor.retryAfterSeconds(httpRes)
+                );
                 this.nextUrl = null;
             }
         } catch (Exception ex) {
             HandleCustomException.LogException(ex, 'KlaviyoCampaignMembersBatch');
+            recordFailure(ex.getMessage(), false, null);
         }
+    }
+
+    /** Executes one campaign membership page for ConnectorInboundBatch. */
+    public ConnectorExecutionResult executeSharedPage() {
+        sharedExecution = true;
+        execute(null, new List<SObject>{ new Campaign(Id = campaignId) });
+        if (sharedResult == null) {
+            sharedResult = ConnectorExecutionResult.failed(
+                'Klaviyo campaign member synchronization returned no result.',
+                false,
+                null
+            );
+        }
+        sharedResult.nextCursor = nextUrl;
+        return sharedResult;
     }
 
     public void finish(Database.BatchableContext BC) {
@@ -128,6 +159,10 @@ public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
 
                 if (!newMembersToInsert.isEmpty()) {
                     insert newMembersToInsert;
+                    if (sharedExecution == true) {
+                        sharedResult.processedCount += newMembersToInsert.size();
+                        sharedResult.successfulCount += newMembersToInsert.size();
+                    }
                     System.debug('Inserted ' + newMembersToInsert.size() + ' new CampaignMembers.');
                 } else {
                     System.debug('All contacts were already campaign members.');
@@ -137,6 +172,15 @@ public class KlaviyoCampaignMembersBatch implements Database.Batchable<SObject>,
             }
         } catch (Exception ex) {
             HandleCustomException.LogException(ex, 'KlaviyoCampaignMembersBatch_createCampaignMembers');
+            recordFailure(ex.getMessage(), false, null);
+        }
+    }
+
+    private void recordFailure(String message, Boolean retryable, Integer retryDelaySeconds) {
+        if (sharedExecution == true) {
+            sharedResult.mergeFrom(
+                ConnectorExecutionResult.failed(message, retryable, retryDelaySeconds)
+            );
         }
     }
 

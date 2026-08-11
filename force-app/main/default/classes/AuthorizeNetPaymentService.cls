@@ -138,46 +138,14 @@ public without sharing class AuthorizeNetPaymentService {
             if (response.resultCode == 'Ok' && transactionResponseCode == '1' && !String.isBlank(response.transId)) {
                 response.success = true;
                 response.message = 'Transaction Successful';
-                IntegrationUsageService.recordSuccessfulPaymentTask('Authorize.Net');
-
-                // --- Invoice Creation ---
-                try {
-                    Map<String, Object> invoiceData = new Map<String, Object>();
-                    invoiceData.put('Amount__c', request.amount);
-                    invoiceData.put('Reference_number__c', response.transId);
-                    
-                    if (String.isNotBlank(request.orderId)) {
-                        invoiceData.put('Order__c', request.orderId);
-                        Order ord = [SELECT AccountId FROM Order WHERE Id = :request.orderId LIMIT 1];
-                        if (ord.AccountId != null) {
-                            invoiceData.put('Related_Account__c', ord.AccountId);
-                        }
-                    }
-                    
-                    QuickBridgeRecordEngine.processIncomingInvoice(invoiceData);
-                } catch(Exception ex) {
-                    System.debug('Invoice creation failed: ' + ex.getMessage());
-                    ErrorLogUtility.logException('Authorize.Net', 'AuthorizeNetPaymentService.processOpaquePayment.invoiceCreation', ex, 'Order', parseId(request.orderId));
-                }
-                // ------
-
-                if (String.isNotBlank(request.orderId)) {
-                    try {
-                        update new Order(Id = request.orderId, Payment_Gateway__c = 'Authorize.Net');
-                    } catch(Exception ex) {
-                        System.debug('Gateway update failed: ' + ex.getMessage());
-                        ErrorLogUtility.logDmlFailure(
-                            'Authorize.Net',
-                            'AuthorizeNetPaymentService.processOpaquePayment.updateOrderGateway',
-                            'update',
-                            'Order',
-                            parseId(request.orderId),
-                            ex.getTypeName() + ': ' + ex.getMessage(),
-                            'Order',
-                            parseId(request.orderId)
-                        );
-                    }
-                }
+                PaymentSettlementService.SettlementRequest settlementRequest =
+                    new PaymentSettlementService.SettlementRequest();
+                settlementRequest.providerName = 'Authorize.Net';
+                settlementRequest.sourceMethod = 'AuthorizeNetPaymentService.processOpaquePayment';
+                settlementRequest.orderId = request.orderId;
+                settlementRequest.amount = request.amount;
+                settlementRequest.transactionId = response.transId;
+                PaymentSettlementService.settleApprovedPayment(settlementRequest);
                 
                 return response;
             }

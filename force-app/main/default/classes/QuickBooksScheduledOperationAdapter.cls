@@ -1,4 +1,4 @@
-public with sharing class QuickBooksScheduledOperationAdapter implements ScheduledOperationAdapter {
+public with sharing class QuickBooksScheduledOperationAdapter implements ScheduledOperationAdapter, DeferredScheduledOperationAdapter {
   @TestVisible
   private static Boolean skipExecutionForTests = false;
 
@@ -7,6 +7,257 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
       return;
     }
     run(job.Source_Object__c, job.Direction__c);
+  }
+
+  /**
+   * Transfers terminal schedule ownership only for validated shared QBO
+   * operations. Every other operation continues through execute/run.
+   */
+  public ConnectorScheduleDispatchResult dispatch(
+    Scheduled_Integration_Job__c job,
+    String leaseToken
+  ) {
+    if (Test.isRunningTest() && skipExecutionForTests == true) {
+      return ConnectorScheduleDispatchResult.synchronous();
+    }
+    if (job == null) {
+      return ConnectorScheduleDispatchResult.failed(
+        'A QuickBooks scheduled integration job is required.'
+      );
+    }
+
+    String targetObject = job.Source_Object__c;
+    if (!isSharedTarget(targetObject, job.Direction__c)) {
+      execute(job);
+      return ConnectorScheduleDispatchResult.synchronous();
+    }
+
+    try {
+      IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
+      String safeDirection = String.isBlank(job.Direction__c)
+        ? 'Out'
+        : job.Direction__c;
+      Set<Id> recordIds = safeDirection == 'In'
+        ? new Set<Id>()
+        : outboundRecordIds(targetObject);
+      if (safeDirection != 'In' && recordIds.isEmpty()) {
+        return ConnectorScheduleDispatchResult.synchronous();
+      }
+
+      ConnectorExecutionRequest request = buildSharedRequest(
+          job,
+          leaseToken,
+          recordIds
+        )
+        .normalizedCopy();
+      Id asyncJobId = request.direction ==
+        ConnectorExecutionRequest.DIRECTION_INBOUND
+        ? Database.executeBatch(new ConnectorInboundBatch(request), 1)
+        : Database.executeBatch(
+            new ConnectorOutboundBatch(request),
+            request.scopeSize
+          );
+      return ConnectorScheduleDispatchResult.deferred(asyncJobId);
+    } catch (Exception exceptionValue) {
+      ErrorLogUtility.logException(
+        'QuickBooks',
+        'QuickBooksScheduledOperationAdapter.run',
+        exceptionValue,
+        null,
+        null
+      );
+      return ConnectorScheduleDispatchResult.failed(
+        ConnectorExecutionResult.sanitizeError(exceptionValue.getMessage())
+      );
+    }
+  }
+
+  @TestVisible
+  private static ConnectorExecutionRequest buildSharedRequest(
+    Scheduled_Integration_Job__c job,
+    String leaseToken,
+    Set<Id> recordIds
+  ) {
+    if (
+      job == null ||
+      !isSharedTarget(job.Source_Object__c, job.Direction__c)
+    ) {
+      throw new QuickBooksScheduledOperationException(
+        'A supported QuickBooks Account, Vendor, Product, outbound Order, outbound Purchase Order, or outbound Quote schedule is required.'
+      );
+    }
+    String safeDirection = String.isBlank(job.Direction__c)
+      ? 'Out'
+      : job.Direction__c;
+    Boolean inbound = safeDirection == 'In';
+    Boolean customerOperation =
+      job.Source_Object__c == 'Account' ||
+      job.Source_Object__c == 'Accounts';
+    Boolean vendorOperation =
+      job.Source_Object__c == 'Vendor' ||
+      job.Source_Object__c == 'Vendors';
+    Boolean accountOperation = customerOperation || vendorOperation;
+    Boolean orderOperation =
+      job.Source_Object__c == 'Order' ||
+      job.Source_Object__c == 'Orders';
+    Boolean purchaseOrderOperation =
+      job.Source_Object__c == 'PurchaseOrders' ||
+      job.Source_Object__c == 'Purchase Order';
+    Boolean quoteOperation =
+      job.Source_Object__c == 'Quote' ||
+      job.Source_Object__c == 'Quotes';
+
+    ConnectorExecutionRequest request = new ConnectorExecutionRequest();
+    request.connectorKey = 'qbo';
+    request.operationKey = quoteOperation
+      ? 'Quote'
+      : purchaseOrderOperation
+      ? 'PurchaseOrder'
+      : orderOperation
+      ? 'Order'
+      : vendorOperation
+      ? 'Vendor'
+      : (customerOperation ? 'Customer' : 'Item');
+    request.direction = inbound
+      ? ConnectorExecutionRequest.DIRECTION_INBOUND
+      : ConnectorExecutionRequest.DIRECTION_OUTBOUND;
+    request.salesforceObject = quoteOperation
+      ? 'Quote'
+      : purchaseOrderOperation
+      ? 'Purchase_Order__c'
+      : orderOperation
+      ? 'Order'
+      : (accountOperation ? 'Account' : 'Product2');
+    request.externalEntity = quoteOperation
+      ? 'Estimate'
+      : purchaseOrderOperation
+      ? 'PurchaseOrder'
+      : orderOperation
+      ? 'Invoice'
+      : vendorOperation
+      ? 'Vendor'
+      : (customerOperation ? 'Customer' : 'Item');
+    request.recordIds = recordIds == null
+      ? new List<Id>()
+      : new List<Id>(recordIds);
+    request.sinceValue = inbound ? Datetime.now().addDays(-1) : null;
+    request.initialSync = !inbound;
+    request.scopeSize = inbound
+      ? 50
+      : (accountOperation || orderOperation || purchaseOrderOperation || quoteOperation ? 1 : 50);
+    request.scheduleId = job.Id;
+    request.leaseToken = leaseToken;
+    request.correlationKey = job.Id == null ? null : String.valueOf(job.Id);
+    request.pageNumber = 1;
+    return request;
+  }
+
+  private static Boolean isSharedTarget(
+    String targetObject,
+    String direction
+  ) {
+    String safeDirection = String.isBlank(direction) ? 'Out' : direction;
+    Boolean sharedBothDirections = targetObject == 'Account' ||
+      targetObject == 'Accounts' ||
+      targetObject == 'Vendor' ||
+      targetObject == 'Vendors' ||
+      targetObject == 'Product' ||
+      targetObject == 'Products';
+    Boolean sharedOutboundOrder =
+      safeDirection != 'In' &&
+      (targetObject == 'Order' || targetObject == 'Orders');
+    Boolean sharedOutboundPurchaseOrder =
+      safeDirection != 'In' &&
+      (targetObject == 'PurchaseOrders' || targetObject == 'Purchase Order');
+    Boolean sharedOutboundQuote =
+      safeDirection != 'In' &&
+      (targetObject == 'Quote' || targetObject == 'Quotes');
+    return sharedBothDirections ||
+      sharedOutboundOrder ||
+      sharedOutboundPurchaseOrder ||
+      sharedOutboundQuote;
+  }
+
+  private static Set<Id> outboundRecordIds(String targetObject) {
+    Set<Id> recordIds = new Set<Id>();
+    if (targetObject == 'Account' || targetObject == 'Accounts') {
+      for (Account accountRecord : [
+        SELECT Id
+        FROM Account
+        WHERE QuickbookID__c = NULL AND IsPersonAccount = FALSE
+      ]) {
+        recordIds.add(accountRecord.Id);
+      }
+    } else if (targetObject == 'Vendor' || targetObject == 'Vendors') {
+      List<RecordType> vendorRecordTypes = [
+        SELECT Id
+        FROM RecordType
+        WHERE
+          SobjectType = 'Account' AND
+          IsActive = TRUE AND
+          (Name = 'Vendor' OR DeveloperName = 'Vendor')
+        LIMIT 1
+      ];
+      if (!vendorRecordTypes.isEmpty()) {
+        for (Account accountRecord : [
+          SELECT Id
+          FROM Account
+          WHERE
+            QuickbookID__c = NULL AND
+            RecordTypeId = :vendorRecordTypes[0].Id
+        ]) {
+          recordIds.add(accountRecord.Id);
+        }
+      }
+    } else if (targetObject == 'Order' || targetObject == 'Orders') {
+      for (Order orderRecord : [
+        SELECT Id
+        FROM Order
+        WHERE QuickbookID__c = NULL AND Status IN ('Draft', 'Activated')
+      ]) {
+        recordIds.add(orderRecord.Id);
+      }
+    } else if (
+      targetObject == 'PurchaseOrders' ||
+      targetObject == 'Purchase Order'
+    ) {
+      for (Purchase_Order__c purchaseOrderRecord : [
+        SELECT Id
+        FROM Purchase_Order__c
+        WHERE External_Id__c = NULL
+      ]) {
+        recordIds.add(purchaseOrderRecord.Id);
+      }
+    } else if (targetObject == 'Quote' || targetObject == 'Quotes') {
+      for (Quote quoteRecord : [
+        SELECT Id
+        FROM Quote
+        WHERE QuickbookID__c = NULL
+      ]) {
+        recordIds.add(quoteRecord.Id);
+      }
+    } else {
+      for (Product2 productRecord : [
+        SELECT Id
+        FROM Product2
+        WHERE QuickbookID__c = NULL AND IsActive = TRUE
+      ]) {
+        recordIds.add(productRecord.Id);
+      }
+    }
+    return recordIds;
+  }
+
+  public static List<Account> loadAccountsForSharedExecution(
+    Set<Id> accountIds
+  ) {
+    if (accountIds == null || accountIds.isEmpty()) {
+      return new List<Account>();
+    }
+    String accountFields = buildAccountQueryFields();
+    return Database.query(
+      'SELECT ' + accountFields + ' FROM Account WHERE Id IN :accountIds'
+    );
   }
 
   public static void run(String targetObject, String direction) {
@@ -20,8 +271,9 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         } else {
           String accountFields = buildAccountQueryFields();
           List<Account> unsynced = Database.query(
-            'SELECT ' + accountFields
-            + ' FROM Account WHERE QuickBridgeTLG__QuickbookID__c = NULL AND IsPersonAccount = FALSE'
+            'SELECT ' +
+              accountFields +
+              ' FROM Account WHERE QuickBridgeTLG__QuickbookID__c = NULL AND IsPersonAccount = FALSE'
           );
           if (!unsynced.isEmpty()) {
             Database.executeBatch(new QBAccountBatch(unsynced, true), 1);
@@ -44,8 +296,11 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
           if (!vendorRTs.isEmpty()) {
             String accountFields = buildAccountQueryFields();
             List<Account> unsynced = Database.query(
-              'SELECT ' + accountFields
-              + ' FROM Account WHERE QuickBridgeTLG__QuickbookID__c = NULL AND RecordTypeId = \'' + vendorRTs[0].Id + '\''
+              'SELECT ' +
+                accountFields +
+                ' FROM Account WHERE QuickBridgeTLG__QuickbookID__c = NULL AND RecordTypeId = \'' +
+                vendorRTs[0].Id +
+                '\''
             );
             if (!unsynced.isEmpty()) {
               Database.executeBatch(new QBAccountBatch(unsynced, true), 1);
@@ -155,15 +410,14 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         targetObject == 'Item Sales Tax'
       ) {
         Database.executeBatch(new QBOItemSalesTaxBatch(), 1);
-      } else if (
-        targetObject == 'Quote' ||
-        targetObject == 'Quotes'
-      ) {
+      } else if (targetObject == 'Quote' || targetObject == 'Quotes') {
         if (safeDirection == 'In') {
           Database.executeBatch(new QBEstimateToQuoteSyncBatch(), 1);
         } else {
           List<Quote> unsyncedQuotes = [
-            SELECT Id FROM Quote WHERE QuickbookID__c = NULL
+            SELECT Id
+            FROM Quote
+            WHERE QuickbookID__c = NULL
           ];
           if (!unsyncedQuotes.isEmpty()) {
             Database.executeBatch(
@@ -233,22 +487,34 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
   // unconditionally; person-account fields are included only when they exist.
   private static String buildAccountQueryFields() {
     Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Account.fields.getMap();
-    Set<String> fieldApiNames = new Set<String>{'Id', 'Name', 'RecordTypeId'};
+    Set<String> fieldApiNames = new Set<String>{ 'Id', 'Name', 'RecordTypeId' };
 
     // Add all SF-side fields from the active mapping (Customer and Vendor)
-    for (String sfField : QBObjectMappings.getAccountToCustomerMapping().keySet()) {
+    for (
+      String sfField : QBObjectMappings.getAccountToCustomerMapping().keySet()
+    ) {
       fieldApiNames.add(sfField);
     }
-    for (String sfField : QBObjectMappings.getAccountToVendorMapping().keySet()) {
+    for (
+      String sfField : QBObjectMappings.getAccountToVendorMapping().keySet()
+    ) {
       fieldApiNames.add(sfField);
     }
 
     // Person-account fields — only include when enabled in this org
     List<String> personAccountFields = new List<String>{
-      'IsPersonAccount', 'FirstName', 'LastName', 'PersonEmail', 'GivenName__c', 'FamilyName__c'
+      'IsPersonAccount',
+      'FirstName',
+      'LastName',
+      'PersonEmail',
+      'GivenName__c',
+      'FamilyName__c'
     };
     for (String f : personAccountFields) {
-      if (schemaFields.containsKey(f.toLowerCase()) || schemaFields.containsKey('QuickBridgeTLG__' + f.toLowerCase())) {
+      if (
+        schemaFields.containsKey(f.toLowerCase()) ||
+        schemaFields.containsKey('QuickBridgeTLG__' + f.toLowerCase())
+      ) {
         fieldApiNames.add(f);
       }
     }
@@ -267,5 +533,8 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
     }
 
     return String.join(new List<String>(resolvedFields), ', ');
+  }
+
+  public class QuickBooksScheduledOperationException extends Exception {
   }
 }

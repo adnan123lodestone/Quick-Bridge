@@ -2,6 +2,11 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
 
     private String endpoint;
     private String nextUrl;
+    private Integer sharedProcessedCount = 0;
+    private Integer sharedFailureCount = 0;
+    private String sharedErrorSummary;
+    private Boolean sharedRetryable = false;
+    private Integer sharedRetryDelaySeconds;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
 
@@ -22,7 +27,9 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
             return;
         }
 
-        IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
+        if (!bypassAuthCheckForTest) {
+            IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
+        }
 
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
@@ -54,6 +61,14 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
             HttpResponse res = new Http().send(req);
 
             if (res.getStatusCode() != 200) {
+                sharedFailureCount = 1;
+                sharedErrorSummary = 'Shopify products API returned HTTP ' + res.getStatusCode() + '.';
+                sharedRetryable = ConnectorInboundOperationExecutor.isRetryableStatus(
+                    res.getStatusCode()
+                );
+                sharedRetryDelaySeconds = sharedRetryable
+                    ? ConnectorInboundOperationExecutor.retryAfterSeconds(res)
+                    : null;
                 System.debug('ShopifyProductsBatch HTTP error: ' + res.getStatusCode());
                 ErrorLogUtility.logCalloutFailure(
                     'Shopify',
@@ -68,7 +83,9 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
 
             Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
             List<Object> products = (List<Object>) jsonResponse.get('products');
+            this.nextUrl = getNextPageUrl(res);
             if (products == null || products.isEmpty()) return;
+            sharedProcessedCount = products.size();
 
             Map<String, String> fieldMap = ShopifyObjectMappings.getShopifyToProductMapping();
 
@@ -141,6 +158,8 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
             try {
                 upsert productsToUpsert Shopify_ID__c;
             } catch (DmlException e) {
+                sharedFailureCount = Math.max(1, e.getNumDml());
+                sharedErrorSummary = e.getMessage();
                 logShopifyDmlException(
                     'ShopifyProductsBatch.execute.upsertProducts',
                     'upsert',
@@ -184,6 +203,8 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
                 try {
                     insert entriesToInsert;
                 } catch (DmlException e) {
+                    sharedFailureCount = Math.max(1, e.getNumDml());
+                    sharedErrorSummary = e.getMessage();
                     logShopifyDmlException(
                         'ShopifyProductsBatch.execute.insertPricebookEntries',
                         'insert',
@@ -196,9 +217,9 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
                 }
             }
 
-            this.nextUrl = getNextPageUrl(res);
-
         } catch (Exception e) {
+            sharedFailureCount = 1;
+            sharedErrorSummary = e.getMessage();
             ErrorLogUtility.logException(
                 'Shopify',
                 'ShopifyProductsBatch.execute',
@@ -215,6 +236,29 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
         } else {
             System.debug('ShopifyProductsBatch complete — no further pages.');
         }
+    }
+
+    public static ConnectorExecutionResult executeSharedPage(ConnectorExecutionRequest request) {
+        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
+            return ConnectorExecutionResult.failed(
+                'Shopify license is not active.',
+                false,
+                null
+            );
+        }
+        ShopifyProductsBatch batchValue = new ShopifyProductsBatch(
+            request == null ? null : request.cursor
+        );
+        batchValue.execute(null, new List<Integer>{ 1 });
+        ConnectorExecutionResult result = ConnectorExecutionResult.success();
+        result.processedCount = batchValue.sharedProcessedCount;
+        result.failedCount = batchValue.sharedFailureCount;
+        result.successfulCount = Math.max(0, result.processedCount - result.failedCount);
+        result.errorSummary = batchValue.sharedErrorSummary;
+        result.retryable = batchValue.sharedRetryable;
+        result.retryDelaySeconds = batchValue.sharedRetryDelaySeconds;
+        result.nextCursor = batchValue.nextUrl;
+        return result;
     }
 
     private API_Callout_Control__mdt getCalloutControl() {

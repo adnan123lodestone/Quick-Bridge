@@ -2,10 +2,27 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     
     private Set<Id> recordIds;
     private Boolean isInitialSync;
+    private ConnectorExecutionResult sharedExecutionResult;
+    private Set<Id> sharedSuccessfulRecordIds = new Set<Id>();
+    private Set<Id> sharedFailedRecordIds = new Set<Id>();
     
     public QuickBooksPurchaseOrderBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
+    }
+
+    public ConnectorExecutionResult executeSharedScope(List<SObject> scope) {
+        sharedExecutionResult = ConnectorExecutionResult.success();
+        sharedSuccessfulRecordIds.clear();
+        sharedFailedRecordIds.clear();
+        execute(null, scope);
+        sharedExecutionResult.processedCount = scope == null ? 0 : scope.size();
+        sharedExecutionResult.failedCount = sharedFailedRecordIds.size();
+        sharedSuccessfulRecordIds.removeAll(sharedFailedRecordIds);
+        sharedExecutionResult.successfulCount = sharedSuccessfulRecordIds.size();
+        ConnectorExecutionResult result = sharedExecutionResult;
+        sharedExecutionResult = null;
+        return result;
     }
     
     public Database.QueryLocator start(Database.BatchableContext bc) {
@@ -37,7 +54,10 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                 SObject currentRecord = recordsWithItems.get(obj.Id);
                 List<SObject> childItems = currentRecord.getSObjects('Purchase_Order_Lines__r');
                 
-                if (currentRecord == null || childItems == null || childItems.isEmpty()) continue;
+                if (currentRecord == null || childItems == null || childItems.isEmpty()) {
+                    recordSharedFailure(obj == null ? null : obj.Id, 'Purchase order has no line items.', false);
+                    continue;
+                }
                 
                 String qbId = (String)currentRecord.get('External_Id__c');
                 
@@ -49,12 +69,16 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                     }
                 } else if (qbId != null && !isInitialSync) {
                     updatePurchaseOrder(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
+                    sharedSuccessfulRecordIds.add(currentRecord.Id);
                 }
             }
             
             if (!recordsToUpdate.isEmpty()) {
                 update recordsToUpdate;
                 IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', recordsToUpdate.size());
+                for (SObject updatedRecord : recordsToUpdate) {
+                    sharedSuccessfulRecordIds.add(updatedRecord.Id);
+                }
             }
             
         } catch(Exception e) {
@@ -65,6 +89,11 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                 e,
                 'Purchase_Order__c',
                 scope == null || scope.isEmpty() ? null : scope[0].Id
+            );
+            recordSharedFailure(
+                scope == null || scope.isEmpty() ? null : scope[0].Id,
+                e.getMessage(),
+                IntegrationRetryPolicy.isRetryable(e)
             );
         }
     }
@@ -99,7 +128,10 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
             'Purchase_Order__c',
             record == null ? null : record.Id
         );
-        return null;
+        throw IntegrationRetryPolicy.exceptionForStatus(
+            res == null ? null : res.getStatusCode(),
+            'QuickBooks purchase order create failed: ' + (res == null ? 'Null Response' : res.getBody())
+        );
     }
     
     private void updatePurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, String qbId, Map<String, String> lineFieldMap) {
@@ -113,7 +145,10 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                 'Purchase_Order__c',
                 record == null ? null : record.Id
             );
-            return;
+            throw IntegrationRetryPolicy.exceptionForStatus(
+                getRes == null ? null : getRes.getStatusCode(),
+                'QuickBooks purchase order query failed: ' + (getRes == null ? 'Null Response' : getRes.getBody())
+            );
         }
         
         Map<String, Object> existingPO = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(getRes.getBody())).get('PurchaseOrder');
@@ -137,6 +172,27 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
                 'Purchase_Order__c',
                 record == null ? null : record.Id
             );
+            throw IntegrationRetryPolicy.exceptionForStatus(
+                updateRes == null ? null : updateRes.getStatusCode(),
+                'QuickBooks purchase order update failed: ' + (updateRes == null ? 'Null Response' : updateRes.getBody())
+            );
+        }
+    }
+
+    private void recordSharedFailure(Id recordId, String message, Boolean retryable) {
+        if (sharedExecutionResult == null) {
+            return;
+        }
+        if (recordId != null) {
+            sharedFailedRecordIds.add(recordId);
+        }
+        sharedExecutionResult.addError(message);
+        if (retryable == true) {
+            sharedExecutionResult.retryable = true;
+            sharedExecutionResult.retryDelaySeconds = 60;
+            if (recordId != null && !sharedExecutionResult.retryRecordIds.contains(recordId)) {
+                sharedExecutionResult.retryRecordIds.add(recordId);
+            }
         }
     }
 

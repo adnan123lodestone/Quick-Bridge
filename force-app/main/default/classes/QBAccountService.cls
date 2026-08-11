@@ -8,9 +8,16 @@ public class QBAccountService {
     }
     
     public static void syncAccountsToQuickBooks(List<Account> accounts, Boolean isInsert) {
+        syncAccountsToQuickBooksShared(accounts, isInsert);
+    }
+
+    public static ConnectorExecutionResult syncAccountsToQuickBooksShared(List<Account> accounts, Boolean isInsert) {
+        ConnectorExecutionResult result = ConnectorExecutionResult.success();
+        result.processedCount = accounts == null ? 0 : accounts.size();
         for (Account acc : accounts) {
             try {
-                syncAccountToQuickBooks(acc, isInsert);
+                syncAccountToQuickBooksInternal(acc, isInsert, true);
+                result.successfulCount++;
             } catch (Exception e) {
                 System.debug('Error syncing account ID ' + acc.Id + ': ' + e.getMessage());
                 System.debug(e.getStackTraceString());
@@ -19,13 +26,31 @@ public class QBAccountService {
                 'QBAccountService.syncAccountsToQuickBooks',
                 e,
                 'Account',
-                acc == null ? null : acc.Id
+                    acc == null ? null : acc.Id
                     );
+                result.failedCount++;
+                result.addError(e.getMessage());
+                if (IntegrationRetryPolicy.isRetryable(e)) {
+                    result.retryable = true;
+                    result.retryDelaySeconds = 60;
+                    if (acc != null && acc.Id != null) {
+                        result.retryRecordIds.add(acc.Id);
+                    }
+                }
             }
         }
+        return result;
     }
     
     public static SyncResult syncAccountToQuickBooks(Account acc, Boolean forceCreate) {
+        return syncAccountToQuickBooksInternal(acc, forceCreate, false);
+    }
+
+    private static SyncResult syncAccountToQuickBooksInternal(
+        Account acc,
+        Boolean forceCreate,
+        Boolean surfaceTypedFailure
+    ) {
         if (acc == null) {
             throw new QBIntegrationException('Account is required for QuickBooks sync.');
         }
@@ -34,7 +59,7 @@ public class QBAccountService {
         result.accountId = acc.Id;
         
         if (forceCreate || acc.QuickbookID__c == null) {
-            String qbCustomerId = createCustomerInQuickBooks(acc);
+            String qbCustomerId = createCustomerInQuickBooks(acc, surfaceTypedFailure);
             result.created = true;
             result.quickBooksId = qbCustomerId;
             
@@ -64,7 +89,7 @@ public class QBAccountService {
                 }
             }
         } else {
-            updateCustomerInQuickBooks(acc);
+            updateCustomerInQuickBooks(acc, surfaceTypedFailure);
             result.created = false;
             result.quickBooksId = acc.QuickbookID__c;
         }
@@ -72,7 +97,10 @@ public class QBAccountService {
         return result;
     }
     
-    private static String createCustomerInQuickBooks(Account acc) {
+    private static String createCustomerInQuickBooks(
+        Account acc,
+        Boolean surfaceTypedFailure
+    ) {
         Map<String, Object> customerMap = new Map<String, Object>();
         Map<String, String> fieldMap = QBObjectMappings.getAccountToCustomerMapping();
         
@@ -169,11 +197,21 @@ public class QBAccountService {
             'Account',
             acc == null ? null : acc.Id
                 );
-            throw new QBIntegrationException('Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody());
+            String errorMessage = 'Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody();
+            if (surfaceTypedFailure == true) {
+                throw IntegrationRetryPolicy.exceptionForStatus(
+                    res.getStatusCode(),
+                    errorMessage
+                );
+            }
+            throw new QBIntegrationException(errorMessage);
         }
     }
     
-    private static void updateCustomerInQuickBooks(Account acc) {
+    private static void updateCustomerInQuickBooks(
+        Account acc,
+        Boolean surfaceTypedFailure
+    ) {
         String endpoint = '/customer';
         String recordTypeName = 'Customer';
         
@@ -195,7 +233,14 @@ public class QBAccountService {
             'Account',
             acc == null ? null : acc.Id
                 );
-            throw new QBIntegrationException('Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody());
+            String errorMessage = 'Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody();
+            if (surfaceTypedFailure == true) {
+                throw IntegrationRetryPolicy.exceptionForStatus(
+                    queryRes.getStatusCode(),
+                    errorMessage
+                );
+            }
+            throw new QBIntegrationException(errorMessage);
         }
         
         Map<String, Object> existingCustomer = (Map<String, Object>)JSON.deserializeUntyped(queryRes.getBody());
@@ -279,7 +324,14 @@ public class QBAccountService {
             'Account',
             acc == null ? null : acc.Id
                 );
-            throw new QBIntegrationException('Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody());
+            String errorMessage = 'Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody();
+            if (surfaceTypedFailure == true) {
+                throw IntegrationRetryPolicy.exceptionForStatus(
+                    updateRes.getStatusCode(),
+                    errorMessage
+                );
+            }
+            throw new QBIntegrationException(errorMessage);
         }
     }
     

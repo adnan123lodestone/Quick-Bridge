@@ -4,6 +4,9 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     private String lastSyncDate;
     private Id defaultAccountRecordTypeId;
     private Id personAccountRecordTypeId;
+    private ConnectorExecutionResult sharedExecutionResult;
+    private Set<String> sharedFailedReferences = new Set<String>();
+    private Integer sharedAnonymousFailures = 0;
     
     public QBCustomerToAccountSyncBatch() {
         Datetime yesterday = Datetime.now().addDays(-1);
@@ -12,6 +15,32 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     
     public QBCustomerToAccountSyncBatch(String syncDate) {
         this.lastSyncDate = syncDate;
+    }
+
+    /**
+     * Executes the existing inbound behavior while exposing partial failures to
+     * the shared runtime. The legacy Batchable entry points remain unchanged.
+     */
+    public ConnectorExecutionResult executeSharedScope(List<String> scope) {
+        sharedExecutionResult = ConnectorExecutionResult.success();
+        sharedFailedReferences.clear();
+        sharedAnonymousFailures = 0;
+        Integer submittedCount = scope == null ? 0 : scope.size();
+        execute(null, scope);
+
+        sharedExecutionResult.processedCount = submittedCount;
+        Integer detectedFailures = Math.min(
+            submittedCount,
+            sharedFailedReferences.size() + sharedAnonymousFailures
+        );
+        if (String.isNotBlank(sharedExecutionResult.errorSummary) && detectedFailures == 0) {
+            detectedFailures = Math.min(1, submittedCount);
+        }
+        sharedExecutionResult.failedCount = detectedFailures;
+        sharedExecutionResult.successfulCount = Math.max(0, submittedCount - detectedFailures);
+        ConnectorExecutionResult result = sharedExecutionResult;
+        sharedExecutionResult = null;
+        return result;
     }
     
     public Iterable<String> start(Database.BatchableContext bc) {
@@ -40,6 +69,7 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         } catch (Exception e) {
             ErrorLogUtility.logException('QuickBooks', 'QBCustomerToAccountSyncBatch.execute', e, null, null);
+            recordSharedFailure(null, e.getMessage());
             return;
         }
         QBTriggerHandler.isAccountProcessing = true;
@@ -103,7 +133,11 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                             }
 
                             accountsToUpsert.add(accountToSync);
+                        } else {
+                            recordSharedFailure(customerId, 'QuickBooks customer did not produce an Account record.');
                         }
+                    } else {
+                        recordSharedFailure(customerId, 'QuickBooks customer payload was blank or malformed.');
                     }
                 } catch (Exception e) {
                     System.debug('Error processing customer ' + customerId + ': ' + e.getMessage());
@@ -117,6 +151,11 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                     context.errorCategory = 'Code Exception';
                     context.externalReference = customerId;
                     ErrorLogUtility.logError(context);
+                    recordSharedFailure(
+                        customerId,
+                        e.getMessage(),
+                        ConnectorInboundOperationExecutor.isRetryableException(e)
+                    );
                 }
             }
             
@@ -151,6 +190,11 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
 
                         Boolean isPerson = isPersonAccountEnabled && upsertedAccount.RecordTypeId == personAccountRecordTypeId;
                         qbIdToIsPersonMap.put(upsertedAccount.QuickbookID__c, isPerson);
+                    } else {
+                        recordSharedFailure(
+                            deduped[i].QuickbookID__c,
+                            firstDatabaseError(results[i].getErrors())
+                        );
                     }
                 }
                 IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', successCount);
@@ -180,11 +224,45 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                 null,
                 null
                     );
+                for (Integer i = 0; i < contactResults.size(); i++) {
+                    if (!contactResults[i].isSuccess()) {
+                        recordSharedFailure(
+                            contactsToUpsert[i].External_Id__c,
+                            firstDatabaseError(contactResults[i].getErrors())
+                        );
+                    }
+                }
             }
             
         } finally {
             QBTriggerHandler.isAccountProcessing = false;
         }
+    }
+
+    private void recordSharedFailure(String externalReference, String message) {
+        recordSharedFailure(externalReference, message, false);
+    }
+
+    private void recordSharedFailure(String externalReference, String message, Boolean retryable) {
+        if (sharedExecutionResult == null) {
+            return;
+        }
+        if (String.isBlank(externalReference)) {
+            sharedAnonymousFailures++;
+        } else {
+            sharedFailedReferences.add(externalReference);
+        }
+        sharedExecutionResult.addError(message);
+        if (retryable == true) {
+            sharedExecutionResult.retryable = true;
+            sharedExecutionResult.retryDelaySeconds = 60;
+        }
+    }
+
+    private static String firstDatabaseError(Database.Error[] errors) {
+        return errors == null || errors.isEmpty()
+            ? 'QuickBooks customer synchronization failed.'
+            : errors[0].getStatusCode() + ': ' + errors[0].getMessage();
     }
 
     private Map<String, Object> hydrateCustomerData(String customerScopeValue) {
@@ -231,6 +309,21 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                 try {
                     putFieldValue(account, sfField, qbValue);
                 } catch(Exception e) {}
+            }
+        }
+
+        // Configuration can intentionally omit the Name mapping. Preserve the
+        // mapped value when present, but ensure business Accounts remain DML-valid.
+        if (String.isBlank(account.Name)) {
+            String displayName = (String) customerData.get('DisplayName');
+            String companyName = (String) customerData.get('CompanyName');
+            String fullyQualifiedName = (String) customerData.get('FullyQualifiedName');
+            if (String.isNotBlank(displayName)) {
+                account.Name = displayName;
+            } else if (String.isNotBlank(companyName)) {
+                account.Name = companyName;
+            } else if (String.isNotBlank(fullyQualifiedName)) {
+                account.Name = fullyQualifiedName;
             }
         }
         
@@ -339,16 +432,15 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         // We detect this by checking whether the field's API name starts with 'Person'
         // (e.g. PersonEmail, PersonBirthdate) or is one of the shared name fields that
         // are only writable via person accounts (FirstName, LastName).
-        if (personAccountRecordTypeId != null) {
-            String resolvedName = fieldDescribe.getName();
-            Boolean isPersonOnlyField = resolvedName.startsWith('Person')
-                || resolvedName == 'FirstName'
-                || resolvedName == 'LastName';
-            if (isPersonOnlyField) {
-                Id rtId = (Id) record.get('RecordTypeId');
-                if (rtId == null || rtId != personAccountRecordTypeId) {
-                    return;
-                }
+        String resolvedName = fieldDescribe.getName();
+        Boolean isPersonOnlyField = resolvedName.startsWith('Person')
+            || resolvedName == 'FirstName'
+            || resolvedName == 'LastName'
+            || resolvedName.endsWith('__pc');
+        if (isPersonOnlyField) {
+            Id rtId = (Id) record.get('RecordTypeId');
+            if (personAccountRecordTypeId == null || rtId == null || rtId != personAccountRecordTypeId) {
+                return;
             }
         }
 

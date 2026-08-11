@@ -2,6 +2,9 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
   private Set<Id> orderIds;
   private Boolean isInitialSync;
   private Boolean mapDraftOrdersAsEstimates;
+  private ConnectorExecutionResult sharedExecutionResult;
+  private Set<Id> sharedSuccessfulOrderIds = new Set<Id>();
+  private Set<Id> sharedFailedOrderIds = new Set<Id>();
 
   // QBO Invoice/Estimate properties that are server-calculated and must never be sent;
   // including them causes ValidationFault 2010 ("unsupported property").
@@ -28,6 +31,18 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
   }
 
   public Database.QueryLocator start(Database.BatchableContext bc) {
+    return Database.getQueryLocator(buildOrderScopeQuery());
+  }
+
+  public static List<Order> loadOrdersForSharedExecution(Set<Id> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return new List<Order>();
+    }
+    Set<Id> orderIds = ids;
+    return (List<Order>) Database.query(buildOrderScopeQuery());
+  }
+
+  private static String buildOrderScopeQuery() {
     String orderFields = buildOrderQueryFields();
     String accountFields = getAccountQboIdQueryFields();
     String productFields = getProductQboIdQueryFields();
@@ -40,7 +55,21 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
       buildOrderItemQueryFields() +
       ' FROM OrderItems)' +
       ' FROM Order WHERE Id IN :orderIds';
-    return Database.getQueryLocator(query);
+    return query;
+  }
+
+  public ConnectorExecutionResult executeSharedScope(List<Order> scope) {
+    sharedExecutionResult = ConnectorExecutionResult.success();
+    sharedSuccessfulOrderIds.clear();
+    sharedFailedOrderIds.clear();
+    execute(null, scope);
+    sharedExecutionResult.processedCount = scope == null ? 0 : scope.size();
+    sharedExecutionResult.failedCount = sharedFailedOrderIds.size();
+    sharedSuccessfulOrderIds.removeAll(sharedFailedOrderIds);
+    sharedExecutionResult.successfulCount = sharedSuccessfulOrderIds.size();
+    ConnectorExecutionResult result = sharedExecutionResult;
+    sharedExecutionResult = null;
+    return result;
   }
 
   private static String getOrderItemQbLineIdQueryFields() {
@@ -163,6 +192,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
             System.debug(
               'Skipping Order ' + ord.Id + ' because it has no Line Items.'
             );
+            recordSharedFailure(ord.Id, 'Order has no line items.', false, null);
             continue;
           }
 
@@ -185,6 +215,12 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
               null,
               'Order',
               ord.Id
+            );
+            recordSharedFailure(
+              ord.Id,
+              'Order Account has no QBO Customer ID.',
+              true,
+              null
             );
             continue;
           }
@@ -219,6 +255,12 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
               null,
               'Order',
               ord.Id
+            );
+            recordSharedFailure(
+              ord.Id,
+              'One or more Order products have no QBO Item ID.',
+              true,
+              null
             );
             continue;
           }
@@ -399,6 +441,7 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
             try { ordToUpdate.put(getQboIdField('Order'), newQbId); } catch(Exception e){}
             try { ordToUpdate.put(getSyncTokenField('Order'), newSyncToken); } catch(Exception e){}
             ordersToUpdate.add(ordToUpdate);
+            sharedSuccessfulOrderIds.add(ord.Id);
 
             List<Object> qboLines = (List<Object>) qboResponseObj.get('Line');
             if (qboLines != null) {
@@ -437,6 +480,14 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
               'Order',
               ord == null ? null : ord.Id
             );
+            recordSharedFailure(
+              ord == null ? null : ord.Id,
+              'QBO sales order sync failed.',
+              IntegrationRetryPolicy.isRetryable(
+                res == null ? null : res.getStatusCode()
+              ),
+              res == null ? null : res.getStatusCode()
+            );
           }
         } catch (Exception e) {
           System.debug(
@@ -451,6 +502,12 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
             e,
             'Order',
             ord == null ? null : ord.Id
+          );
+          recordSharedFailure(
+            ord == null ? null : ord.Id,
+            e.getMessage(),
+            IntegrationRetryPolicy.isRetryable(e),
+            null
           );
         }
       }
@@ -470,6 +527,16 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
           null,
           null
         );
+        for (Integer i = 0; i < orderResults.size(); i++) {
+          if (!orderResults[i].isSuccess()) {
+            recordSharedFailure(
+              ordersToUpdate[i].Id,
+              orderResults[i].getErrors()[0].getMessage(),
+              false,
+              null
+            );
+          }
+        }
       }
       if (!itemsToUpdate.isEmpty()) {
         Database.SaveResult[] itemResults = Database.update(itemsToUpdate, false);
@@ -482,10 +549,42 @@ public class QBSalesOrderSyncBatch implements Database.Batchable<sObject>, Datab
           null,
           null
         );
+        for (Integer i = 0; i < itemResults.size(); i++) {
+          if (!itemResults[i].isSuccess()) {
+            recordSharedFailure(
+              scope != null && scope.size() == 1 ? scope[0].Id : null,
+              itemResults[i].getErrors()[0].getMessage(),
+              false,
+              null
+            );
+          }
+        }
       }
     } finally {
       // Re-enable order triggers
       QuickBooksInvoiceHandler.setBatchContext(false);
+    }
+  }
+
+  private void recordSharedFailure(
+    Id orderId,
+    String message,
+    Boolean retryable,
+    Integer statusCode
+  ) {
+    if (sharedExecutionResult == null) {
+      return;
+    }
+    if (orderId != null) {
+      sharedFailedOrderIds.add(orderId);
+    }
+    sharedExecutionResult.addError(message);
+    if (retryable == true) {
+      sharedExecutionResult.retryable = true;
+      sharedExecutionResult.retryDelaySeconds = 60;
+      if (orderId != null && !sharedExecutionResult.retryRecordIds.contains(orderId)) {
+        sharedExecutionResult.retryRecordIds.add(orderId);
+      }
     }
   }
 

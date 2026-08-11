@@ -10,17 +10,26 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
     private Set<Id> rateLimitedIds = new Set<Id>();
     private Integer retryAfterSeconds = 60;
     private Boolean hitRateLimit = false;
+    private String sharedErrorSummary;
+    private Integer sharedDmlFailureCount = 0;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
+    @TestVisible private static Map<String, String> testFieldMap;
 
     global ShopifyProductsOutboundBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds    = recordIds;
         this.isInitialSync = isInitialSync;
-        this.fieldMap = ShopifyObjectMappings.getProductToShopifyMapping();
+        this.fieldMap = Test.isRunningTest() && testFieldMap != null
+            ? new Map<String, String>(testFieldMap)
+            : ShopifyObjectMappings.getProductToShopifyMapping();
         this.shopifyIdField = resolveFieldName(Schema.SObjectType.Product2.fields.getMap(), 'shopify_id__c');
     }
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
+        return Database.getQueryLocator(sourceQuery());
+    }
+
+    private String sourceQuery() {
         Map<String, Schema.SObjectField> product2Fields = Schema.SObjectType.Product2.fields.getMap();
         Set<String> fieldSet = new Set<String>{ 'id', 'name', 'stockkeepingunit', 'isactive' };
         for (String sfField : fieldMap.keySet()) {
@@ -35,7 +44,7 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
         }
         String soql = 'SELECT ' + String.join(new List<String>(selected), ', ') +
                       ' FROM Product2 WHERE Id IN :recordIds';
-        return Database.getQueryLocator(soql);
+        return soql;
     }
 
     global void execute(Database.BatchableContext bc, List<sObject> scope) {
@@ -44,7 +53,9 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
             return;
         }
 
-        IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
+        if (!bypassAuthCheckForTest) {
+            IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
+        }
 
         List<Product2> toUpdate = new List<Product2>();
 
@@ -69,6 +80,7 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
                 }
             } catch (Exception e) {
                 errorCount++;
+                if (String.isBlank(sharedErrorSummary)) sharedErrorSummary = e.getMessage();
                 ErrorLogUtility.logException(
                     'Shopify',
                     'ShopifyProductsOutboundBatch.execute',
@@ -81,6 +93,17 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
 
         if (!toUpdate.isEmpty()) {
             Database.SaveResult[] updateResults = Database.update(toUpdate, false);
+            for (Integer resultIndex = 0; resultIndex < updateResults.size(); resultIndex++) {
+                if (!updateResults[resultIndex].isSuccess()) {
+                    sharedDmlFailureCount++;
+                    if (String.isBlank(sharedErrorSummary)) {
+                        sharedErrorSummary =
+                            'Salesforce ID update failed for Product2 ' +
+                            String.valueOf(toUpdate[resultIndex].Id) + ': ' +
+                            updateResults[resultIndex].getErrors()[0].getMessage();
+                    }
+                }
+            }
             ErrorLogUtility.logDmlResults(
                 'Shopify',
                 'ShopifyProductsOutboundBatch.execute.updateShopifyIds',
@@ -105,6 +128,80 @@ global class ShopifyProductsOutboundBatch implements Database.Batchable<sObject>
                 delayMinutes
             );
         }
+    }
+
+    public static ConnectorExecutionResult executeSharedScope(
+        ConnectorExecutionRequest request,
+        List<SObject> scope
+    ) {
+        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
+            return ConnectorExecutionResult.failed(
+                'Shopify license is not active.',
+                false,
+                null
+            );
+        }
+        Set<Id> scopeIds = new Set<Id>();
+        for (SObject recordValue : scope == null ? new List<SObject>() : scope) {
+            if (recordValue != null && recordValue.Id != null) scopeIds.add(recordValue.Id);
+        }
+        ShopifyProductsOutboundBatch batchValue = new ShopifyProductsOutboundBatch(
+            scopeIds,
+            request != null && request.initialSync == true
+        );
+        Set<Id> recordIds = scopeIds;
+        List<SObject> hydratedScope = scopeIds.isEmpty()
+            ? new List<SObject>()
+            : Database.query(batchValue.sourceQuery());
+        batchValue.execute(null, hydratedScope);
+
+        if (!bypassAuthCheckForTest) {
+            IntegrationUsageService.recordSuccessfulRecordSync('Shopify', batchValue.successCount);
+            IntegrationUsageService.incrementEndpointUsage(
+                'Shopify',
+                batchValue.successCount + batchValue.errorCount
+            );
+        }
+
+        ConnectorExecutionResult result = ConnectorExecutionResult.success();
+        result.processedCount = hydratedScope.size();
+        result.successfulCount = Math.max(
+            0,
+            batchValue.successCount - batchValue.sharedDmlFailureCount
+        );
+        Integer unresolvedCount = Math.max(
+            0,
+            hydratedScope.size() -
+            batchValue.successCount -
+            batchValue.errorCount -
+            batchValue.rateLimitedIds.size()
+        );
+        result.failedCount =
+            batchValue.errorCount +
+            batchValue.sharedDmlFailureCount +
+            batchValue.rateLimitedIds.size() +
+            unresolvedCount;
+        result.retryable =
+            batchValue.errorCount == 0 &&
+            batchValue.sharedDmlFailureCount == 0 &&
+            unresolvedCount == 0 &&
+            !batchValue.rateLimitedIds.isEmpty();
+        result.retryDelaySeconds = result.retryable ? batchValue.retryAfterSeconds : null;
+        result.retryRecordIds = new List<Id>(batchValue.rateLimitedIds);
+        if (
+            batchValue.errorCount > 0 ||
+            batchValue.sharedDmlFailureCount > 0 ||
+            unresolvedCount > 0
+        ) {
+            result.errorSummary = String.isBlank(batchValue.sharedErrorSummary)
+                ? (unresolvedCount > 0
+                    ? 'Shopify product response did not include an external ID.'
+                    : 'One or more Shopify product records failed to synchronize.')
+                : batchValue.sharedErrorSummary;
+        } else if (!batchValue.rateLimitedIds.isEmpty()) {
+            result.errorSummary = 'Shopify product synchronization was rate limited.';
+        }
+        return result;
     }
 
     private Map<String, Object> buildProductPayload(Product2 prod, Map<String, String> fieldMap) {

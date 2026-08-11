@@ -46,9 +46,7 @@ public with sharing class NetSuiteApiClient {
     Boolean hasMore = true;
     while (hasMore) {
       guard++;
-      if (guard > MAX_PAGES) {
-        throw new NetSuiteApiClientException('NetSuite SuiteQL pagination exceeded the safety limit.');
-      }
+      assertPageWithinLimit(guard);
       Map<String, Object> payload = new Map<String, Object>{'q' => query};
       if (parameters != null && !parameters.isEmpty()) {
         payload.put('params', parameters);
@@ -140,6 +138,16 @@ public with sharing class NetSuiteApiClient {
 
   private static String urlEncode(String value) {
     return EncodingUtil.urlEncode(value, 'UTF-8').replace('+', '%20');
+  }
+
+  private static void assertPageWithinLimit(Integer pageNumber) {
+    try {
+      ConnectorHttpClient.assertPageWithinLimit(pageNumber, MAX_PAGES);
+    } catch (Exception exceptionValue) {
+      throw new NetSuiteApiClientException(
+        'NetSuite SuiteQL pagination exceeded the safety limit.'
+      );
+    }
   }
 
   public class NetSuiteApiClientException extends Exception {}

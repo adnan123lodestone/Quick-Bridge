@@ -20,7 +20,6 @@ global with sharing class GenericScheduleDispatcher implements Schedulable {
 
     Integer dispatchSize = Math.min(MAX_DISPATCH_SIZE, availableQueueableJobs);
     Datetime nowValue = Datetime.now();
-    String leaseToken = generateLeaseToken();
     Datetime leaseExpiresAt = nowValue.addMinutes(DEFAULT_LEASE_MINUTES);
     List<Scheduled_Integration_Job__c> dueJobs = [
       SELECT
@@ -40,7 +39,7 @@ global with sharing class GenericScheduleDispatcher implements Schedulable {
         (Status__c IN ('Ready', 'Active')
         AND (Next_Run_At__c = NULL
         OR Next_Run_At__c <= :nowValue))
-        OR (Status__c = 'Claimed'
+        OR (Status__c IN ('Claimed', 'Running')
         AND Lease_Expires_At__c < :nowValue)
       LIMIT :dispatchSize
       FOR UPDATE
@@ -51,26 +50,31 @@ global with sharing class GenericScheduleDispatcher implements Schedulable {
 
     for (Scheduled_Integration_Job__c job : dueJobs) {
       job.Status__c = 'Claimed';
-      job.Lease_Token__c = leaseToken;
+      job.Lease_Token__c = generateLeaseToken();
       job.Lease_Expires_At__c = leaseExpiresAt;
       job.Last_Claimed_At__c = nowValue;
       job.Last_Run_At__c = nowValue;
     }
     update dueJobs;
 
-    List<Scheduled_Integration_Job__c> processorUpdates = new List<Scheduled_Integration_Job__c>();
     for (Scheduled_Integration_Job__c job : dueJobs) {
-      Id processorJobId = System.enqueueJob(
-        new ScheduledIntegrationJobProcessor(job.Id, leaseToken)
-      );
-      processorUpdates.add(
-        new Scheduled_Integration_Job__c(
-          Id = job.Id,
-          Processor_Job_Id__c = String.valueOf(processorJobId)
-        )
-      );
+      try {
+        Id processorJobId = System.enqueueJob(
+          new ScheduledIntegrationJobProcessor(job.Id, job.Lease_Token__c)
+        );
+        job.Processor_Job_Id__c = String.valueOf(processorJobId);
+      } catch (Exception enqueueException) {
+        job.Status__c = 'Failed';
+        job.Lease_Token__c = null;
+        job.Lease_Expires_At__c = null;
+        job.Processor_Job_Id__c = null;
+        job.Last_Error__c = boundedError(
+          'Unable to enqueue the scheduled operation: ' +
+          enqueueException.getMessage()
+        );
+      }
     }
-    update processorUpdates;
+    update dueJobs;
   }
 
   private static String generateLeaseToken() {
@@ -147,5 +151,11 @@ global with sharing class GenericScheduleDispatcher implements Schedulable {
         : errorMessage.left(32768);
     }
     update job;
+  }
+
+  private static String boundedError(String message) {
+    return String.isBlank(message)
+      ? 'Scheduled operation failed.'
+      : message.left(32768);
   }
 }

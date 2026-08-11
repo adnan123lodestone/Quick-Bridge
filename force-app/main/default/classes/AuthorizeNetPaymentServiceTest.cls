@@ -94,6 +94,32 @@ private class AuthorizeNetPaymentServiceTest {
     }
 
     @IsTest
+    static void approvedResponseSurvivesSettlementFailures() {
+        Test.setMock(HttpCalloutMock.class, new SuccessMock());
+        PaymentSettlementService.forcedFailureStages = new Set<String>{
+            'usage',
+            'invoice',
+            'order'
+        };
+        AuthorizeNetPaymentService.PaymentRequest request =
+            new AuthorizeNetPaymentService.PaymentRequest();
+        request.amount = 25.00;
+        request.orderId = createPaymentOrder().Id;
+        request.dataDescriptor = 'COMMON.ACCEPT.INAPP.PAYMENT';
+        request.dataValue = 'opaque-token';
+
+        Test.startTest();
+        AuthorizeNetPaymentService.PaymentResponse response =
+            AuthorizeNetPaymentService.processOpaquePayment(request);
+        Test.stopTest();
+
+        System.assertEquals(true, response.success);
+        System.assertEquals('Transaction Successful', response.message);
+        System.assertEquals('60012345678', response.transId);
+        PaymentSettlementService.forcedFailureStages.clear();
+    }
+
+    @IsTest
     static void processOpaquePayment_succeedsWithPendingWork() {
         Test.setMock(HttpCalloutMock.class, new SuccessMock());
 

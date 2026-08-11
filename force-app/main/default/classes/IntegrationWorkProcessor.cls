@@ -18,8 +18,13 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
             return;
         }
         if (hasExpiredLease(lockRows)) {
-            markRetry(item, 'Processor lease expired before execution.', true);
+            RetryOutcome retryOutcome = markRetry(item, 'Processor lease expired before execution.', true);
             releaseLocks(lockRows, 'Expired');
+            completeOrRenewFailedSchedule(
+                item,
+                'Processor lease expired before execution.',
+                retryOutcome
+            );
             return;
         }
 
@@ -41,6 +46,7 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
                     Processor_Token__c = null,
                     Lease_Expires_At__c = null
                 );
+                ConnectorWorkOrchestrationService.renew(item);
             } else {
                 update new Integration_Work_Item__c(
                     Id = item.Id,
@@ -51,10 +57,19 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
                 );
             }
             releaseLocks(lockRows, 'Released');
+            if (latest.Needs_Reprocess__c != true) {
+                ConnectorWorkOrchestrationService.completeSuccess(item);
+            }
         } catch (Exception e) {
             IntegrationRetryPolicy.RetryDecision decision = IntegrationRetryPolicy.classify(e);
-            markRetry(item, e.getTypeName() + ': ' + e.getMessage(), decision.retryable);
+            String failureMessage = e.getTypeName() + ': ' + e.getMessage();
+            RetryOutcome retryOutcome = markRetry(
+                item,
+                failureMessage,
+                decision.retryable
+            );
             releaseLocks(lockRows, 'Released');
+            completeOrRenewFailedSchedule(item, failureMessage, retryOutcome);
         }
     }
 
@@ -91,7 +106,8 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
         return rows.size() == lockKeys.size() ? rows : new List<Integration_Work_Lock__c>();
     }
 
-    private void markRetry(Integration_Work_Item__c item, String message, Boolean retryable) {
+    private RetryOutcome markRetry(Integration_Work_Item__c item, String message, Boolean retryable) {
+        RetryOutcome outcome = new RetryOutcome();
         Integer attempts = item.Attempt_Count__c == null ? 0 : Integer.valueOf(item.Attempt_Count__c);
         attempts++;
         Integer maxAttempts = IntegrationRetryPolicy.getMaxAttempts(item);
@@ -107,10 +123,28 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
         if (retryable && attempts < maxAttempts) {
             updateItem.Status__c = IntegrationWorkService.STATUS_RETRY;
             updateItem.Next_Attempt_At__c = IntegrationRetryPolicy.nextAttemptAt(attempts);
+            outcome.willRetry = true;
         } else {
             updateItem.Status__c = IntegrationWorkService.STATUS_FAILED;
         }
         update updateItem;
+        return outcome;
+    }
+
+    private static void completeOrRenewFailedSchedule(
+        Integration_Work_Item__c item,
+        String failureMessage,
+        RetryOutcome retryOutcome
+    ) {
+        if (retryOutcome != null && retryOutcome.willRetry == true) {
+            ConnectorWorkOrchestrationService.renew(item);
+        } else {
+            ConnectorWorkOrchestrationService.completeFailure(item, failureMessage);
+        }
+    }
+
+    private class RetryOutcome {
+        Boolean willRetry = false;
     }
 
     private void releaseLocks(List<Integration_Work_Lock__c> lockRows, String status) {

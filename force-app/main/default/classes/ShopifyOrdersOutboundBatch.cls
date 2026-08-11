@@ -12,9 +12,13 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
     private Set<Id> rateLimitedIds = new Set<Id>();
     private Integer retryAfterSeconds = 60;
     private Boolean hitRateLimit = false;
+    private String sharedErrorSummary;
+    private Integer sharedDmlFailureCount = 0;
 
     @TestVisible private static Boolean bypassAuthCheckForTest = false;
     @testVisible private static Boolean suppressFinishSchedule = false;
+    @TestVisible private static Map<String, String> testFieldMap;
+    @TestVisible private static Map<String, String> testLineItemFieldMap;
     // Lightweight error context collected during callout loop, flushed after all callouts.
     private class PendingError {
         String method;
@@ -45,13 +49,21 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
     global ShopifyOrdersOutboundBatch(Set<Id> recordIds, Boolean isInitialSync) {
         this.recordIds = recordIds;
         this.isInitialSync = isInitialSync;
-        this.fieldMap = ShopifyObjectMappings.getOrderToShopifyMapping();
-        this.lineItemFieldMap = ShopifyObjectMappings.getOrderItemToLineItemMapping();
+        this.fieldMap = Test.isRunningTest() && testFieldMap != null
+            ? new Map<String, String>(testFieldMap)
+            : ShopifyObjectMappings.getOrderToShopifyMapping();
+        this.lineItemFieldMap = Test.isRunningTest() && testLineItemFieldMap != null
+            ? new Map<String, String>(testLineItemFieldMap)
+            : ShopifyObjectMappings.getOrderItemToLineItemMapping();
         this.shopifyIdField = resolveFieldName(Schema.SObjectType.Order.fields.getMap(), 'shopify_id__c');
         this.acctShopifyIdField = resolveFieldName(Schema.SObjectType.Account.fields.getMap(), 'shopify_id__c');
     }
 
     global Database.QueryLocator start(Database.BatchableContext bc) {
+        return Database.getQueryLocator(sourceQuery());
+    }
+
+    private String sourceQuery() {
         Map<String, Schema.SObjectField> orderFields = Schema.SObjectType.Order.fields.getMap();
         Set<String> fieldSet = new Set<String>{
             'id', 'orderreferencenumber', 'effectivedate', 'status'
@@ -73,7 +85,7 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
                       ', (SELECT Id, Quantity, UnitPrice, Description,' +
                       ' Product2.Name, Product2.StockKeepingUnit FROM OrderItems)' +
                       ' FROM Order WHERE Id IN :recordIds';
-        return Database.getQueryLocator(soql);
+        return soql;
     }
 
     global void execute(Database.BatchableContext bc, List<sObject> scope) {
@@ -82,7 +94,9 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
             return;
         }
 
-        IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
+        if (!bypassAuthCheckForTest) {
+            IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
+        }
 
         List<Order> toUpdate       = new List<Order>();
         List<PendingError> errors  = new List<PendingError>();
@@ -99,6 +113,9 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
                 Map<String, Object> payload = buildOrderPayload(ord, fieldMap);
                 if (payload == null) {
                     errorCount++;
+                    if (String.isBlank(sharedErrorSummary)) {
+                        sharedErrorSummary = 'Order has no line items and cannot be sent to Shopify';
+                    }
                     errors.add(new PendingError(
                         'ShopifyOrdersOutboundBatch.execute',
                         new IllegalArgumentException('Order has no line items and cannot be sent to Shopify'),
@@ -118,6 +135,7 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
                 }
             } catch (Exception e) {
                 errorCount++;
+                if (String.isBlank(sharedErrorSummary)) sharedErrorSummary = e.getMessage();
                 errors.add(new PendingError(
                     'ShopifyOrdersOutboundBatch.execute', e, ord == null ? null : ord.Id
                 ));
@@ -127,6 +145,17 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
         // ── Phase 2: DML — all callouts are finished ──────────────────────────────
         if (!toUpdate.isEmpty()) {
             Database.SaveResult[] updateResults = Database.update(toUpdate, false);
+            for (Integer resultIndex = 0; resultIndex < updateResults.size(); resultIndex++) {
+                if (!updateResults[resultIndex].isSuccess()) {
+                    sharedDmlFailureCount++;
+                    if (String.isBlank(sharedErrorSummary)) {
+                        sharedErrorSummary =
+                            'Salesforce ID update failed for Order ' +
+                            String.valueOf(toUpdate[resultIndex].Id) + ': ' +
+                            updateResults[resultIndex].getErrors()[0].getMessage();
+                    }
+                }
+            }
             ErrorLogUtility.logDmlResults(
                 'Shopify',
                 'ShopifyOrdersOutboundBatch.execute.updateShopifyIds',
@@ -169,6 +198,80 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
                 delayMinutes
             );
         }
+    }
+
+    public static ConnectorExecutionResult executeSharedScope(
+        ConnectorExecutionRequest request,
+        List<SObject> scope
+    ) {
+        if (!bypassAuthCheckForTest && !PaymentGatewayService.isClientAuthorized('Shopify')) {
+            return ConnectorExecutionResult.failed(
+                'Shopify license is not active.',
+                false,
+                null
+            );
+        }
+        Set<Id> scopeIds = new Set<Id>();
+        for (SObject recordValue : scope == null ? new List<SObject>() : scope) {
+            if (recordValue != null && recordValue.Id != null) scopeIds.add(recordValue.Id);
+        }
+        ShopifyOrdersOutboundBatch batchValue = new ShopifyOrdersOutboundBatch(
+            scopeIds,
+            request != null && request.initialSync == true
+        );
+        Set<Id> recordIds = scopeIds;
+        List<SObject> hydratedScope = scopeIds.isEmpty()
+            ? new List<SObject>()
+            : Database.query(batchValue.sourceQuery());
+        batchValue.execute(null, hydratedScope);
+
+        if (!bypassAuthCheckForTest) {
+            IntegrationUsageService.recordSuccessfulRecordSync('Shopify', batchValue.successCount);
+            IntegrationUsageService.incrementEndpointUsage(
+                'Shopify',
+                batchValue.successCount + batchValue.errorCount
+            );
+        }
+
+        ConnectorExecutionResult result = ConnectorExecutionResult.success();
+        result.processedCount = hydratedScope.size();
+        result.successfulCount = Math.max(
+            0,
+            batchValue.successCount - batchValue.sharedDmlFailureCount
+        );
+        Integer unresolvedCount = Math.max(
+            0,
+            hydratedScope.size() -
+            batchValue.successCount -
+            batchValue.errorCount -
+            batchValue.rateLimitedIds.size()
+        );
+        result.failedCount =
+            batchValue.errorCount +
+            batchValue.sharedDmlFailureCount +
+            batchValue.rateLimitedIds.size() +
+            unresolvedCount;
+        result.retryable =
+            batchValue.errorCount == 0 &&
+            batchValue.sharedDmlFailureCount == 0 &&
+            unresolvedCount == 0 &&
+            !batchValue.rateLimitedIds.isEmpty();
+        result.retryDelaySeconds = result.retryable ? batchValue.retryAfterSeconds : null;
+        result.retryRecordIds = new List<Id>(batchValue.rateLimitedIds);
+        if (
+            batchValue.errorCount > 0 ||
+            batchValue.sharedDmlFailureCount > 0 ||
+            unresolvedCount > 0
+        ) {
+            result.errorSummary = String.isBlank(batchValue.sharedErrorSummary)
+                ? (unresolvedCount > 0
+                    ? 'Shopify order response did not include an external ID.'
+                    : 'One or more Shopify order records failed to synchronize.')
+                : batchValue.sharedErrorSummary;
+        } else if (!batchValue.rateLimitedIds.isEmpty()) {
+            result.errorSummary = 'Shopify order synchronization was rate limited.';
+        }
+        return result;
     }
 
     // Returns null when the order has no usable line items (caller must skip the callout).
@@ -291,6 +394,7 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
         }
 
         String errMsg = 'Shopify orders API returned ' + res.getStatusCode() + ': ' + res.getBody();
+        if (String.isBlank(sharedErrorSummary)) sharedErrorSummary = errMsg;
         errors.add(new PendingError(
             'ShopifyOrdersOutboundBatch.upsertToShopify', errMsg, res.getStatusCode(), orderId
         ));

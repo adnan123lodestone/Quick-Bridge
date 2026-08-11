@@ -1,6 +1,9 @@
 public class QBItemToProductSyncBatch implements Database.Batchable<String>, Database.AllowsCallouts {
     
     private String lastSyncDate;
+    private ConnectorExecutionResult sharedExecutionResult;
+    private Set<String> sharedFailedReferences = new Set<String>();
+    private Integer sharedAnonymousFailures = 0;
     
     public QBItemToProductSyncBatch() {
         Datetime yesterday = Datetime.now().addDays(-1);
@@ -9,6 +12,32 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     
     public QBItemToProductSyncBatch(String syncDate) {
         this.lastSyncDate = syncDate;
+    }
+
+    /**
+     * Executes the existing inbound behavior while exposing partial failures to
+     * the shared runtime. The legacy Batchable entry points remain unchanged.
+     */
+    public ConnectorExecutionResult executeSharedScope(List<String> scope) {
+        sharedExecutionResult = ConnectorExecutionResult.success();
+        sharedFailedReferences.clear();
+        sharedAnonymousFailures = 0;
+        Integer submittedCount = scope == null ? 0 : scope.size();
+        execute(null, scope);
+
+        sharedExecutionResult.processedCount = submittedCount;
+        Integer detectedFailures = Math.min(
+            submittedCount,
+            sharedFailedReferences.size() + sharedAnonymousFailures
+        );
+        if (String.isNotBlank(sharedExecutionResult.errorSummary) && detectedFailures == 0) {
+            detectedFailures = Math.min(1, submittedCount);
+        }
+        sharedExecutionResult.failedCount = detectedFailures;
+        sharedExecutionResult.successfulCount = Math.max(0, submittedCount - detectedFailures);
+        ConnectorExecutionResult result = sharedExecutionResult;
+        sharedExecutionResult = null;
+        return result;
     }
     
     public Iterable<String> start(Database.BatchableContext bc) {
@@ -54,6 +83,8 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                                 qbIds.add(qbId);
                             }
                         }
+                    } else {
+                        recordSharedFailure(itemId, 'QuickBooks item payload was blank or malformed.');
                     }
                 } catch (Exception e) {
                     System.debug('Error processing item ' + itemId + ': ' + e.getMessage());
@@ -67,6 +98,11 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                     context.errorCategory = 'Code Exception';
                     context.externalReference = itemId;
                     ErrorLogUtility.logError(context);
+                    recordSharedFailure(
+                        itemId,
+                        e.getMessage(),
+                        ConnectorInboundOperationExecutor.isRetryableException(e)
+                    );
                 }
             }
 
@@ -89,6 +125,8 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 Product2 productToSync = processItemData(itemData, existingProd, mapping);
                 if (productToSync != null) {
                     productsToUpsert.add(productToSync);
+                } else {
+                    recordSharedFailure(qbId, 'QuickBooks item did not produce a Product record.');
                 }
             }
             
@@ -137,9 +175,15 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 }
 
                 Set<Id> productIds = new Set<Id>();
-                for (Database.UpsertResult result : results) {
+                for (Integer resultIndex = 0; resultIndex < results.size(); resultIndex++) {
+                    Database.UpsertResult result = results[resultIndex];
                     if (result.isSuccess()) {
                         productIds.add(result.getId());
+                    } else {
+                        recordSharedFailure(
+                            getProductQbIdValue(productsToUpsert[resultIndex]),
+                            firstDatabaseError(result.getErrors())
+                        );
                     }
                 }
                 IntegrationUsageService.recordSuccessfulRecordSync('QuickBooks', productIds.size());
@@ -178,7 +222,12 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 
                 if (!pricebookEntries.isEmpty()) {
                     try {
-                        Database.insert(pricebookEntries, false);
+                        Database.SaveResult[] pricebookResults = Database.insert(pricebookEntries, false);
+                        for (Database.SaveResult pricebookResult : pricebookResults) {
+                            if (!pricebookResult.isSuccess()) {
+                                recordSharedFailure(null, firstDatabaseError(pricebookResult.getErrors()));
+                            }
+                        }
                     } catch (Exception e) {
                         System.debug('Error inserting pricebook entries: ' + e.getMessage());
                         ErrorLogUtility.logException(
@@ -188,6 +237,7 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                             null,
                             null
                         );
+                        recordSharedFailure(null, e.getMessage());
                     }
                 }
             }
@@ -195,6 +245,32 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         } finally {
             QBTriggerHandler.isProductProcessing = false;
         }
+    }
+
+    private void recordSharedFailure(String externalReference, String message) {
+        recordSharedFailure(externalReference, message, false);
+    }
+
+    private void recordSharedFailure(String externalReference, String message, Boolean retryable) {
+        if (sharedExecutionResult == null) {
+            return;
+        }
+        if (String.isBlank(externalReference)) {
+            sharedAnonymousFailures++;
+        } else {
+            sharedFailedReferences.add(externalReference);
+        }
+        sharedExecutionResult.addError(message);
+        if (retryable == true) {
+            sharedExecutionResult.retryable = true;
+            sharedExecutionResult.retryDelaySeconds = 60;
+        }
+    }
+
+    private static String firstDatabaseError(Database.Error[] errors) {
+        return errors == null || errors.isEmpty()
+            ? 'QuickBooks item synchronization failed.'
+            : errors[0].getStatusCode() + ': ' + errors[0].getMessage();
     }
     
     public void finish(Database.BatchableContext bc) {

@@ -112,6 +112,9 @@ private class QBAccountRecordActionControllerTest {
         System.assertEquals(true, response.success);
         System.assertEquals('ACT-1', response.quickBooksId);
         System.assert(response.message.contains('synced from QuickBooks'));
+
+        Account syncedAccount = [SELECT Name FROM Account WHERE Id = :acc.Id];
+        System.assertEquals('Action Controller Synced', syncedAccount.Name);
         
         Contact[] contacts = [SELECT Id, Email, Email__c, AccountId FROM Contact WHERE AccountId = :acc.Id];
         System.assertEquals(1, contacts.size());

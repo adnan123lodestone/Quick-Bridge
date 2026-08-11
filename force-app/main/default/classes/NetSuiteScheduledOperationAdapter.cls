@@ -1,4 +1,4 @@
-public with sharing class NetSuiteScheduledOperationAdapter implements ScheduledOperationAdapter {
+public with sharing class NetSuiteScheduledOperationAdapter implements ScheduledOperationAdapter, DeferredScheduledOperationAdapter {
   @TestVisible private static Boolean skipExecutionForTests = false;
 
   public void execute(Scheduled_Integration_Job__c job) {
@@ -9,25 +9,59 @@ public with sharing class NetSuiteScheduledOperationAdapter implements Scheduled
     run(targetObject, job == null ? null : job.Direction__c);
   }
 
-  public static void run(String targetObject, String direction) {
-    String normalizedTarget = String.isBlank(targetObject)
-      ? 'customer'
-      : targetObject.toLowerCase().replaceAll('[^a-z0-9]', '');
+  public ConnectorScheduleDispatchResult dispatch(
+    Scheduled_Integration_Job__c job,
+    String leaseToken
+  ) {
     try {
-      if (normalizedTarget == 'customer' || normalizedTarget == 'customers' || normalizedTarget == 'account') {
+      return ConnectorWorkOrchestrationService.dispatchScheduled(
+        job,
+        leaseToken,
+        buildRequest(job, leaseToken)
+      );
+    } catch (Exception exceptionValue) {
+      return ConnectorScheduleDispatchResult.failed(exceptionValue.getMessage());
+    }
+  }
+
+  @TestVisible
+  private static IntegrationWorkRequest buildRequest(
+    Scheduled_Integration_Job__c job,
+    String leaseToken
+  ) {
+    String targetObject = job == null ? null : job.Source_Object__c;
+    String operation = operationFor(targetObject);
+    IntegrationWorkRequest request = ConnectorWorkOrchestrationService.scheduledRequest(
+      job,
+      leaseToken,
+      'NetSuite',
+      operation,
+      canonicalSourceObject(operation),
+      NetSuiteConfigService.CONNECTOR_KEY + ':' + operation,
+      'NetSuite:' + operation,
+      new Map<String, Object>{
+        'targetObject' => targetObject,
+        'direction' => job == null ? null : job.Direction__c
+      }
+    );
+    return request;
+  }
+
+  public static void run(String targetObject, String direction) {
+    try {
+      String operation = operationFor(targetObject);
+      if (operation == 'CustomerSync') {
         NetSuiteCustomerService.syncCustomers(null, null);
-      } else if (normalizedTarget == 'item' || normalizedTarget == 'items' || normalizedTarget == 'product' || normalizedTarget == 'product2') {
+      } else if (operation == 'ItemSync') {
         NetSuiteItemService.syncItems(null, null);
-      } else if (normalizedTarget == 'salesorder' || normalizedTarget == 'salesorders' || normalizedTarget == 'order') {
+      } else if (operation == 'SalesOrderSync') {
         NetSuiteSalesOrderService.syncSalesOrders(null, null);
-      } else if (normalizedTarget == 'invoice' || normalizedTarget == 'invoices') {
+      } else if (operation == 'InvoiceSync') {
         NetSuiteInvoiceService.syncInvoices(null, null);
-      } else if (normalizedTarget == 'payment' || normalizedTarget == 'payments') {
+      } else if (operation == 'PaymentSync') {
         NetSuitePaymentService.syncPayments(null, null);
-      } else if (normalizedTarget == 'fulfillment' || normalizedTarget == 'fulfillments' || normalizedTarget == 'shipment') {
+      } else if (operation == 'FulfillmentSync') {
         NetSuiteFulfillmentService.syncFulfillments(null, null);
-      } else {
-        throw new NetSuiteScheduledOperationException('Unsupported NetSuite scheduled object: ' + targetObject);
       }
       QuickBridgeAdminGuard.audit(
         'SCHEDULED_SYNC',
@@ -46,6 +80,43 @@ public with sharing class NetSuiteScheduledOperationAdapter implements Scheduled
       );
       throw e;
     }
+  }
+
+  @TestVisible
+  private static String operationFor(String targetObject) {
+    String normalizedTarget = String.isBlank(targetObject)
+      ? 'customer'
+      : targetObject.toLowerCase().replaceAll('[^a-z0-9]', '');
+    if (normalizedTarget == 'customer' || normalizedTarget == 'customers' || normalizedTarget == 'account') {
+      return 'CustomerSync';
+    }
+    if (normalizedTarget == 'item' || normalizedTarget == 'items' || normalizedTarget == 'product' || normalizedTarget == 'product2') {
+      return 'ItemSync';
+    }
+    if (normalizedTarget == 'salesorder' || normalizedTarget == 'salesorders' || normalizedTarget == 'order') {
+      return 'SalesOrderSync';
+    }
+    if (normalizedTarget == 'invoice' || normalizedTarget == 'invoices') {
+      return 'InvoiceSync';
+    }
+    if (normalizedTarget == 'payment' || normalizedTarget == 'payments') {
+      return 'PaymentSync';
+    }
+    if (normalizedTarget == 'fulfillment' || normalizedTarget == 'fulfillments' || normalizedTarget == 'shipment') {
+      return 'FulfillmentSync';
+    }
+    throw new NetSuiteScheduledOperationException(
+      'Unsupported NetSuite scheduled object: ' + targetObject
+    );
+  }
+
+  private static String canonicalSourceObject(String operation) {
+    if (operation == 'CustomerSync') return 'Customer';
+    if (operation == 'ItemSync') return 'Item';
+    if (operation == 'SalesOrderSync') return 'SalesOrder';
+    if (operation == 'InvoiceSync') return 'Invoice';
+    if (operation == 'PaymentSync') return 'Payment';
+    return 'Fulfillment';
   }
 
   public class NetSuiteScheduledOperationException extends Exception {}

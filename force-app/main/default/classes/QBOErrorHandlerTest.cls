@@ -320,6 +320,13 @@ private class QBOErrorHandlerTest {
         Test.stopTest();
 
         System.assertEquals('Customer synced from QBO.', result);
+        Account syncedAccount = [
+            SELECT Name
+            FROM Account
+            WHERE QuickbookID__c = '123'
+            LIMIT 1
+        ];
+        System.assertEquals('Test Customer', syncedAccount.Name);
     }
 
     @isTest

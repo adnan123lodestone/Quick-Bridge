@@ -2,6 +2,8 @@ public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
     
     private String endpoint;
     private String nextUrl; 
+    private Boolean sharedExecution = false;
+    private ConnectorExecutionResult sharedResult;
 
     public KlaviyoEventsBatch(String endpoint) {
         this.endpoint = endpoint;
@@ -15,6 +17,10 @@ public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
     }
 
     public void execute(Database.BatchableContext BC, List<Integer> scope) {
+        if (sharedExecution == true) {
+            sharedResult = ConnectorExecutionResult.success();
+            nextUrl = null;
+        }
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
@@ -50,11 +56,16 @@ public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
         	HttpResponse res = http.send(req);
         	if (res.getStatusCode() != 200) {
             	System.debug('HTTP callout failed. Status Code: ' + res.getStatusCode());
+                recordHttpFailure(res);
             	return;
         	}
 
         	Map<String, Object> jsonResponse = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
         	List<Object> eventsList = (List<Object>) jsonResponse.get('data');
+			if (eventsList == null && sharedExecution == true) {
+				recordFailure('Klaviyo event response is missing the data collection.', false, null);
+				return;
+			}
         	if (eventsList == null || eventsList.isEmpty()) return;
 
         	Set<String> profileIds = new Set<String>();
@@ -126,8 +137,13 @@ public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
         	if (!eventsToUpsert.isEmpty()) {
             	try {
                 	upsert eventsToUpsert Klaviyo_Event_Id__c;
+                    if (sharedExecution == true) {
+                        sharedResult.processedCount += eventsToUpsert.size();
+                        sharedResult.successfulCount += eventsToUpsert.size();
+                    }
             	} catch (Exception e) {
                 	System.debug('Upsert failed: ' + e.getMessage());
+                    recordFailure(e.getMessage(), false, null);
             	}
         	}
 
@@ -145,7 +161,23 @@ public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
              }  
         } catch (Exception e) {
             HandleCustomException.LogException(e, this.endpoint);
+            recordFailure(e.getMessage(), false, null);
         }
+    }
+
+    /** Executes one event page for ConnectorInboundBatch without legacy chaining. */
+    public ConnectorExecutionResult executeSharedPage() {
+        sharedExecution = true;
+        execute(null, new List<Integer>{ 1 });
+        if (sharedResult == null) {
+            sharedResult = ConnectorExecutionResult.failed(
+                'Klaviyo event synchronization returned no result.',
+                false,
+                null
+            );
+        }
+        sharedResult.nextCursor = nextUrl;
+        return sharedResult;
     }
 
     public void finish(Database.BatchableContext BC) {
@@ -153,6 +185,23 @@ public class KlaviyoEventsBatch implements Database.Batchable<Integer>, Database
             Database.executeBatch(new KlaviyoEventsBatch(this.nextUrl), 1);
         } else {
             System.debug('No nextUrl. All records processed.');
+        }
+    }
+
+    private void recordHttpFailure(HttpResponse response) {
+        Integer statusCode = response == null ? null : response.getStatusCode();
+        recordFailure(
+            'Klaviyo event request failed with status ' + String.valueOf(statusCode) + '.',
+            ConnectorInboundOperationExecutor.isRetryableStatus(statusCode),
+            ConnectorInboundOperationExecutor.retryAfterSeconds(response)
+        );
+    }
+
+    private void recordFailure(String message, Boolean retryable, Integer retryDelaySeconds) {
+        if (sharedExecution == true) {
+            sharedResult.mergeFrom(
+                ConnectorExecutionResult.failed(message, retryable, retryDelaySeconds)
+            );
         }
     }
 

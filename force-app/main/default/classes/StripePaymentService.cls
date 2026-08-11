@@ -181,38 +181,17 @@ public with sharing class StripePaymentService {
                         response.success = true;
                         response.resultCode = 'Ok';
                         response.message = 'Transaction Successful';
-                        IntegrationUsageService.recordSuccessfulPaymentTask('Stripe');
-
-                        try {
-                            Map<String, Object> invoiceData = new Map<String, Object>();
-                            invoiceData.put('Amount__c', request.amount);
-                            invoiceData.put('Order__c', request.orderId);
-                            invoiceData.put('Reference_number__c', response.transId);
-
-                            if (orderAccountContext != null) {
-                                invoiceData.put('Related_Account__c', orderAccountContext.accountId);
-                            }
-                            QuickBridgeRecordEngine.processIncomingInvoice(invoiceData);
-                        } catch(Exception ex) {
-                            ErrorLogUtility.logException('Stripe', 'StripePaymentService.processPayment.invoiceCreation', ex, 'Order', parseId(request.orderId));
-                        }
-
-                        if (String.isNotBlank(request.orderId)) {
-                            try {
-                                update new Order(Id = request.orderId, Payment_Gateway__c = 'Stripe');
-                            } catch(Exception ex) {
-                                ErrorLogUtility.logDmlFailure(
-                                    'Stripe',
-                                    'StripePaymentService.processPayment.updateOrderGateway',
-                                    'update',
-                                    'Order',
-                                    parseId(request.orderId),
-                                    ex.getTypeName() + ': ' + ex.getMessage(),
-                                    'Order',
-                                    parseId(request.orderId)
-                                );
-                            }
-                        }
+                        PaymentSettlementService.SettlementRequest settlementRequest =
+                            new PaymentSettlementService.SettlementRequest();
+                        settlementRequest.providerName = 'Stripe';
+                        settlementRequest.sourceMethod = 'StripePaymentService.processPayment';
+                        settlementRequest.orderId = request.orderId;
+                        settlementRequest.accountId = orderAccountContext == null
+                            ? null
+                            : orderAccountContext.accountId;
+                        settlementRequest.amount = request.amount;
+                        settlementRequest.transactionId = response.transId;
+                        PaymentSettlementService.settleApprovedPayment(settlementRequest);
 
                         return response;
                     }
@@ -366,7 +345,6 @@ public with sharing class StripePaymentService {
                                     response.message = e.getTypeName() + ': ' + e.getMessage();
                                     ErrorLogUtility.logException('Stripe', 'StripePaymentService.sendInvoiceToCustomer', e, 'Invoice__c', invoiceId);
                                 }
-
                                 return response;
                             }
 
