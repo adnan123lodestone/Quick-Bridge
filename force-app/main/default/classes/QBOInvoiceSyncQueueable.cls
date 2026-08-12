@@ -47,6 +47,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
         
         // 3. COLLECTIONS FOR BULKIFICATION
         Map<String, Account> accountsToUpsert = new Map<String, Account>();
+        Map<String, String> customerNamesByQboId = new Map<String, String>();
         Map<String, Product2> productsToUpsert = new Map<String, Product2>();
         List<Map<String, Object>> parsedInvoices;
         
@@ -79,6 +80,7 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                 String customerName = (String)customerRef.get('name');
                 if(String.isNotBlank(qboCustomerId) && !accountsToUpsert.containsKey(qboCustomerId)) {
                     accountsToUpsert.put(qboCustomerId, new Account(Name = customerName, QuickbookID__c = qboCustomerId));
+                    customerNamesByQboId.put(qboCustomerId, customerName);
                 }
             }
 
@@ -104,6 +106,28 @@ public without sharing class QBOInvoiceSyncQueueable implements Queueable, Datab
                         }
                     }
                 }
+            }
+        }
+
+        // External-id upsert updates every populated field on the supplied record.
+        // Rebuild existing Account stubs so a Person Account never carries Name,
+        // which is system-managed and not updateable for that Account subtype.
+        if (!accountsToUpsert.isEmpty()) {
+            Set<String> customerIdsToHydrate = accountsToUpsert.keySet();
+            for (Account existingAccount : [
+                SELECT Id, RecordTypeId, RecordType.IsPersonType, QuickbookID__c
+                FROM Account
+                WHERE QuickbookID__c IN :customerIdsToHydrate
+            ]) {
+                Account safeHydration = new Account(
+                    Id = existingAccount.Id,
+                    RecordTypeId = existingAccount.RecordTypeId,
+                    QuickbookID__c = existingAccount.QuickbookID__c
+                );
+                if (existingAccount.RecordType == null || existingAccount.RecordType.IsPersonType != true) {
+                    safeHydration.Name = customerNamesByQboId.get(existingAccount.QuickbookID__c);
+                }
+                accountsToUpsert.put(existingAccount.QuickbookID__c, safeHydration);
             }
         }
         

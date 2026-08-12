@@ -608,8 +608,6 @@ private class QuickBridgeArchitectureRefactorTest {
     ScheduledIntegrationHeartbeat.ensureScheduled();
     new GenericScheduleDispatcher().execute(null);
     ScheduledIntegrationHeartbeat.dispatchDueSchedules();
-    System.assertNotEquals(null, SchedulerEntitlementService.getUsageSummary());
-    SchedulerEntitlementService.assertCanCreateSchedule();
     SchedulerEntitlementService.recordScheduleCreated(
       null,
       null,
@@ -668,11 +666,6 @@ private class QuickBridgeArchitectureRefactorTest {
       'QRIntegrationWorker',
       IntegrationWorkRouter.handlerClassFor('QR', 'Generate')
     );
-    System.assertEquals(
-      'UsageIntegrationWorker',
-      IntegrationWorkRouter.handlerClassFor('Usage', 'Record')
-    );
-
     System.assertEquals(
       'fedex',
       CarrierAdapterFactory.normalizeCarrierKey('FedEx')

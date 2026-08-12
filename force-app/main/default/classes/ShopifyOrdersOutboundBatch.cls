@@ -94,10 +94,6 @@ global class ShopifyOrdersOutboundBatch implements Database.Batchable<sObject>, 
             return;
         }
 
-        if (!bypassAuthCheckForTest) {
-            IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
-        }
-
         List<Order> toUpdate       = new List<Order>();
         List<PendingError> errors  = new List<PendingError>();
 

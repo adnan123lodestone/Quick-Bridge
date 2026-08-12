@@ -14,7 +14,6 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
     }
     
     public void execute(Database.BatchableContext bc, List<sObject> scope) {
-        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         try {
             List<sObject> recordsToUpdate = new List<sObject>();
             Map<String, String> fieldMap = new Map<String, String>();

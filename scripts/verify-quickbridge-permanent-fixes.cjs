@@ -145,9 +145,132 @@ function assertNoOrgSpecificCredentialEndpoints() {
   );
 }
 
+function assertRetiredUsageQuotasAbsent() {
+  const sourceRoot = path.join(root, "force-app/main/default");
+  const forbiddenIdentifiers = [
+    "assertCanConsumeTask",
+    "incrementTaskUsage",
+    "recordSuccessfulApiTask",
+    "recordSuccessfulPaymentTask",
+    "syncActiveScheduleCount",
+    "Task_Usage_Count__c",
+    "Active_Schedule_Count__c",
+    "Task_Usage_Limit__c",
+    "Active_Schedule_Limit__c",
+    "Counts_Toward_Schedule_Limit__c",
+    "Scheduler_Plan_Limit__mdt",
+    "UsageIntegrationWorker",
+    "getUsageSummary",
+    "assertCanCreateSchedule"
+  ];
+  const offenders = [];
+
+  function inspect(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        inspect(absolutePath);
+        continue;
+      }
+      if (
+        entry.name.endsWith("Test.cls") ||
+        entry.name === "customMetadata.json" ||
+        entry.name === "customMetadata.zip" ||
+        ![".cls", ".js", ".html", ".xml"].includes(path.extname(entry.name))
+      ) {
+        continue;
+      }
+      const source = fs.readFileSync(absolutePath, "utf8");
+      for (const identifier of forbiddenIdentifiers) {
+        if (source.includes(identifier)) {
+          offenders.push(`${path.relative(root, absolutePath)}:${identifier}`);
+        }
+      }
+    }
+  }
+
+  inspect(sourceRoot);
+  assert(
+    offenders.length === 0,
+    `retired task and active-schedule quota references must not return: ${offenders.join(", ")}`
+  );
+}
+
+function assertProductVendorGovernorSafety() {
+  const errorLogger = read(
+    "force-app/main/default/classes/ErrorLogUtility.cls"
+  );
+  assert(
+    errorLogger.includes(
+      "public static void logErrors(List<LogContext> contexts)"
+    ) &&
+      errorLogger.includes("Database.insert(errorRecords, false)") &&
+      errorLogger.includes("Database.insert(links, false)"),
+    "ErrorLogUtility must persist Error Logs and links through collection DML"
+  );
+
+  const triggerHandler = read(
+    "force-app/main/default/classes/QBTriggerHandler.cls"
+  );
+  assert(
+    (triggerHandler.match(/IntegrationWorkService\.enqueue\(requests\)/g) || [])
+      .length === 3,
+    "Account, Product, and Quote trigger paths must each enqueue one request collection"
+  );
+  assert(
+    !triggerHandler.includes("enqueueQuickBooksWork("),
+    "QBTriggerHandler must not enqueue one work item per record"
+  );
+
+  const productBatch = read(
+    "force-app/main/default/classes/QBItemToProductSyncBatch.cls"
+  );
+  assert(
+    productBatch.includes("loadExistingProductsByQbIds(qbIds)") &&
+      productBatch.includes("isRestrictedPicklist()"),
+    "Product inbound mapping must bulk-load Products and guard restricted picklists"
+  );
+  assert(
+    !productBatch.includes("if (product == null && String.isNotBlank(qbId))"),
+    "Product mapping must not fall back to per-item SOQL"
+  );
+
+  const accountService = read(
+    "force-app/main/default/classes/QBAccountService.cls"
+  );
+  assert(
+    accountService.includes(
+      "QBVendorFieldCapabilities.filterOutboundMappings"
+    ) && accountService.includes("payload.put('sparse', true)"),
+    "Vendor payloads must be allowlisted and QBO updates must remain sparse"
+  );
+
+  const invalidProductMapping = read(
+    "force-app/main/default/customMetadata/Field_Mapping.qbonline_Product2_Item_IncomeAc_64928c40.md-meta.xml"
+  );
+  assert(
+    /<field>Is_Active__c<\/field>\s*<value\s+xsi:type="xsd:boolean"\s*>\s*false\s*<\/value>/s.test(
+      invalidProductMapping
+    ),
+    "the invalid Income Account to Asset Account mapping must remain inactive"
+  );
+  const canonicalIncomeMapping = read(
+    "force-app/main/default/customMetadata/Field_Mapping.qbonline_Product2_IncomeAccountRef_value.md-meta.xml"
+  );
+  assert(
+    canonicalIncomeMapping.includes("QuickBridgeTLG__Income_Account__c") &&
+      /<field>Is_Active__c<\/field>\s*<value\s+xsi:type="xsd:boolean"\s*>\s*true\s*<\/value>/s.test(
+        canonicalIncomeMapping
+      ),
+    "the canonical QBO Income Account mapping must remain active"
+  );
+}
+
 function main() {
   assertNoPackagedCredentialDefaults();
   assertNoOrgSpecificCredentialEndpoints();
+  assertRetiredUsageQuotasAbsent();
+  assertProductVendorGovernorSafety();
   assertNotContains(
     "force-app/main/default/classes/QuickBooksInvoiceBatch.cls",
     "'/invoice/'",
@@ -162,6 +285,36 @@ function main() {
     "force-app/main/default/classes/QuickBooksPurchaseOrderBatch.cls",
     "'/purchaseorder/'",
     "purchase order batch update path must not use per-record purchase order GET hydration"
+  );
+  assertNotContains(
+    "force-app/main/default/classes/QBAccountService.cls",
+    "customerMap.put('Notes', String.valueOf(acc.Id))",
+    "QuickBooks Customer Notes must be controlled by field mappings, never overwritten with Account Id"
+  );
+  assertNotContains(
+    "force-app/main/default/classes/QBAccountService.cls",
+    "forceCreate ||",
+    "stale queued isInitialSync values must never force a duplicate QBO Customer create"
+  );
+  assertNotContains(
+    "force-app/main/default/classes/QBAccountService.cls",
+    "FullyQualifiedName', acc.Name",
+    "read-only QBO Customer fields must not be added to outbound payloads"
+  );
+
+  const accountWorker = read(
+    "force-app/main/default/classes/QBAccountWorker.cls"
+  );
+  assert(
+    accountWorker.includes("result.hasFailures()"),
+    "QBAccountWorker must propagate ConnectorExecutionResult failures"
+  );
+  const customerMapper = read(
+    "force-app/main/default/classes/QBCustomerAccountMapper.cls"
+  );
+  assert(
+    customerMapper.includes("resolvedFieldName == 'Name' && isPersonAccount"),
+    "the shared inbound Customer mapper must reject Account.Name for Person Accounts"
   );
 
   assertNotContains(

@@ -23,8 +23,33 @@ private class IntegrationWorkWorkerCoverageTest {
         }
     }
 
+    private class DuplicateCustomerMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest request) {
+            HttpResponse response = new HttpResponse();
+            response.setStatusCode(400);
+            response.setHeader('Content-Type', 'application/json');
+            response.setBody(
+                '{"Fault":{"Error":[{"code":"6240","Message":"Duplicate Name Exists Error"}]}}'
+            );
+            return response;
+        }
+    }
+
+    private class UnsupportedVendorPropertyMock implements HttpCalloutMock {
+        public HttpResponse respond(HttpRequest request) {
+            HttpResponse response = new HttpResponse();
+            response.setStatusCode(400);
+            response.setHeader('Content-Type', 'application/json');
+            response.setBody(
+                '{"Fault":{"Error":[{"code":"2010","Message":"Request has invalid or unsupported property"}]}}'
+            );
+            return response;
+        }
+    }
+
     @IsTest
     static void quickBooksWorkersCoverSuccessAndValidationPaths() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
         Test.setMock(HttpCalloutMock.class, new GenericProviderMock());
 
         Account accountRecord = new Account(Name = 'Queued Account');
@@ -49,6 +74,7 @@ private class IntegrationWorkWorkerCoverageTest {
         );
         insert orderRecord;
 
+        Test.startTest();
         QBAccountWorker.process(workItem('QuickBooks', 'AccountUpsert', 'Account', accountRecord.Id));
         QBProductWorker.process(workItem('QuickBooks', 'ProductUpsert', 'Product2', productRecord.Id));
 
@@ -78,6 +104,7 @@ private class IntegrationWorkWorkerCoverageTest {
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'QuickBooks', Operation__c = 'InvoiceUpsert'));
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'QuickBooks', Operation__c = 'CreditMemoUpsert'));
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'QuickBooks', Operation__c = 'PurchaseOrderUpsert'));
+        Test.stopTest();
     }
 
     @IsTest
@@ -113,7 +140,6 @@ private class IntegrationWorkWorkerCoverageTest {
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'Carrier', Operation__c = 'Unknown'));
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'Payment', Operation__c = 'WebhookResult'));
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'QR', Operation__c = 'GenerateEmail'));
-        assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'Usage', Operation__c = 'Aggregate'));
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'QuickBooks', Operation__c = 'Unknown'));
         assertThrowsFor(new Integration_Work_Item__c(Integration__c = 'Unknown', Operation__c = 'Anything'));
         try {
@@ -137,49 +163,103 @@ private class IntegrationWorkWorkerCoverageTest {
         System.assertEquals(IntegrationWorkService.STATUS_FAILED, failed.Status__c);
         System.assertNotEquals(null, failed.Last_Error__c);
 
-        Integration_Work_Item__c successItem = insertProcessingItem('Usage', 'Aggregate', 'Usage', 'quickbooks', 'Usage:quickbooks', 'token-success', '{"productKey":"quickbooks"}');
-        new IntegrationWorkProcessor(successItem.Id, 'token-success').execute(null);
-
-        Integration_Work_Item__c completed = [
-            SELECT Status__c, Completed_At__c
-            FROM Integration_Work_Item__c
-            WHERE Id = :successItem.Id
-        ];
-        System.assertEquals(IntegrationWorkService.STATUS_COMPLETED, completed.Status__c);
-        System.assertNotEquals(null, completed.Completed_At__c);
     }
 
     @IsTest
-    static void processorReleasesAdditionalLocks() {
-        Integration_Work_Item__c item = new Integration_Work_Item__c(
-            Unique_Key__c = 'Usage|Aggregate|Usage|multi',
-            Status__c = IntegrationWorkService.STATUS_PROCESSING,
-            Integration__c = 'Usage',
-            Operation__c = 'Aggregate',
-            Source_Object__c = 'Usage',
-            Source_Record_Id__c = 'quickbooks',
-            Lock_Key__c = 'Usage:quickbooks',
-            Additional_Lock_Keys__c = JSON.serialize(new List<String>{ 'Account:parent', 'Order:parent' }),
-            Processor_Token__c = 'token-multi',
-            Payload__c = '{"productKey":"quickbooks"}',
-            Attempt_Count__c = 0,
-            Max_Attempts__c = 2
+    static void duplicateCustomerFailureMarksWorkFailedAndLogsOnce() {
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new DuplicateCustomerMock());
+        QBTriggerHandler.isAccountProcessing = true;
+        Account accountRecord = new Account(Name = 'Known Duplicate Customer');
+        insert accountRecord;
+        QBTriggerHandler.isAccountProcessing = false;
+        String accountIdText = String.valueOf(accountRecord.Id);
+        Integration_Work_Item__c workItemRecord = insertProcessingItem(
+            'QuickBooks',
+            'AccountUpsert',
+            'Account',
+            accountIdText,
+            'Account:' + accountIdText,
+            'duplicate-token',
+            '{"isInitialSync":true}'
         );
-        insert item;
-        insert new List<Integration_Work_Lock__c>{
-            lockRow('Usage:quickbooks', item.Id, 'token-multi'),
-            lockRow('Account:parent', item.Id, 'token-multi'),
-            lockRow('Order:parent', item.Id, 'token-multi')
-        };
+        update new Integration_Work_Item__c(
+            Id = workItemRecord.Id,
+            Source_Salesforce_Id__c = accountIdText
+        );
 
-        new IntegrationWorkProcessor(item.Id, 'token-multi').execute(null);
+        Test.startTest();
+        new IntegrationWorkProcessor(workItemRecord.Id, 'duplicate-token').execute(null);
+        Test.stopTest();
 
-        System.assertEquals(3, [
-            SELECT Count()
-            FROM Integration_Work_Lock__c
-            WHERE Work_Item__c = null
-            AND Status__c = 'Released'
-        ]);
+        Integration_Work_Item__c failedWork = [
+            SELECT Status__c, Last_Error__c
+            FROM Integration_Work_Item__c
+            WHERE Id = :workItemRecord.Id
+        ];
+        System.assertEquals(IntegrationWorkService.STATUS_FAILED, failedWork.Status__c);
+        System.assert(failedWork.Last_Error__c.contains('Populate Account.QuickbookID__c'));
+        List<Error_Log__c> errorLogs = [
+            SELECT Account__c, Error_Message__c
+            FROM Error_Log__c
+            WHERE Source_Record_Id__c = :accountIdText
+        ];
+        System.assertEquals(1, errorLogs.size());
+        System.assertEquals(accountRecord.Id, errorLogs[0].Account__c);
+        System.assertEquals(failedWork.Last_Error__c, errorLogs[0].Error_Message__c);
+    }
+
+    @IsTest
+    static void unsupportedVendorPropertyMarksWorkFailedAndLogsOnce() {
+        Schema.RecordTypeInfo vendorRecordType = Schema.SObjectType.Account
+            .getRecordTypeInfosByDeveloperName()
+            .get('Vendor');
+        if (vendorRecordType == null || !vendorRecordType.isAvailable()) {
+            return;
+        }
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new UnsupportedVendorPropertyMock());
+        QBTriggerHandler.isAccountProcessing = true;
+        Account vendorAccount = new Account(
+            Name = 'Unsupported Property Vendor',
+            RecordTypeId = vendorRecordType.getRecordTypeId()
+        );
+        insert vendorAccount;
+        QBTriggerHandler.isAccountProcessing = false;
+        String accountIdText = String.valueOf(vendorAccount.Id);
+        Integration_Work_Item__c workItemRecord = insertProcessingItem(
+            'QuickBooks',
+            'AccountUpsert',
+            'Account',
+            accountIdText,
+            'Account:' + accountIdText,
+            'vendor-2010-token',
+            '{"isInitialSync":true}'
+        );
+        update new Integration_Work_Item__c(
+            Id = workItemRecord.Id,
+            Source_Salesforce_Id__c = accountIdText
+        );
+
+        Test.startTest();
+        new IntegrationWorkProcessor(workItemRecord.Id, 'vendor-2010-token').execute(null);
+        Test.stopTest();
+
+        Integration_Work_Item__c failedWork = [
+            SELECT Status__c, Last_Error__c
+            FROM Integration_Work_Item__c
+            WHERE Id = :workItemRecord.Id
+        ];
+        System.assertEquals(IntegrationWorkService.STATUS_FAILED, failedWork.Status__c);
+        System.assert(failedWork.Last_Error__c.contains('2010'));
+        List<Error_Log__c> errorLogs = [
+            SELECT Account__c, Error_Message__c
+            FROM Error_Log__c
+            WHERE Source_Record_Id__c = :accountIdText
+        ];
+        System.assertEquals(1, errorLogs.size());
+        System.assertEquals(vendorAccount.Id, errorLogs[0].Account__c);
+        System.assertEquals(failedWork.Last_Error__c, errorLogs[0].Error_Message__c);
     }
 
     @IsTest

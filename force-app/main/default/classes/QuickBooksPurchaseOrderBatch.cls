@@ -31,7 +31,6 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     }
     
     public void execute(Database.BatchableContext bc, List<SObject> scope) {
-        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         try {
             List<SObject> recordsToUpdate = new List<SObject>();
 

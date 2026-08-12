@@ -4,9 +4,6 @@ public with sharing class MetaReconciliationService {
     public static Integer reconcile() {
         Integer repaired = reconcileInteractions();
         repaired += reconcileLeadsWithoutInteractions();
-        if (repaired > 0) {
-            IntegrationUsageService.incrementTaskUsage('Meta', repaired);
-        }
         return repaired;
     }
 

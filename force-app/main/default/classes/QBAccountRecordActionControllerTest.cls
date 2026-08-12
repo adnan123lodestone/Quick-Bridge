@@ -10,12 +10,12 @@ private class QBAccountRecordActionControllerTest {
             
             if (method == 'GET' && endpoint.contains('/customer/')) {
                 res.setStatusCode(200);
-                res.setBody('{"Customer":{"Id":"ACT-1","GivenName":"Jane","FamilyName":"Doe","PrimaryEmailAddr":{"Address":"jane@example.com"},"PrimaryPhone":{"FreeFormNumber":"999"},"BillAddr":{"Line1":"Street","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"}}}');
+                res.setBody('{"Customer":{"Id":"ACT-1","SyncToken":"0","GivenName":"Jane","FamilyName":"Doe","Notes":"Action customer notes","PrimaryEmailAddr":{"Address":"jane@example.com"},"PrimaryPhone":{"FreeFormNumber":"999"},"BillAddr":{"Line1":"Street","City":"City","CountrySubDivisionCode":"ST","PostalCode":"12345","Country":"US"},"ShipAddr":{"Line1":"Ship Street","City":"Ship City","CountrySubDivisionCode":"SS","PostalCode":"54321","Country":"US"}}}');
                 return res;
             }
             if (method == 'GET' && endpoint.contains('/vendor/')) {
                 res.setStatusCode(200);
-                res.setBody('{"Vendor":{"Id":"VEND-ACT-1","DisplayName":"Action Vendor","CompanyName":"Action Vendor Co","PrimaryEmailAddr":{"Address":"vendor-action@example.com"},"PrimaryPhone":{"FreeFormNumber":"888"},"BillAddr":{"Line1":"Vendor Street","City":"Vendor City","CountrySubDivisionCode":"VS","PostalCode":"54321","Country":"US"}}}');
+                res.setBody('{"Vendor":{"Id":"VEND-ACT-1","SyncToken":"0","DisplayName":"Action Vendor","CompanyName":"Action Vendor Co","PrimaryEmailAddr":{"Address":"vendor-action@example.com"},"PrimaryPhone":{"FreeFormNumber":"888"},"BillAddr":{"Line1":"Vendor Street","City":"Vendor City","CountrySubDivisionCode":"VS","PostalCode":"54321","Country":"US"}}}');
                 return res;
             }
             if (method == 'POST' && endpoint.contains('/vendor')) {
@@ -103,6 +103,12 @@ private class QBAccountRecordActionControllerTest {
     static void testSyncFromQuickBooks_Customer() {
         configureQuickBooksConnection();
         Test.setMock(HttpCalloutMock.class, new QBAccountActionMock());
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            customerMapping('Description', 'Notes', 'QBO to SF'),
+            customerMapping('BillingStreet', 'BillAddr.Line1', 'QBO to SF'),
+            customerMapping('ShippingStreet', 'ShipAddr.Line1', 'QBO to SF'),
+            customerMapping('ShippingCity', 'ShipAddr.City', 'QBO to SF')
+        };
         Account acc = [SELECT Id FROM Account WHERE Name = 'Action Controller Synced' LIMIT 1];
         
         Test.startTest();
@@ -113,8 +119,16 @@ private class QBAccountRecordActionControllerTest {
         System.assertEquals('ACT-1', response.quickBooksId);
         System.assert(response.message.contains('synced from QuickBooks'));
 
-        Account syncedAccount = [SELECT Name FROM Account WHERE Id = :acc.Id];
+        Account syncedAccount = [
+            SELECT Name, Description, BillingStreet, ShippingStreet, ShippingCity
+            FROM Account
+            WHERE Id = :acc.Id
+        ];
         System.assertEquals('Action Controller Synced', syncedAccount.Name);
+        System.assertEquals('Action customer notes', syncedAccount.Description);
+        System.assertEquals('Street', syncedAccount.BillingStreet);
+        System.assertEquals('Ship Street', syncedAccount.ShippingStreet);
+        System.assertEquals('Ship City', syncedAccount.ShippingCity);
         
         Contact[] contacts = [SELECT Id, Email, Email__c, AccountId FROM Contact WHERE AccountId = :acc.Id];
         System.assertEquals(1, contacts.size());
@@ -227,5 +241,21 @@ private class QBAccountRecordActionControllerTest {
         ];
         
         return vendorRecordTypes.isEmpty() ? null : vendorRecordTypes[0].Id;
+    }
+
+    private static Field_Mapping__mdt customerMapping(
+        String sfField,
+        String externalField,
+        String direction
+    ) {
+        return new Field_Mapping__mdt(
+            Integration__c = 'qbonline',
+            SF_Object__c = 'Account',
+            SF_Field__c = sfField,
+            External_Field__c = externalField,
+            Sync_Direction__c = direction,
+            Target_Object_API_Name__c = 'Customer',
+            Is_Active__c = true
+        );
     }
 }

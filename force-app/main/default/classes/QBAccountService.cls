@@ -1,367 +1,360 @@
-public class QBAccountService {
+public inherited sharing class QBAccountService {
+    private static final Integer DUPLICATE_NAME_CODE = 6240;
+    private static Set<Id> personAccountRecordTypeIds;
 
-    private Id defaultAccountRecordTypeId;
     public class SyncResult {
         public Id accountId { get; set; }
         public Boolean created { get; set; }
         public String quickBooksId { get; set; }
     }
-    
-    public static void syncAccountsToQuickBooks(List<Account> accounts, Boolean isInsert) {
-        syncAccountsToQuickBooksShared(accounts, isInsert);
+
+    public static void syncAccountsToQuickBooks(List<Account> accounts, Boolean legacyIsInsert) {
+        syncAccountsToQuickBooksShared(accounts, legacyIsInsert);
     }
 
-    public static ConnectorExecutionResult syncAccountsToQuickBooksShared(List<Account> accounts, Boolean isInsert) {
+    public static ConnectorExecutionResult syncAccountsToQuickBooksShared(
+        List<Account> accounts,
+        Boolean legacyIsInsert
+    ) {
         ConnectorExecutionResult result = ConnectorExecutionResult.success();
         result.processedCount = accounts == null ? 0 : accounts.size();
-        for (Account acc : accounts) {
+        if (accounts == null) {
+            return result;
+        }
+        for (Account accountRecord : accounts) {
             try {
-                syncAccountToQuickBooksInternal(acc, isInsert, true);
+                // legacyIsInsert remains in the signature for queued payload compatibility.
+                // The current Salesforce link is the only create/update authority.
+                syncAccountToQuickBooksInternal(accountRecord, true);
                 result.successfulCount++;
-            } catch (Exception e) {
-                System.debug('Error syncing account ID ' + acc.Id + ': ' + e.getMessage());
-                System.debug(e.getStackTraceString());
-                ErrorLogUtility.logException(
-                    'QuickBooks',
-                'QBAccountService.syncAccountsToQuickBooks',
-                e,
-                'Account',
-                    acc == null ? null : acc.Id
-                    );
+            } catch (Exception exceptionValue) {
+                String safeMessage = ConnectorExecutionResult.sanitizeError(exceptionValue.getMessage());
+                logAutomaticFailure(safeMessage, accountRecord == null ? null : accountRecord.Id);
                 result.failedCount++;
-                result.addError(e.getMessage());
-                if (IntegrationRetryPolicy.isRetryable(e)) {
+                result.addError(safeMessage);
+                if (IntegrationRetryPolicy.isRetryable(exceptionValue)) {
                     result.retryable = true;
                     result.retryDelaySeconds = 60;
-                    if (acc != null && acc.Id != null) {
-                        result.retryRecordIds.add(acc.Id);
+                    if (accountRecord != null && accountRecord.Id != null) {
+                        result.retryRecordIds.add(accountRecord.Id);
                     }
                 }
             }
         }
         return result;
     }
-    
-    public static SyncResult syncAccountToQuickBooks(Account acc, Boolean forceCreate) {
-        return syncAccountToQuickBooksInternal(acc, forceCreate, false);
+
+    private static void logAutomaticFailure(String safeMessage, Id accountId) {
+        ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+        context.gatewayName = 'QuickBooks';
+        context.classMethodName = 'QBAccountService.syncAccountsToQuickBooks';
+        context.errorMessage = safeMessage;
+        context.sourceObjectApiName = 'Account';
+        context.sourceRecordId = accountId;
+        context.sourceRecordIdText = accountId == null ? null : String.valueOf(accountId);
+        context.errorCategory = 'Callout Failure';
+        ErrorLogUtility.logError(context);
+    }
+
+    public static SyncResult syncAccountToQuickBooks(Account accountRecord, Boolean legacyForceCreate) {
+        // legacyForceCreate is intentionally ignored. A populated QuickbookID__c
+        // must never be turned into a second create by a stale caller.
+        return syncAccountToQuickBooksInternal(accountRecord, false);
     }
 
     private static SyncResult syncAccountToQuickBooksInternal(
-        Account acc,
-        Boolean forceCreate,
+        Account accountRecord,
         Boolean surfaceTypedFailure
     ) {
-        if (acc == null) {
+        if (accountRecord == null) {
             throw new QBIntegrationException('Account is required for QuickBooks sync.');
         }
-        
         SyncResult result = new SyncResult();
-        result.accountId = acc.Id;
-        
-        if (forceCreate || acc.QuickbookID__c == null) {
-            String qbCustomerId = createCustomerInQuickBooks(acc, surfaceTypedFailure);
+        result.accountId = accountRecord.Id;
+        if (String.isBlank(accountRecord.QuickbookID__c)) {
             result.created = true;
-            result.quickBooksId = qbCustomerId;
-            
-            if (acc.Id != null) {
-                QBTriggerHandler.isAccountProcessing = true;
-                try {
-                    update new Account(
-                        Id = acc.Id,
-                    QuickbookID__c = qbCustomerId
-                        );
-                } catch (DmlException e) {
-                    for (Integer i = 0; i < e.getNumDml(); i++) {
-                        ErrorLogUtility.logDmlFailure(
-                            'QuickBooks',
-                        'QBAccountService.syncAccountToQuickBooks.updateAccountQuickBooksId',
-                        'update',
-                        'Account',
-                        acc.Id,
-                        e.getDmlMessage(i),
-                        null,
-                        null
-                            );
-                    }
-                    throw e;
-                } finally {
-                    QBTriggerHandler.isAccountProcessing = false;
-                }
-            }
+            result.quickBooksId = createInQuickBooks(accountRecord, surfaceTypedFailure);
+            persistQuickBooksId(accountRecord.Id, result.quickBooksId);
         } else {
-            updateCustomerInQuickBooks(acc, surfaceTypedFailure);
             result.created = false;
-            result.quickBooksId = acc.QuickbookID__c;
+            result.quickBooksId = accountRecord.QuickbookID__c;
+            updateInQuickBooks(accountRecord, surfaceTypedFailure);
         }
-        
         return result;
     }
-    
-    private static String createCustomerInQuickBooks(
-        Account acc,
+
+    private static String createInQuickBooks(
+        Account accountRecord,
         Boolean surfaceTypedFailure
     ) {
-        Map<String, Object> customerMap = new Map<String, Object>();
-        Map<String, String> fieldMap = QBObjectMappings.getAccountToCustomerMapping();
-        
-        for (String sfField : fieldMap.keySet()) {
-            String qbField = fieldMap.get(sfField);
-            Object value = getFieldValue(acc, sfField);
-            
-            if (value != null) {
-                if (qbField.contains('.')) {
-                    List<String> fieldPath = qbField.split('\\.');
-                    Map<String, Object> currentMap = customerMap;
-                    
-                    for (Integer i = 0; i < fieldPath.size() - 1; i++) {
-                        String pathPart = fieldPath[i];
-                        if (!currentMap.containsKey(pathPart)) {
-                            currentMap.put(pathPart, new Map<String, Object>());
-                        }
-                        currentMap = (Map<String, Object>)currentMap.get(pathPart);
-                    }
-                    currentMap.put(fieldPath[fieldPath.size() - 1], value);
-                } else {
-                    customerMap.put(qbField, value);
-                }
+        EntityContext context = resolveEntity(accountRecord);
+        Map<String, Object> payload = buildWritablePayload(accountRecord, context);
+        String requestBody = serializeCanonical(payload);
+        String resource = context.endpoint + '?requestid=' + buildRequestId('C', accountRecord, requestBody);
+        HttpResponse response = QuickBooksAuthHandler.makeApiCall('POST', resource, requestBody, false);
+        if (response != null && response.getStatusCode() >= 200 && response.getStatusCode() < 300) {
+            Map<String, Object> responseBody = (Map<String, Object>) JSON.deserializeUntyped(response.getBody());
+            Map<String, Object> entity = responseBody == null
+                ? null
+                : (Map<String, Object>) responseBody.get(context.responseKey);
+            String quickBooksId = entity == null ? null : String.valueOf(entity.get('Id'));
+            if (String.isBlank(quickBooksId)) {
+                throwFailure(502, 'QuickBooks did not return a ' + context.responseKey + ' Id.', surfaceTypedFailure);
             }
+            return quickBooksId;
         }
-        
-        if (!customerMap.containsKey('DisplayName')) {
-            customerMap.put('DisplayName', acc.Name);
-        }
-        if (!customerMap.containsKey('FullyQualifiedName')) {
-            customerMap.put('FullyQualifiedName', acc.Name);
-        }
-        
-        String endpoint = '/customer'; // Default
-        String recordTypeName = 'Customer';
-        
-        if (acc.RecordTypeId != null) {
-            recordTypeName = Schema.SObjectType.Account.getRecordTypeInfosById().get(acc.RecordTypeId).getName();
-            if (recordTypeName == 'Vendor') {
-                endpoint = '/vendor';
-            }
-        }
-        
-        Boolean isPersonAccountEnabled = Schema.sObjectType.Account.fields.getMap().containsKey('IsPersonAccount');
-        Boolean isPersonAccount = false;
-        
-        if (recordTypeName != 'Vendor') {
-            try {
-                if (isPersonAccountEnabled && acc.getPopulatedFieldsAsMap().containsKey('IsPersonAccount')) {
-                    isPersonAccount = (Boolean)acc.get('IsPersonAccount');
-                }
-            } catch (Exception e) {}
-        }
-        
-        if (isPersonAccount) {
-            if (acc.getPopulatedFieldsAsMap().containsKey('FirstName') && acc.get('FirstName') != null) {
-                customerMap.put('GivenName', acc.get('FirstName'));
-            }
-            if (acc.getPopulatedFieldsAsMap().containsKey('LastName') && acc.get('LastName') != null) {
-                customerMap.put('FamilyName', acc.get('LastName'));
-            }
-            customerMap.put('CompanyName', '');
-            
-            if (acc.getPopulatedFieldsAsMap().containsKey('PersonEmail') && acc.get('PersonEmail') != null) {
-                Map<String, Object> emailMap = new Map<String, Object>();
-                emailMap.put('Address', acc.get('PersonEmail'));
-                customerMap.put('PrimaryEmailAddr', emailMap);
-            }
-        } else {
-            if (!customerMap.containsKey('CompanyName')) {
-                customerMap.put('CompanyName', acc.Name);
-            }
-        }
-        
-        customerMap.put('Notes', String.valueOf(acc.Id));
-        String requestBody = JSON.serialize(customerMap);
-        System.debug('Creating record in QuickBooks: ' + requestBody);
-        
-        HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', endpoint, requestBody);
-        
-        if (res.getStatusCode() == 200) {
-            Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
-            
-            String responseKey = (endpoint == '/vendor') ? 'Vendor' : 'Customer';
-            Map<String, Object> customerResponse = (Map<String, Object>)responseMap.get(responseKey);
-            
-            return (String)customerResponse.get('Id');
-        } else {
-            ErrorLogUtility.logCalloutFailure(
-                'QuickBooks',
-            'QBAccountService.createCustomerInQuickBooks',
-            'Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody(),
-            res.getStatusCode(),
-            'Account',
-            acc == null ? null : acc.Id
-                );
-            String errorMessage = 'Error creating record in QuickBooks: ' + res.getStatusCode() + ' ' + res.getBody();
-            if (surfaceTypedFailure == true) {
-                throw IntegrationRetryPolicy.exceptionForStatus(
-                    res.getStatusCode(),
-                    errorMessage
-                );
-            }
-            throw new QBIntegrationException(errorMessage);
-        }
+        throwResponseFailure(response, 'create', context.responseKey, surfaceTypedFailure);
+        return null;
     }
-    
-    private static void updateCustomerInQuickBooks(
-        Account acc,
+
+    private static void updateInQuickBooks(
+        Account accountRecord,
         Boolean surfaceTypedFailure
     ) {
-        String endpoint = '/customer';
-        String recordTypeName = 'Customer';
-        
-        if (acc.RecordTypeId != null) {
-            recordTypeName = Schema.SObjectType.Account.getRecordTypeInfosById().get(acc.RecordTypeId).getName();
-            if (recordTypeName == 'Vendor') {
-                endpoint = '/vendor';
-            }
+        EntityContext context = resolveEntity(accountRecord);
+        HttpResponse queryResponse = QuickBooksAuthHandler.makeApiCall(
+            'GET',
+            context.endpoint + '/' + EncodingUtil.urlEncode(accountRecord.QuickbookID__c, 'UTF-8'),
+            null,
+            false
+        );
+        if (queryResponse == null || queryResponse.getStatusCode() < 200 || queryResponse.getStatusCode() >= 300) {
+            throwResponseFailure(queryResponse, 'validate linked', context.responseKey, surfaceTypedFailure);
         }
-        
-        HttpResponse queryRes = QuickBooksAuthHandler.makeApiCall('GET', endpoint + '/' + acc.QuickbookID__c, null);
-        
-        if (queryRes.getStatusCode() != 200) {
-            ErrorLogUtility.logCalloutFailure(
-                'QuickBooks',
-            'QBAccountService.updateCustomerInQuickBooks.query',
-            'Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody(),
-            queryRes.getStatusCode(),
-            'Account',
-            acc == null ? null : acc.Id
-                );
-            String errorMessage = 'Error querying record in QuickBooks: ' + queryRes.getStatusCode() + ' ' + queryRes.getBody();
-            if (surfaceTypedFailure == true) {
-                throw IntegrationRetryPolicy.exceptionForStatus(
-                    queryRes.getStatusCode(),
-                    errorMessage
-                );
-            }
-            throw new QBIntegrationException(errorMessage);
+
+        Map<String, Object> responseBody = (Map<String, Object>) JSON.deserializeUntyped(queryResponse.getBody());
+        Map<String, Object> existing = responseBody == null
+            ? null
+            : (Map<String, Object>) responseBody.get(context.responseKey);
+        String syncToken = existing == null ? null : String.valueOf(existing.get('SyncToken'));
+        String returnedId = existing == null ? null : String.valueOf(existing.get('Id'));
+        if (String.isBlank(syncToken) || returnedId != accountRecord.QuickbookID__c) {
+            throwFailure(
+                400,
+                'The Account QuickBooks ID could not be validated. Confirm QuickbookID__c contains the QBO ' +
+                context.responseKey + ' Id.',
+                surfaceTypedFailure
+            );
         }
-        
-        Map<String, Object> existingCustomer = (Map<String, Object>)JSON.deserializeUntyped(queryRes.getBody());
-        String responseKey = (endpoint == '/vendor') ? 'Vendor' : 'Customer';
-        Map<String, Object> customerMap = (Map<String, Object>)existingCustomer.get(responseKey);
-        
-        Map<String, String> fieldMap = QBObjectMappings.getAccountToCustomerMapping();
-        
-        for (String sfField : fieldMap.keySet()) {
-            String qbField = fieldMap.get(sfField);
-            Object value = getFieldValue(acc, sfField);
-            
-            if (value != null) {
-                if (qbField.contains('.')) {
-                    List<String> fieldPath = qbField.split('\\.');
-                    Map<String, Object> currentMap = customerMap;
-                    
-                    for (Integer i = 0; i < fieldPath.size() - 1; i++) {
-                        String pathPart = fieldPath[i];
-                        if (!currentMap.containsKey(pathPart)) {
-                            currentMap.put(pathPart, new Map<String, Object>());
-                        }
-                        currentMap = (Map<String, Object>)currentMap.get(pathPart);
-                    }
-                    currentMap.put(fieldPath[fieldPath.size() - 1], value);
-                } else {
-                    customerMap.put(qbField, value);
-                }
-            }
-        }
-        
-        if (String.isNotBlank(acc.Name)) {
-            customerMap.put('DisplayName', acc.Name);
-            customerMap.put('FullyQualifiedName', acc.Name);
-        }
-        
-        Boolean isPersonAccountEnabled = Schema.sObjectType.Account.fields.getMap().containsKey('IsPersonAccount');
-        Boolean isPersonAccount = false;
-        
-        if (recordTypeName != 'Vendor') {
-            try {
-                if (isPersonAccountEnabled && acc.getPopulatedFieldsAsMap().containsKey('IsPersonAccount')) {
-                    isPersonAccount = (Boolean)acc.get('IsPersonAccount');
-                }
-            } catch (Exception e) {}
-        }
-        
-        if (isPersonAccount) {
-            if (acc.getPopulatedFieldsAsMap().containsKey('FirstName') && acc.get('FirstName') != null) {
-                customerMap.put('GivenName', acc.get('FirstName'));
-            }
-            if (acc.getPopulatedFieldsAsMap().containsKey('LastName') && acc.get('LastName') != null) {
-                customerMap.put('FamilyName', acc.get('LastName'));
-            }
-            customerMap.put('CompanyName', '');
-            
-            if (acc.getPopulatedFieldsAsMap().containsKey('PersonEmail') && acc.get('PersonEmail') != null) {
-                Map<String, Object> emailMap = new Map<String, Object>();
-                emailMap.put('Address', acc.get('PersonEmail'));
-                customerMap.put('PrimaryEmailAddr', emailMap);
-            }
-        } else {
-            if (!customerMap.containsKey('CompanyName')) {
-                customerMap.put('CompanyName', acc.Name);
-            }
-        }
-        
-        customerMap.put('sparse', false);
-        customerMap.put('Notes', String.valueOf(acc.Id));
-        String requestBody = JSON.serialize(customerMap);
-        System.debug('Updating record in QuickBooks: ' + requestBody);
-        
-        HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', endpoint, requestBody);
-        
-        if (updateRes.getStatusCode() != 200) {
-            ErrorLogUtility.logCalloutFailure(
-                'QuickBooks',
-            'QBAccountService.updateCustomerInQuickBooks.update',
-            'Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody(),
-            updateRes.getStatusCode(),
-            'Account',
-            acc == null ? null : acc.Id
-                );
-            String errorMessage = 'Error updating record in QuickBooks: ' + updateRes.getStatusCode() + ' ' + updateRes.getBody();
-            if (surfaceTypedFailure == true) {
-                throw IntegrationRetryPolicy.exceptionForStatus(
-                    updateRes.getStatusCode(),
-                    errorMessage
-                );
-            }
-            throw new QBIntegrationException(errorMessage);
+
+        Map<String, Object> payload = buildWritablePayload(accountRecord, context);
+        payload.put('Id', returnedId);
+        payload.put('SyncToken', syncToken);
+        payload.put('sparse', true);
+        String requestBody = serializeCanonical(payload);
+        String resource = context.endpoint + '?requestid=' + buildRequestId('U', accountRecord, requestBody);
+        HttpResponse updateResponse = QuickBooksAuthHandler.makeApiCall('POST', resource, requestBody, false);
+        if (updateResponse == null || updateResponse.getStatusCode() < 200 || updateResponse.getStatusCode() >= 300) {
+            throwResponseFailure(updateResponse, 'update', context.responseKey, surfaceTypedFailure);
         }
     }
-    
-    private static Object getFieldValue(SObject obj, String fieldPath) {
+
+    @TestVisible
+    private static Map<String, Object> buildWritablePayload(
+        Account accountRecord,
+        EntityContext context
+    ) {
+        Map<String, Object> payload = new Map<String, Object>();
+        Map<String, String> mappings = context.isVendor
+            ? QBVendorFieldCapabilities.filterOutboundMappings(
+                QBObjectMappings.getAccountToVendorMapping()
+            )
+            : QBCustomerFieldCapabilities.filterOutboundMappings(
+                QBObjectMappings.getAccountToCustomerMapping()
+            );
+        for (String salesforceField : mappings.keySet()) {
+            String quickBooksField = mappings.get(salesforceField);
+            if (
+                (context.isVendor && !QBVendorFieldCapabilities.isOutboundWritable(quickBooksField)) ||
+                (!context.isVendor && !QBCustomerFieldCapabilities.isOutboundWritable(quickBooksField))
+            ) {
+                continue;
+            }
+            Object value = getFieldValue(accountRecord, salesforceField);
+            if (value != null) {
+                putNestedValue(payload, quickBooksField, value);
+            }
+        }
+
+        Boolean isPerson = !context.isVendor && isPersonAccount(accountRecord);
+        if (isPerson) {
+            putIfPopulated(payload, 'GivenName', accountRecord, 'FirstName');
+            putIfPopulated(payload, 'MiddleName', accountRecord, 'MiddleName');
+            putIfPopulated(payload, 'FamilyName', accountRecord, 'LastName');
+            putIfPopulated(payload, 'Suffix', accountRecord, 'Suffix');
+            payload.remove('CompanyName');
+        } else if (!context.isVendor && !payload.containsKey('CompanyName') && String.isNotBlank(accountRecord.Name)) {
+            payload.put('CompanyName', accountRecord.Name);
+        }
+        if (!payload.containsKey('DisplayName') && String.isNotBlank(accountRecord.Name)) {
+            payload.put('DisplayName', accountRecord.Name);
+        }
+        if (payload.get('DisplayName') == null || String.isBlank(String.valueOf(payload.get('DisplayName')))) {
+            throw new QBIntegrationException('Account Name is required for QuickBooks sync.');
+        }
+        return payload;
+    }
+
+    private static void persistQuickBooksId(Id accountId, String quickBooksId) {
+        if (accountId == null || String.isBlank(quickBooksId)) {
+            return;
+        }
+        QBTriggerHandler.isAccountProcessing = true;
         try {
-            if (obj == null || String.isBlank(fieldPath)) {
-                return null;
+            update new Account(Id = accountId, QuickbookID__c = quickBooksId);
+        } finally {
+            QBTriggerHandler.isAccountProcessing = false;
+        }
+    }
+
+    private static EntityContext resolveEntity(Account accountRecord) {
+        EntityContext context = new EntityContext();
+        context.isVendor = false;
+        if (accountRecord.RecordTypeId != null) {
+            Schema.RecordTypeInfo info = Schema.SObjectType.Account.getRecordTypeInfosById().get(accountRecord.RecordTypeId);
+            context.isVendor = info != null &&
+                (info.getName() == 'Vendor' || info.getDeveloperName() == 'Vendor');
+        }
+        context.endpoint = context.isVendor ? '/vendor' : '/customer';
+        context.responseKey = context.isVendor ? 'Vendor' : 'Customer';
+        return context;
+    }
+
+    private static Boolean isPersonAccount(Account accountRecord) {
+        if (accountRecord == null || accountRecord.RecordTypeId == null) {
+            return false;
+        }
+        if (personAccountRecordTypeIds == null) {
+            personAccountRecordTypeIds = new Set<Id>();
+            for (RecordType recordType : [
+                SELECT Id
+                FROM RecordType
+                WHERE SObjectType = 'Account' AND IsPersonType = true
+            ]) {
+                personAccountRecordTypeIds.add(recordType.Id);
             }
-            
-            List<String> fields = fieldPath.split('\\.');
-            SObject currentObj = obj;
-            
-            for (Integer i = 0; i < fields.size() - 1; i++) {
-                String field = fields[i];
-                if (!currentObj.getSObjectType().getDescribe().fields.getMap().containsKey(field)) {
-                    return null;
-                }
-                currentObj = currentObj.getSObject(field);
-                if (currentObj == null) {
-                    return null;
-                }
+        }
+        return personAccountRecordTypeIds.contains(accountRecord.RecordTypeId);
+    }
+
+    private static void putIfPopulated(
+        Map<String, Object> payload,
+        String quickBooksField,
+        Account accountRecord,
+        String salesforceField
+    ) {
+        Object value = getFieldValue(accountRecord, salesforceField);
+        if (value != null) {
+            payload.put(quickBooksField, value);
+        }
+    }
+
+    private static void putNestedValue(Map<String, Object> payload, String path, Object value) {
+        if (String.isBlank(path) || value == null) {
+            return;
+        }
+        List<String> parts = path.split('\\.');
+        Map<String, Object> current = payload;
+        for (Integer index = 0; index < parts.size() - 1; index++) {
+            if (!(current.get(parts[index]) instanceof Map<String, Object>)) {
+                current.put(parts[index], new Map<String, Object>());
             }
-            
-            String leafField = fields[fields.size() - 1];
-            if (!currentObj.getSObjectType().getDescribe().fields.getMap().containsKey(leafField)) {
-                return null;
+            current = (Map<String, Object>) current.get(parts[index]);
+        }
+        current.put(parts[parts.size() - 1], value);
+    }
+
+    private static String buildRequestId(String operation, Account accountRecord, String requestBody) {
+        String source = accountRecord.Id == null ? accountRecord.Name : String.valueOf(accountRecord.Id);
+        String digest = EncodingUtil.convertToHex(
+            Crypto.generateDigest('SHA-256', Blob.valueOf(requestBody))
+        ).toLowerCase();
+        String requestId = 'QB-' + operation + '-' + source + '-' + digest.substring(0, 20);
+        return requestId.length() <= 50 ? requestId : requestId.substring(0, 50);
+    }
+
+    private static String serializeCanonical(Object value) {
+        if (value instanceof Map<String, Object>) {
+            Map<String, Object> valueMap = (Map<String, Object>) value;
+            List<String> keys = new List<String>(valueMap.keySet());
+            keys.sort();
+            List<String> members = new List<String>();
+            for (String key : keys) {
+                members.add(JSON.serialize(key) + ':' + serializeCanonical(valueMap.get(key)));
             }
-            return currentObj.get(leafField);
-        } catch (Exception e) {
+            return '{' + String.join(members, ',') + '}';
+        }
+        if (value instanceof List<Object>) {
+            List<String> items = new List<String>();
+            for (Object item : (List<Object>) value) {
+                items.add(serializeCanonical(item));
+            }
+            return '[' + String.join(items, ',') + ']';
+        }
+        return JSON.serialize(value);
+    }
+
+    private static void throwResponseFailure(
+        HttpResponse response,
+        String operation,
+        String entityName,
+        Boolean surfaceTypedFailure
+    ) {
+        Integer statusCode = response == null ? 503 : response.getStatusCode();
+        String body = response == null ? null : response.getBody();
+        Integer providerCode = getProviderErrorCode(body);
+        String message = providerCode == DUPLICATE_NAME_CODE
+            ? 'A QuickBooks ' + entityName + ' with this display name already exists. Populate Account.QuickbookID__c with the QBO ' + entityName + ' Id or use a unique name.'
+            : 'QuickBooks could not ' + operation + ' the ' + entityName +
+                '. HTTP ' + statusCode + ': ' + ConnectorExecutionResult.sanitizeError(body);
+        throwFailure(statusCode, message, surfaceTypedFailure);
+    }
+
+    private static Integer getProviderErrorCode(String body) {
+        try {
+            Map<String, Object> parsed = (Map<String, Object>) JSON.deserializeUntyped(body);
+            Map<String, Object> fault = parsed == null ? null : (Map<String, Object>) parsed.get('Fault');
+            List<Object> errors = fault == null ? null : (List<Object>) fault.get('Error');
+            Map<String, Object> first = errors == null || errors.isEmpty()
+                ? null
+                : (Map<String, Object>) errors[0];
+            return first == null || first.get('code') == null
+                ? null
+                : Integer.valueOf(String.valueOf(first.get('code')));
+        } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static void throwFailure(Integer statusCode, String message, Boolean typedFailure) {
+        if (typedFailure) {
+            throw IntegrationRetryPolicy.exceptionForStatus(statusCode, message);
+        }
+        throw new QBIntegrationException(message);
+    }
+
+    private static Object getFieldValue(SObject recordValue, String fieldPath) {
+        try {
+            if (recordValue == null || String.isBlank(fieldPath)) {
+                return null;
+            }
+            List<String> parts = fieldPath.split('\\.');
+            SObject current = recordValue;
+            for (Integer index = 0; index < parts.size() - 1; index++) {
+                current = current.getSObject(parts[index]);
+                if (current == null) {
+                    return null;
+                }
+            }
+            return current.get(parts[parts.size() - 1]);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private class EntityContext {
+        private Boolean isVendor;
+        private String endpoint;
+        private String responseKey;
     }
 }

@@ -51,7 +51,6 @@ public with sharing class ConnectorRegistryService {
         @AuraEnabled public Boolean hasCheckout { get; set; }
         @AuraEnabled public Boolean hasPayment { get; set; }
         @AuraEnabled public Boolean hasCarrier { get; set; }
-        @AuraEnabled public Boolean countsTowardScheduleLimit { get; set; }
     }
 
     private static List<ConnectorDescriptor> cachedDescriptors;
@@ -142,14 +141,6 @@ public with sharing class ConnectorRegistryService {
             }
         }
         return integrationType;
-    }
-
-    public static Boolean countsTowardScheduleLimit(String keyOrAlias) {
-        ConnectorDescriptor descriptor = byKey(keyOrAlias);
-        if (descriptor == null) {
-            descriptor = byKey(connectorKeyForIntegrationType(keyOrAlias));
-        }
-        return descriptor != null && descriptor.countsTowardScheduleLimit == true;
     }
 
     public static List<ConfigFieldDescriptor> configFieldsFor(String connectorKey) {
@@ -258,8 +249,7 @@ public with sharing class ConnectorRegistryService {
                     row.Has_Scheduler__c == true,
                     row.Has_Checkout__c == true,
                     row.Has_Payment__c == true,
-                    row.Has_Carrier__c == true,
-                    row.Has_Scheduler__c == true
+                    row.Has_Carrier__c == true
                 );
                 descriptor.logoUrl = row.Logo_URL__c;
                 descriptor.catalogActive = row.Catalog_Active__c == true;
@@ -280,7 +270,7 @@ public with sharing class ConnectorRegistryService {
         try {
             for (Integration_Connector__mdt row : [
                 SELECT Connector_Key__c, Product_Key__c, Provider_Label__c, Aliases__c, Category__c,
-                    Integration_Type__c, Counts_Toward_Schedule_Limit__c,
+                    Integration_Type__c,
                     Config_Record_Name__c, Active_Field__c, Expiry_Field__c, Editable_Fields__c,
                     Display_Order__c, Enabled__c, Has_Config__c, Has_Reporting__c, Has_Mapping__c,
                     Has_Scheduler__c, Has_Checkout__c, Has_Payment__c, Has_Carrier__c
@@ -306,8 +296,7 @@ public with sharing class ConnectorRegistryService {
                     row.Has_Scheduler__c == true,
                     row.Has_Checkout__c == true,
                     row.Has_Payment__c == true,
-                    row.Has_Carrier__c == true,
-                    row.Counts_Toward_Schedule_Limit__c == true
+                    row.Has_Carrier__c == true
                 ));
             }
         } catch (Exception ignored) {
@@ -446,8 +435,7 @@ public with sharing class ConnectorRegistryService {
         Boolean hasScheduler,
         Boolean hasCheckout,
         Boolean hasPayment,
-        Boolean hasCarrier,
-        Boolean countsTowardScheduleLimit
+        Boolean hasCarrier
     ) {
         ConnectorDescriptor descriptor = new ConnectorDescriptor();
         descriptor.connectorKey = String.isBlank(connectorKey) ? productKey : connectorKey;
@@ -479,7 +467,6 @@ public with sharing class ConnectorRegistryService {
         descriptor.hasCheckout = hasCheckout == true;
         descriptor.hasPayment = hasPayment == true;
         descriptor.hasCarrier = hasCarrier == true;
-        descriptor.countsTowardScheduleLimit = countsTowardScheduleLimit == true;
         return descriptor;
     }
 
@@ -558,7 +545,7 @@ public with sharing class ConnectorRegistryService {
     }
 
     private static ConnectorDescriptor cloneConnector(ConnectorDescriptor source) {
-        ConnectorDescriptor descriptor = baseDescriptor(source.connectorKey, source.productKey, source.label, source.aliases, source.category, source.configRecordName, source.integrationType, source.activeField, source.expiryField, String.join(source.editableFields == null ? new List<String>() : source.editableFields, ','), source.sortOrder, source.hasConfig, source.hasReporting, source.hasMapping, source.hasScheduler, source.hasCheckout, source.hasPayment, source.hasCarrier, source.countsTowardScheduleLimit);
+        ConnectorDescriptor descriptor = baseDescriptor(source.connectorKey, source.productKey, source.label, source.aliases, source.category, source.configRecordName, source.integrationType, source.activeField, source.expiryField, String.join(source.editableFields == null ? new List<String>() : source.editableFields, ','), source.sortOrder, source.hasConfig, source.hasReporting, source.hasMapping, source.hasScheduler, source.hasCheckout, source.hasPayment, source.hasCarrier);
         descriptor.iconName = String.isBlank(source.iconName) ? descriptor.iconName : source.iconName;
         descriptor.logoUrl = source.logoUrl;
         descriptor.entitlementKey = source.entitlementKey;

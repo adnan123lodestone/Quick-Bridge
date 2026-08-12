@@ -1,4 +1,15 @@
 public with sharing class ConnectorScheduleService {
+  @TestVisible
+  private static Boolean leaseRefreshCapacityOverride;
+
+  public static Boolean hasLeaseRefreshCapacity() {
+    if (Test.isRunningTest() && leaseRefreshCapacityOverride != null) {
+      return leaseRefreshCapacityOverride;
+    }
+    return Limits.getDmlStatements() < Limits.getLimitDmlStatements() &&
+      Limits.getQueries() < Limits.getLimitQueries();
+  }
+
   public static Boolean markRunning(
     Id scheduleId,
     String leaseToken,

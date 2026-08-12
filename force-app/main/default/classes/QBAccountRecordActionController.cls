@@ -88,7 +88,7 @@ public with sharing class QBAccountRecordActionController {
                 }
                 update accountToUpdate;
 
-                if (!isVendorAccount) {
+                if (!isVendorAccount && !isPersonAccountRecordType(existingAccount.RecordTypeId)) {
                     Contact contactToUpsert = buildContactFromCustomer(accountData, existingAccount.Id);
                     if (contactToUpsert != null) {
                         upsert contactToUpsert Contact.Email__c;
@@ -119,33 +119,7 @@ public with sharing class QBAccountRecordActionController {
     }
 
     private static Account getAccountForOutboundSync(Id accountId) {
-        if (accountId == null) {
-            throw new AuraHandledException('Account Id is required.');
-        }
-
-        return [
-            SELECT Id,
-                   Name,
-                   QuickbookID__c,
-                   RecordTypeId,
-                   AccountNumber,
-                   PrimaryEmailAddr__c,
-                   Phone,
-                   BillingStreet,
-                   BillingCity,
-                   BillingState,
-                   BillingPostalCode,
-                   BillingCountry,
-                   GivenName__c,
-                   MiddleName__c,
-                   FamilyName__c,
-                   Suffix__c,
-                   Title__c,
-                   Description
-            FROM Account
-            WHERE Id = :accountId
-            LIMIT 1
-        ];
+        return QBAccountSelector.selectForOutbound(accountId);
     }
 
     // private static void applyCustomerToAccount(Account accountToUpdate, Map<String, Object> customerData) {
@@ -161,7 +135,15 @@ public with sharing class QBAccountRecordActionController {
 
     private static void applyCustomerToAccount(Account accountToUpdate, Map<String, Object> customerData) {
         Map<String, String> mapping = QBObjectMappings.getCustomerToAccountMapping();
-        applyQuickBooksAccountData(accountToUpdate, customerData, mapping);
+        Id personRecordTypeId = isPersonAccountRecordType(accountToUpdate.RecordTypeId)
+            ? accountToUpdate.RecordTypeId
+            : null;
+        QBCustomerAccountMapper.applyCustomer(
+            accountToUpdate,
+            customerData,
+            mapping,
+            personRecordTypeId
+        );
     }
 
     private static void applyVendorToAccount(Account accountToUpdate, Map<String, Object> vendorData) {

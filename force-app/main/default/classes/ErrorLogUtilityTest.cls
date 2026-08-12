@@ -155,7 +155,13 @@ private class ErrorLogUtilityTest {
         ];
         System.assertEquals(1, invoiceLogs.size());
         System.assertEquals('stack', invoiceLogs[0].Stack_Trace__c);
-        System.assertEquals(1, [SELECT Count() FROM Error_Log__c WHERE Source_Record_Id__c = :accountIdText AND Dml_Operation__c = 'update']);
+        List<Error_Log__c> accountLogs = [
+            SELECT Account__c
+            FROM Error_Log__c
+            WHERE Source_Record_Id__c = :accountIdText AND Dml_Operation__c = 'update'
+        ];
+        System.assertEquals(1, accountLogs.size());
+        System.assertEquals(acc.Id, accountLogs[0].Account__c);
         System.assertEquals(1, [SELECT Count() FROM Error_Log__c WHERE Source_Record_Id__c = :transactionIdText AND Http_Status_Code__c = 500]);
         List<String> linkedIds = new List<String>{ invoiceIdText, accountIdText, transactionIdText };
         System.assertEquals(3, [
@@ -248,7 +254,7 @@ private class ErrorLogUtilityTest {
             ORDER BY CreatedDate DESC
             LIMIT 1
         ];
-        System.assertEquals(null, logRecord.Account__c);
+        System.assertEquals(acc.Id, logRecord.Account__c);
         System.assertEquals('Shopify', logRecord.Gateway_Name__c);
         System.assertEquals('DML Failure', logRecord.Error_Category__c);
         System.assertEquals('upsert', logRecord.Dml_Operation__c);
@@ -334,6 +340,47 @@ private class ErrorLogUtilityTest {
             AND Relationship_Role__c = 'Action Source'
             AND Linked_Object_API_Name__c = 'Invoice__c'
         ]);
+    }
+
+    @isTest
+    static void testBulkLoggingUsesFixedDmlAndPreservesEveryError() {
+        Account acc = [SELECT Id FROM Account LIMIT 1];
+        List<ErrorLogUtility.LogContext> contexts = new List<ErrorLogUtility.LogContext>();
+        for (Integer index = 0; index < 50; index++) {
+            ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+            context.gatewayName = 'QuickBooks';
+            context.classMethodName = 'QBItemToProductSyncBatch.execute.upsertProducts';
+            context.errorMessage = 'Product failure ' + index;
+            context.sourceObjectApiName = 'Account';
+            context.sourceRecordId = acc.Id;
+            context.sourceRecordIdText = String.valueOf(acc.Id);
+            context.errorCategory = 'DML Failure';
+            context.dmlOperation = 'upsert';
+            contexts.add(context);
+        }
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        ErrorLogUtility.logErrors(contexts);
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        List<Error_Log__c> logs = [
+            SELECT Id
+            FROM Error_Log__c
+            WHERE Class_Method_Name__c = 'QBItemToProductSyncBatch.execute.upsertProducts'
+        ];
+        Set<Id> logIds = new Map<Id, Error_Log__c>(logs).keySet();
+        System.assertEquals(50, logs.size());
+        System.assertEquals(50, [
+            SELECT Count()
+            FROM Error_Log_Link__c
+            WHERE Error_Log__c IN :logIds
+        ]);
+        System.assert(
+            dmlUsed < 10,
+            'Bulk error persistence must use fixed DML, but used ' + dmlUsed
+        );
     }
 
     @isTest

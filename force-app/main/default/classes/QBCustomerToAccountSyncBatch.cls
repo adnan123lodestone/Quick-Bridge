@@ -65,13 +65,6 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
     }
     
     public void execute(Database.BatchableContext bc, List<String> scope) {
-        try {
-            IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
-        } catch (Exception e) {
-            ErrorLogUtility.logException('QuickBooks', 'QBCustomerToAccountSyncBatch.execute', e, null, null);
-            recordSharedFailure(null, e.getMessage());
-            return;
-        }
         QBTriggerHandler.isAccountProcessing = true;
         
         try {
@@ -99,39 +92,6 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
                         Account accountToSync = processCustomerData(customerData);
                             
                         if (accountToSync != null) {
-                            String companyName = (String)customerData.get('CompanyName');
-
-                            // Only treat as a Person Account when it is safe to do so:
-                            //  - the record is brand new (no Id yet), or
-                            //  - it already IS a Person Account.
-                            // Flipping an existing Business Account to a Person Account in the
-                            // same DML is not allowed and causes
-                            // "Business Account may not use Person Account field PersonEmail".
-                            Boolean canBePersonAccount = personAccountRecordTypeId != null
-                                && (accountToSync.Id == null
-                                    || accountToSync.RecordTypeId == personAccountRecordTypeId);
-
-                            if (isPersonAccountEnabled && canBePersonAccount && String.isBlank(companyName)) {
-                                accountToSync.RecordTypeId = personAccountRecordTypeId;
-                                    
-                                String fName = (String)customerData.get('GivenName');
-                                String lName = (String)customerData.get('FamilyName');
-                                    
-                                if (String.isNotBlank(lName)) {
-                                    accountToSync.put('LastName', lName);
-                                    if (String.isNotBlank(fName)) accountToSync.put('FirstName', fName);
-                                } else if (String.isNotBlank(fName)) {
-                                    accountToSync.put('LastName', fName);
-                                } else {
-                                    accountToSync.put('LastName', 'Unknown');
-                                }
-                                    
-                                Map<String, Object> primaryEmailAddr = (Map<String, Object>)customerData.get('PrimaryEmailAddr');
-                                if (primaryEmailAddr != null && primaryEmailAddr.get('Address') != null) {
-                                    accountToSync.put('PersonEmail', (String)primaryEmailAddr.get('Address'));
-                                }
-                            }
-
                             accountsToUpsert.add(accountToSync);
                         } else {
                             recordSharedFailure(customerId, 'QuickBooks customer did not produce an Account record.');
@@ -292,7 +252,12 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
             account = existingAccounts[0];
         } else {
             account = new Account();
-            if (defaultAccountRecordTypeId != null) {
+            if (
+                personAccountRecordTypeId != null &&
+                QBCustomerAccountMapper.shouldCreatePersonAccount(customerData)
+            ) {
+                account.RecordTypeId = personAccountRecordTypeId;
+            } else if (defaultAccountRecordTypeId != null) {
                 account.RecordTypeId = defaultAccountRecordTypeId;
             }
         }
@@ -301,31 +266,12 @@ public class QBCustomerToAccountSyncBatch implements Database.Batchable<String>,
         
         Map<String, String> mapping = QBObjectMappings.getCustomerToAccountMapping();
         
-        for (String qbField : mapping.keySet()) {
-            String sfField = mapping.get(qbField);
-            Object qbValue = getNestedValue(customerData, qbField);
-            
-            if (qbValue != null) {
-                try {
-                    putFieldValue(account, sfField, qbValue);
-                } catch(Exception e) {}
-            }
-        }
-
-        // Configuration can intentionally omit the Name mapping. Preserve the
-        // mapped value when present, but ensure business Accounts remain DML-valid.
-        if (String.isBlank(account.Name)) {
-            String displayName = (String) customerData.get('DisplayName');
-            String companyName = (String) customerData.get('CompanyName');
-            String fullyQualifiedName = (String) customerData.get('FullyQualifiedName');
-            if (String.isNotBlank(displayName)) {
-                account.Name = displayName;
-            } else if (String.isNotBlank(companyName)) {
-                account.Name = companyName;
-            } else if (String.isNotBlank(fullyQualifiedName)) {
-                account.Name = fullyQualifiedName;
-            }
-        }
+        QBCustomerAccountMapper.applyCustomer(
+            account,
+            customerData,
+            mapping,
+            personAccountRecordTypeId
+        );
         
         account.QuickbookID__c = qbId;
         

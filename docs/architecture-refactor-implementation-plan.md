@@ -521,40 +521,11 @@ public Integer priority()
 private void validateRequest(IntegrationWorkRequest request)
 ```
 
-### Issue #3: Pre-flight Throttling
+### Issue #3: Pre-flight Throttling (Retired)
 
-**New Functions in IntegrationThrottler:**
-
-```apex
-public static ThrottleResult allowRequest(String connectorKey, Integer units)
-public static ThrottleEntry getCurrentUsage(String connectorKey)
-public static void recordUsage(String connectorKey, Integer units)
-private static ThrottleEntry loadFromCache(String connectorKey)
-private static void saveToCache(ThrottleEntry entry)
-private static Integer getLimit(String connectorKey)
-```
-
-**Modified Functions in IntegrationUsageService:**
-
-```apex
-// New pre-flight check
-public static void assertCanConsumeTask(String product, Integer units) {
-    ThrottleResult result = IntegrationThrottler.allowRequest(product, units);
-    if (!result.allowed) {
-        throw new AuraHandledException(result.reason);
-    }
-}
-```
-
-**New Functions in IntegrationWorkDispatcher:**
-
-```apex
-// Add throttle check before dispatch
-private static Boolean canDispatchWork(Integration_Work_Item__c item) {
-    ThrottleResult result = IntegrationThrottler.allowRequest(item.Integration__c, 1);
-    return result.allowed;
-}
-```
+Task-usage and active-schedule quotas were retired in August 2026. Connector
+execution must not be blocked by those historical measures. Record-sync,
+endpoint, and error reporting remain supported.
 
 ### Issue #4: Centralized Error Handling
 

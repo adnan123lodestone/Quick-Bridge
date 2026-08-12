@@ -65,6 +65,15 @@ public without sharing class QuickBooksAuthHandler {
     }
 
     public static HttpResponse makeApiCall(String method, String resource, String body) {
+        return makeApiCall(method, resource, body, true);
+    }
+
+    public static HttpResponse makeApiCall(
+        String method,
+        String resource,
+        String body,
+        Boolean logFailure
+    ) {
         HttpRequest req = new HttpRequest();
         req.setMethod(method);
         
@@ -92,7 +101,7 @@ public without sharing class QuickBooksAuthHandler {
             res = http.send(req);
             System.debug('Response Status Code: ' + res.getStatusCode());
             System.debug('Response Body: ' + res.getBody());
-            if (res.getStatusCode() < 200 || res.getStatusCode() >= 300) {
+            if ((res.getStatusCode() < 200 || res.getStatusCode() >= 300) && logFailure != false) {
                 ErrorLogUtility.logCalloutFailure(
                     'QuickBooks',
                     'QuickBooksAuthHandler.makeApiCall',
@@ -104,13 +113,15 @@ public without sharing class QuickBooksAuthHandler {
             }
         } catch (Exception e) {
             System.debug('Exception occurred during HTTP callout: ' + e.getMessage());
-            ErrorLogUtility.logException(
-                'QuickBooks',
-                'QuickBooksAuthHandler.makeApiCall',
-                e,
-                null,
-                null
-            );
+            if (logFailure != false) {
+                ErrorLogUtility.logException(
+                    'QuickBooks',
+                    'QuickBooksAuthHandler.makeApiCall',
+                    e,
+                    null,
+                    null
+                );
+            }
             throw e;
         }
 

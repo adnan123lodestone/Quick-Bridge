@@ -10,7 +10,6 @@ global class ShopifySyncScheduler implements Schedulable {
 
     global void execute(SchedulableContext sc) {
         try {
-            IntegrationUsageService.incrementTaskUsage('Shopify', 1);
             System.debug('ShopifySyncScheduler running for: ' + targetObject + ' direction: ' + (isSfToShopify ? 'SF→Shopify' : 'Shopify→SF'));
 
             if (targetObject == 'Customers' || targetObject == 'Customer') {

@@ -66,10 +66,6 @@ global class ShopifyCustomersOutboundBatch implements Database.Batchable<sObject
             return;
         }
 
-        if (!this.bypassAuthCheck) {
-            IntegrationUsageService.assertCanConsumeTask('Shopify', scope == null ? 1 : scope.size());
-        }
-
         List<Account> toUpdate = new List<Account>();
 
         Boolean rateLimited = false;

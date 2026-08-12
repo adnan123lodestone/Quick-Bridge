@@ -128,8 +128,6 @@ public with sharing class StripePaymentService {
                 throwAura('Stripe client configuration is incomplete.');
             }
 
-            IntegrationUsageService.assertCanConsumeTask('Stripe', 1);
-
             OrderAccountContext orderAccountContext = getOrderAccountContext(request.orderId);
             String authorizationHeader = 'Bearer ' + STRIPE_SECRET_KEY_MERGE_FIELD;
 

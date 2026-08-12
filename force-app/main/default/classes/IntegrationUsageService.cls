@@ -1,6 +1,4 @@
 public without sharing class IntegrationUsageService {
-  public class UsageLimitException extends Exception {}
-
   private static final Integer EXPIRING_SOON_DAYS = 7;
   private static final List<String> PRODUCT_KEYS = registryProductKeys();
   private static final Map<String, ProductInfo> PRODUCT_INFO_BY_KEY = registryProductInfo();
@@ -39,10 +37,6 @@ public without sharing class IntegrationUsageService {
     @AuraEnabled
     public Integer endpointUsageCount;
     @AuraEnabled
-    public Integer taskUsageCount;
-    @AuraEnabled
-    public Integer activeScheduleCount;
-    @AuraEnabled
     public String subscriptionStatus;
     @AuraEnabled
     public Integer subscriptionDaysRemaining;
@@ -52,41 +46,6 @@ public without sharing class IntegrationUsageService {
     public Integer recordSyncLimit;
     @AuraEnabled
     public Integer endpointUsageLimit;
-    @AuraEnabled
-    public Integer taskUsageLimit;
-    @AuraEnabled
-    public Integer activeScheduleLimit;
-  }
-
-  public static void assertCanConsumeTask(String product, Integer units) {
-    ProductInfo info = normalizeProduct(product);
-    String productLabel = info != null ? info.label : product;
-
-    Integer taskLimit = getTaskUsageLimit(info);
-    if (taskLimit <= 0) {
-      return;
-    }
-
-    Integer currentCount = 0;
-    if (info != null) {
-      List<Integration_Usage_Summary__c> rows = [
-        SELECT Task_Usage_Count__c
-        FROM Integration_Usage_Summary__c
-        WHERE Product_Key__c = :info.key
-        LIMIT 1
-      ];
-      if (!rows.isEmpty()) {
-        currentCount = toInt(rows[0].Task_Usage_Count__c);
-      }
-    }
-
-    if (currentCount + (units == null ? 1 : units) > taskLimit) {
-      throw new UsageLimitException(
-        'Task limit reached for ' +
-          productLabel +
-          '. Please upgrade or renew your plan.'
-      );
-    }
   }
 
   public static void recordSuccessfulRecordSync(String product, Integer count) {
@@ -94,15 +53,6 @@ public without sharing class IntegrationUsageService {
       return;
     }
     incrementMetric(product, count, 'Record_Sync_Count__c');
-    incrementMetric(product, count, 'Task_Usage_Count__c');
-  }
-
-  public static void recordSuccessfulApiTask(String product) {
-    incrementMetric(product, 1, 'Task_Usage_Count__c');
-  }
-
-  public static void recordSuccessfulPaymentTask(String product) {
-    incrementMetric(product, 1, 'Task_Usage_Count__c');
   }
 
   public static void incrementRecordSync(String product, Integer count) {
@@ -113,53 +63,27 @@ public without sharing class IntegrationUsageService {
     incrementMetric(product, count, 'Error_Count__c');
   }
 
+  /**
+   * Records one usage event for each successfully persisted Error Log while
+   * using a single DML statement for the collection.
+   */
+  public static void incrementErrors(List<String> products) {
+    if (products == null || products.isEmpty()) {
+      return;
+    }
+    List<Integration_Usage_Event__c> events = new List<Integration_Usage_Event__c>();
+    Datetime occurredAt = Datetime.now();
+    for (String product : products) {
+      ProductInfo info = normalizeProduct(product);
+      if (info != null) {
+        events.add(buildUsageEvent(info, 1, 'Error_Count__c', occurredAt));
+      }
+    }
+    insertUsageEvents(events);
+  }
+
   public static void incrementEndpointUsage(String product, Integer count) {
     incrementMetric(product, count, 'Endpoint_Usage_Count__c');
-  }
-
-  public static void incrementTaskUsage(String product, Integer count) {
-    incrementMetric(product, count, 'Task_Usage_Count__c');
-  }
-
-  public static void syncActiveScheduleCount() {
-    try {
-      Map<String, Integer> countsByKey = new Map<String, Integer>();
-      for (String productKey : PRODUCT_KEYS) {
-        countsByKey.put(productKey, 0);
-      }
-
-      for (AggregateResult result : [
-        SELECT
-          Integration_Type__c product,
-          COUNT_DISTINCT(Logical_Job_Key__c) total
-        FROM Scheduled_Integration_Job__c
-        WHERE Status__c IN ('Active', 'Ready', 'Claimed', 'Running')
-        GROUP BY Integration_Type__c
-      ]) {
-        ProductInfo info = normalizeProduct((String) result.get('product'));
-        if (info != null) {
-          countsByKey.put(info.key, aggregateInteger(result.get('total')));
-        }
-      }
-
-      List<Integration_Usage_Summary__c> updates = new List<Integration_Usage_Summary__c>();
-      Map<String, Integration_Usage_Summary__c> summaries = getOrCreateSummariesByKey();
-      for (String productKey : PRODUCT_KEYS) {
-        Integration_Usage_Summary__c summary = summaries.get(productKey);
-        summary.Active_Schedule_Count__c = countsByKey.get(productKey);
-        summary.Last_Updated_At__c = Datetime.now();
-        updates.add(summary);
-      }
-      if (!updates.isEmpty()) {
-        update updates;
-      }
-    } catch (Exception e) {
-      System.debug(
-        LoggingLevel.ERROR,
-        'IntegrationUsageService.syncActiveScheduleCount exception: ' +
-        e.getMessage()
-      );
-    }
   }
 
   public static void refreshSubscriptionStatuses() {
@@ -190,7 +114,6 @@ public without sharing class IntegrationUsageService {
   @AuraEnabled(cacheable=false)
   public static List<ReportingProductSummary> getReportingSummary() {
     IntegrationUsageAggregator.aggregatePendingEvents();
-    syncActiveScheduleCount();
     refreshSubscriptionStatuses();
 
     Map<String, Integration_Usage_Summary__c> summaries = getOrCreateSummariesByKey();
@@ -200,8 +123,6 @@ public without sharing class IntegrationUsageService {
         Product__c,
         Record_Sync_Limit__c,
         Endpoint_Usage_Limit__c,
-        Task_Usage_Limit__c,
-        Active_Schedule_Limit__c,
         Is_Active__c
       FROM Integration_Usage_Limit__mdt
       WHERE Is_Active__c = TRUE
@@ -223,8 +144,6 @@ public without sharing class IntegrationUsageService {
       row.recordSyncCount = toInt(summary.Record_Sync_Count__c);
       row.errorCount = toInt(summary.Error_Count__c);
       row.endpointUsageCount = toInt(summary.Endpoint_Usage_Count__c);
-      row.taskUsageCount = toInt(summary.Task_Usage_Count__c);
-      row.activeScheduleCount = toInt(summary.Active_Schedule_Count__c);
       row.subscriptionStatus = String.isBlank(summary.Subscription_Status__c)
         ? 'Inactive'
         : summary.Subscription_Status__c;
@@ -238,37 +157,9 @@ public without sharing class IntegrationUsageService {
       row.endpointUsageLimit = limitRow == null
         ? 0
         : toInt(limitRow.Endpoint_Usage_Limit__c);
-      row.taskUsageLimit = limitRow == null
-        ? 0
-        : toInt(limitRow.Task_Usage_Limit__c);
-      row.activeScheduleLimit = limitRow == null
-        ? 0
-        : toInt(limitRow.Active_Schedule_Limit__c);
       rows.add(row);
     }
     return rows;
-  }
-
-  private static Integer getTaskUsageLimit(ProductInfo info) {
-    if (info == null) {
-      return 0;
-    }
-    try {
-      for (Integration_Usage_Limit__mdt row : [
-        SELECT Task_Usage_Limit__c
-        FROM Integration_Usage_Limit__mdt
-        WHERE Product__c = :info.label AND Is_Active__c = TRUE
-        LIMIT 1
-      ]) {
-        return toInt(row.Task_Usage_Limit__c);
-      }
-    } catch (Exception e) {
-      System.debug(
-        LoggingLevel.ERROR,
-        'IntegrationUsageService.getTaskUsageLimit exception: ' + e.getMessage()
-      );
-    }
-    return 0;
   }
 
   private static void incrementMetric(
@@ -280,21 +171,38 @@ public without sharing class IntegrationUsageService {
       return;
     }
 
-    try {
-      ProductInfo info = normalizeProduct(product);
-      if (info == null) {
-        return;
-      }
+    ProductInfo info = normalizeProduct(product);
+    if (info == null) {
+      return;
+    }
+    insertUsageEvents(new List<Integration_Usage_Event__c>{
+      buildUsageEvent(info, count, fieldApiName, Datetime.now())
+    });
+  }
 
-      insert new Integration_Usage_Event__c(
-        Product_Key__c = info.key,
-        Event_Type__c = fieldApiNameToEventType(fieldApiName),
-        Summary_Field__c = fieldApiName,
-        Count__c = count,
-        Occurred_At__c = Datetime.now(),
-        Processed__c = false,
-        Processing_Status__c = 'Pending'
-      );
+  private static Integration_Usage_Event__c buildUsageEvent(
+    ProductInfo info,
+    Integer count,
+    String fieldApiName,
+    Datetime occurredAt
+  ) {
+    return new Integration_Usage_Event__c(
+      Product_Key__c = info.key,
+      Event_Type__c = fieldApiNameToEventType(fieldApiName),
+      Summary_Field__c = fieldApiName,
+      Count__c = count,
+      Occurred_At__c = occurredAt,
+      Processed__c = false,
+      Processing_Status__c = 'Pending'
+    );
+  }
+
+  private static void insertUsageEvents(List<Integration_Usage_Event__c> events) {
+    if (events == null || events.isEmpty()) {
+      return;
+    }
+    try {
+      Database.insert(events, false);
       if (Test.isRunningTest()) {
         IntegrationUsageAggregator.aggregatePendingEvents();
       } else {
@@ -303,7 +211,7 @@ public without sharing class IntegrationUsageService {
     } catch (Exception e) {
       System.debug(
         LoggingLevel.ERROR,
-        'IntegrationUsageService.incrementMetric exception: ' + e.getMessage()
+        'IntegrationUsageService.insertUsageEvents exception: ' + e.getMessage()
       );
     }
   }
@@ -314,9 +222,6 @@ public without sharing class IntegrationUsageService {
     }
     if (fieldApiName == 'Endpoint_Usage_Count__c') {
       return 'Endpoint Usage';
-    }
-    if (fieldApiName == 'Task_Usage_Count__c') {
-      return 'Task Usage';
     }
     if (fieldApiName == 'Error_Count__c') {
       return 'Error';
@@ -338,8 +243,6 @@ public without sharing class IntegrationUsageService {
         Record_Sync_Count__c,
         Error_Count__c,
         Endpoint_Usage_Count__c,
-        Task_Usage_Count__c,
-        Active_Schedule_Count__c,
         Subscription_Status__c,
         Subscription_Days_Remaining__c,
         Last_Updated_At__c
@@ -365,8 +268,6 @@ public without sharing class IntegrationUsageService {
           Record_Sync_Count__c,
           Error_Count__c,
           Endpoint_Usage_Count__c,
-          Task_Usage_Count__c,
-          Active_Schedule_Count__c,
           Subscription_Status__c,
           Subscription_Days_Remaining__c,
           Last_Updated_At__c
@@ -390,8 +291,6 @@ public without sharing class IntegrationUsageService {
         Record_Sync_Count__c,
         Error_Count__c,
         Endpoint_Usage_Count__c,
-        Task_Usage_Count__c,
-        Active_Schedule_Count__c,
         Subscription_Status__c,
         Subscription_Days_Remaining__c,
         Last_Updated_At__c
@@ -415,8 +314,6 @@ public without sharing class IntegrationUsageService {
       Record_Sync_Count__c = 0,
       Error_Count__c = 0,
       Endpoint_Usage_Count__c = 0,
-      Task_Usage_Count__c = 0,
-      Active_Schedule_Count__c = 0,
       Subscription_Status__c = 'Inactive',
       Last_Updated_At__c = Datetime.now()
     );
@@ -588,20 +485,4 @@ public without sharing class IntegrationUsageService {
     return value == null ? null : value.intValue();
   }
   
-  @TestVisible
-  private static Integer aggregateInteger(Object value) {
-    if (value == null) {
-      return 0;
-    }
-    if (value instanceof Integer) {
-      return (Integer) value;
-    }
-    if (value instanceof Long) {
-      return ((Long) value).intValue();
-    }
-    if (value instanceof Decimal) {
-      return ((Decimal) value).intValue();
-    }
-    return Integer.valueOf(String.valueOf(value));
-  }
 }

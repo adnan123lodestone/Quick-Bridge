@@ -9,24 +9,20 @@ public with sharing class QBAccountWorker implements IntegrationWorkHandler {
             throw new QBAccountWorkerException('Account work item has no Salesforce Id.');
         }
 
-        Map<String, String> fieldMapping = QBObjectMappings.getAccountToCustomerMapping();
-    Set<String> fieldsToQuery = new Set<String>(fieldMapping.keySet());
-    fieldsToQuery.addAll(new Set<String>{'Id', 'Name', 'QuickbookID__c', 'RecordTypeId'});
-    String fieldList = String.join(new List<String>(fieldsToQuery), ', ');
-    String query = 'SELECT ' + fieldList + ' FROM Account WHERE Id = :accountId LIMIT 1';
-
-    List<Account> accounts = Database.query(query);
-
-        if (accounts.isEmpty()) {
-            throw new QBAccountWorkerException('Account not found: ' + accountId);
+        Account accountRecord = QBAccountSelector.selectForOutbound(accountId);
+        ConnectorExecutionResult result = QBAccountService.syncAccountsToQuickBooksShared(
+            new List<Account>{ accountRecord },
+            false
+        );
+        if (result != null && result.hasFailures()) {
+            String message = String.isBlank(result.errorSummary)
+                ? 'QuickBooks Account sync failed.'
+                : result.errorSummary;
+            throw IntegrationRetryPolicy.exceptionForStatus(
+                result.retryable == true ? 503 : 400,
+                message
+            );
         }
-
-        QBAccountService.syncAccountsToQuickBooks(accounts, isInitialSync(item));
-    }
-
-    private static Boolean isInitialSync(Integration_Work_Item__c item) {
-        Map<String, Object> payload = IntegrationWorkService.parsePayload(item);
-        return payload.containsKey('isInitialSync') && payload.get('isInitialSync') == true;
     }
 
     private static Id parseId(String primaryValue, String fallbackValue) {

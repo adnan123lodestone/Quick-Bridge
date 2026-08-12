@@ -142,4 +142,87 @@ private class QBItemToProductSyncBatchTest {
         
         System.assert(true, 'Type coercion executed successfully.');
     }
+
+    @isTest
+    static void invalidExternalValueDoesNotPopulateReferenceField() {
+        Product2 product = new Product2(Name = 'Reference Guard');
+        QBItemToProductSyncBatch batch = new QBItemToProductSyncBatch();
+
+        batch.putFieldValue(product, 'ExternalDataSourceId', '1641177757');
+        batch.putFieldValue(product, 'Description', 'Mapped description');
+
+        System.assertEquals(null, product.ExternalDataSourceId);
+        System.assertEquals('Mapped description', product.Description);
+    }
+
+    @isTest
+    static void fiftyInvalidPicklistMappingsAreBoundedAndProductsStillUpsert() {
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            new Field_Mapping__mdt(
+                Integration__c = 'qbonline',
+                SF_Object__c = 'Product2',
+                SF_Field__c = 'Asset_Account_Ref__c',
+                External_Field__c = 'IncomeAccountRef.value',
+                Sync_Direction__c = 'QBO to SF',
+                Target_Object_API_Name__c = 'Item',
+                Is_Active__c = true
+            )
+        };
+        List<String> payloads = new List<String>();
+        for (Integer index = 0; index < 50; index++) {
+            payloads.add(JSON.serialize(new Map<String, Object>{
+                'Id' => 'LIMIT-' + index,
+                'Name' => 'Limit Product ' + index,
+                'IncomeAccountRef' => new Map<String, Object>{ 'value' => '79' }
+            }));
+        }
+
+        Integer queriesBefore = Limits.getQueries();
+        Integer dmlBefore = Limits.getDmlStatements();
+        ConnectorExecutionResult result = new QBItemToProductSyncBatch()
+            .executeSharedScope(payloads);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+
+        System.assertEquals(50, [SELECT Count() FROM Product2 WHERE QuickbookID__c LIKE 'LIMIT-%']);
+        System.assertEquals(true, result.hasFailures(), 'The invalid mapping must remain visible.');
+        System.assert(result.errorSummary.contains('restricted Salesforce picklist'));
+        System.assert(queriesUsed < 20, 'Queries must be scope-bounded, used ' + queriesUsed);
+        System.assert(dmlUsed < 20, 'DML must be scope-bounded, used ' + dmlUsed);
+        System.assertEquals(1, [
+            SELECT Count()
+            FROM Error_Log__c
+            WHERE Class_Method_Name__c = 'QBItemToProductSyncBatch.processItemData'
+        ]);
+    }
+
+    @isTest
+    static void invalidRestrictedPicklistValueIsRejectedBeforeDml() {
+        Product2 product = new Product2(Name = 'Picklist Guard');
+        Boolean rejected = false;
+        try {
+            new QBItemToProductSyncBatch().putFieldValue(
+                product,
+                'Asset_Account_Ref__c',
+                '79'
+            );
+        } catch (Exception expected) {
+            rejected = true;
+        }
+        System.assertEquals(true, rejected);
+        System.assertEquals(null, product.Asset_Account_Ref__c);
+    }
+
+    @isTest
+    static void qboProductTypeNormalizesToActiveSalesforcePicklistValue() {
+        Product2 product = new Product2(Name = 'Type Normalization');
+
+        new QBItemToProductSyncBatch().putFieldValue(
+            product,
+            'Product_Type__c',
+            'NonInventory'
+        );
+
+        System.assertEquals('Non-Inventory', product.Product_Type__c);
+    }
 }

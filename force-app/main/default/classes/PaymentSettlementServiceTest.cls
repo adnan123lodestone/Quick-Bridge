@@ -29,7 +29,6 @@ private class PaymentSettlementServiceTest {
     );
     Test.stopTest();
 
-    System.assertEquals(true, result.usageRecorded);
     System.assertEquals(true, result.invoiceProcessed);
     System.assertEquals(true, result.orderGatewayUpdated);
     System.assertEquals(false, result.hasFailures());
@@ -43,7 +42,6 @@ private class PaymentSettlementServiceTest {
   @IsTest
   static void postApprovalFailuresAreBoundedAndNeverThrown() {
     PaymentSettlementService.forcedFailureStages = new Set<String>{
-      'usage',
       'invoice',
       'order'
     };
@@ -60,12 +58,10 @@ private class PaymentSettlementServiceTest {
     );
     Test.stopTest();
 
-    System.assertEquals(false, result.usageRecorded);
     System.assertEquals(false, result.invoiceProcessed);
     System.assertEquals(false, result.orderGatewayUpdated);
     System.assertEquals(true, result.hasFailures());
     System.assert(result.errorSummary.length() <= 2000);
-    System.assert(result.errorSummary.contains('Usage accounting'));
     System.assert(result.errorSummary.contains('Invoice creation'));
     System.assert(result.errorSummary.contains('Order gateway update'));
     PaymentSettlementService.forcedFailureStages.clear();
@@ -77,7 +73,6 @@ private class PaymentSettlementServiceTest {
       null
     );
     System.assertEquals(true, result.hasFailures());
-    System.assertEquals(false, result.usageRecorded);
   }
 
   @IsTest

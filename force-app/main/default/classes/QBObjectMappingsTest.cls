@@ -54,6 +54,78 @@ private class QBObjectMappingsTest {
     }
 
     @isTest
+    static void customerNotesMappingRespectsConfiguredDirection() {
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>();
+        System.assertEquals(
+            false,
+            QBObjectMappings.getAccountToCustomerMapping().containsKey('Description')
+        );
+        System.assertEquals(
+            false,
+            QBObjectMappings.getCustomerToAccountMapping().containsKey('Notes')
+        );
+
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            customerMapping('Description', 'Notes', 'QBO to SF')
+        };
+
+        Map<String, String> inboundOnly = QBObjectMappings.getCustomerToAccountMapping();
+        Map<String, String> outboundWhileInboundOnly = QBObjectMappings.getAccountToCustomerMapping();
+        System.assertEquals('Description', inboundOnly.get('Notes'));
+        System.assertEquals(false, outboundWhileInboundOnly.containsKey('Description'));
+
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            customerMapping('Description', 'Notes', 'SF to QBO')
+        };
+        Map<String, String> outboundOnly = QBObjectMappings.getAccountToCustomerMapping();
+        Map<String, String> inboundWhileOutboundOnly = QBObjectMappings.getCustomerToAccountMapping();
+        System.assertEquals('Notes', outboundOnly.get('Description'));
+        System.assertEquals(false, inboundWhileOutboundOnly.containsKey('Notes'));
+
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            customerMapping('Description', 'Notes', 'Two-Way')
+        };
+        System.assertEquals(
+            'Notes',
+            QBObjectMappings.getAccountToCustomerMapping().get('Description')
+        );
+        System.assertEquals(
+            'Description',
+            QBObjectMappings.getCustomerToAccountMapping().get('Notes')
+        );
+    }
+
+    @isTest
+    static void customerMappingPrefersCanonicalFieldWhenSalesforceFieldIsDuplicated() {
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            customerMapping('Name', 'CompanyName', 'QBO to SF'),
+            customerMapping('Name', 'DisplayName', 'QBO to SF'),
+            customerMapping('Name', 'FullyQualifiedName', 'QBO to SF')
+        };
+
+        Map<String, String> inbound = QBObjectMappings.getCustomerToAccountMapping();
+        System.assertEquals('Name', inbound.get('DisplayName'));
+        System.assertEquals(false, inbound.containsKey('CompanyName'));
+        System.assertEquals(false, inbound.containsKey('FullyQualifiedName'));
+    }
+
+    private static Field_Mapping__mdt customerMapping(
+        String sfField,
+        String externalField,
+        String direction
+    ) {
+        return new Field_Mapping__mdt(
+            Integration__c = 'qbonline',
+            SF_Object__c = 'Account',
+            SF_Field__c = sfField,
+            External_Field__c = externalField,
+            Sync_Direction__c = direction,
+            Target_Object_API_Name__c = 'Customer',
+            Is_Active__c = true
+        );
+    }
+
+    @isTest
     static void testQuoteAndOrderSummaryMappings() {
         Map<String, String> quoteMap = QBObjectMappings.getQuoteMapping();
         System.assert(!quoteMap.isEmpty());

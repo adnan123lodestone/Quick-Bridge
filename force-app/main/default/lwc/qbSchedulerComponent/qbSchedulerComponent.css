@@ -19,55 +19,6 @@
   margin-bottom: 1rem;
 }
 
-.usage-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  padding: 0.9rem 1rem;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-}
-
-.usage-card-limit {
-  background: #fef2f2;
-  border-color: #fecaca;
-}
-
-.usage-label {
-  margin: 0;
-  color: #1e293b;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
-.usage-message {
-  margin: 0.2rem 0 0;
-  color: #64748b;
-  font-size: 0.8rem;
-}
-
-.usage-card-limit .usage-message {
-  color: #991b1b;
-}
-
-.usage-count {
-  min-width: 4.5rem;
-  padding: 0.35rem 0.6rem;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #1d4ed8;
-  font-size: 0.95rem;
-  font-weight: 800;
-  text-align: center;
-}
-
-.usage-card-limit .usage-count {
-  color: #b91c1c;
-}
-
 .border-bottom {
   border-bottom: 1px solid #e2e8f0;
 }

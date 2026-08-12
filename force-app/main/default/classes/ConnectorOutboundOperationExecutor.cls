@@ -93,10 +93,6 @@ public inherited sharing class ConnectorOutboundOperationExecutor implements Con
       )
     );
     if (!accounts.isEmpty()) {
-      IntegrationUsageService.assertCanConsumeTask(
-        'QuickBooks',
-        accounts.size()
-      );
       return QBAccountService.syncAccountsToQuickBooksShared(
         accounts,
         request.initialSync == true
@@ -114,10 +110,6 @@ public inherited sharing class ConnectorOutboundOperationExecutor implements Con
       products.add((Product2) recordValue);
     }
     if (!products.isEmpty()) {
-      IntegrationUsageService.assertCanConsumeTask(
-        'QuickBooks',
-        products.size()
-      );
       return QBProductService.syncProductsToQuickBooksShared(
         products,
         request.initialSync == true

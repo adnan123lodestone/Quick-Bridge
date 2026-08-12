@@ -292,17 +292,46 @@ private class QBSchedulerControllerTest {
   }
 
   @isTest
-  static void testSchedulerEntitlementCreateCountAndDeletePaths() {
+  static void testSchedulerTrackingCreateAndDeletePaths() {
     Test.startTest();
-    SchedulerEntitlementService.assertCanCreateSchedule();
     SchedulerEntitlementService.recordScheduleCreated('QuickBooks', 'Account', '30', 'Minutes', 'QBO Sync - Direct Service Account', new List<Id>());
     SchedulerEntitlementService.recordScheduleCreated(null, null, null, null, null, null);
-    SchedulerEntitlementService.UsageSummary activeSummary = SchedulerEntitlementService.getUsageSummary();
     SchedulerEntitlementService.markScheduleDeleted('QBO Sync - Direct Service Account');
     SchedulerEntitlementService.markScheduleDeleted(null);
     Test.stopTest();
-    System.assert(activeSummary.activeCount >= 1);
     System.assertEquals(0, [SELECT COUNT() FROM Scheduled_Integration_Job__c WHERE Logical_Job_Key__c = 'QBO Sync - Direct Service Account' AND Status__c IN ('Ready', 'Active', 'Claimed', 'Running')]);
+  }
+
+  @isTest
+  static void scheduleCreationIsNotLimitedByExistingActiveSchedules() {
+    configureQuickBooksAuth();
+    List<Scheduled_Integration_Job__c> existingJobs = new List<Scheduled_Integration_Job__c>();
+    for (Integer indexValue = 0; indexValue < 11; indexValue++) {
+      existingJobs.add(new Scheduled_Integration_Job__c(
+        Logical_Job_Key__c = 'Quota Regression ' + indexValue,
+        Scheduler_Name__c = 'Quota Regression ' + indexValue,
+        Integration_Type__c = 'QuickBooks',
+        Source_Object__c = 'Account',
+        Frequency_Value__c = 10,
+        Frequency_Type__c = 'Minutes',
+        Status__c = 'Ready',
+        Created_DateTime__c = System.now()
+      ));
+    }
+    insert existingJobs;
+
+    Test.startTest();
+    String scheduleId = GenericSchedulerController.scheduleJob(
+      'qbo',
+      '10',
+      'Minutes',
+      'Products',
+      'In'
+    );
+    Test.stopTest();
+
+    System.assertNotEquals(null, scheduleId);
+    System.assertEquals(12, [SELECT COUNT() FROM Scheduled_Integration_Job__c WHERE Status__c = 'Ready']);
   }
 
   @isTest
@@ -373,7 +402,7 @@ private class QBSchedulerControllerTest {
   }
 
   @isTest
-  static void testReadyClaimedAndRunningSchedulesAreVisibleAndCounted() {
+  static void testReadyClaimedAndRunningSchedulesAreVisible() {
     insert new List<Scheduled_Integration_Job__c>{
       new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'QBO Sync - Ready Account', Scheduler_Name__c = 'QBO Sync - Ready Account', Integration_Type__c = 'QuickBooks', Source_Object__c = 'Account', Frequency_Value__c = 10, Frequency_Type__c = 'Minutes', Status__c = 'Ready', Created_DateTime__c = System.now()),
       new Scheduled_Integration_Job__c(Logical_Job_Key__c = 'QBO Sync - Claimed Account', Scheduler_Name__c = 'QBO Sync - Claimed Account', Integration_Type__c = 'QuickBooks', Source_Object__c = 'Account', Frequency_Value__c = 10, Frequency_Type__c = 'Minutes', Status__c = 'Claimed', Lease_Token__c = 'test-token', Lease_Expires_At__c = System.now().addMinutes(5), Created_DateTime__c = System.now()),
@@ -381,10 +410,8 @@ private class QBSchedulerControllerTest {
     };
     Test.startTest();
     List<Map<String, Object>> jobs = GenericSchedulerController.getScheduledJobs('qbo');
-    SchedulerEntitlementService.UsageSummary usage = SchedulerEntitlementService.getUsageSummary();
     Test.stopTest();
     System.assertEquals(3, jobs.size());
-    System.assertEquals(3, usage.activeCount);
   }
 
   @isTest

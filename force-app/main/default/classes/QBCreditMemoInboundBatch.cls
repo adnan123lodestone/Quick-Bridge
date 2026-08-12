@@ -30,11 +30,6 @@ public class QBCreditMemoInboundBatch implements Database.Batchable<String>, Dat
   }
 
   public void execute(Database.BatchableContext bc, List<String> scope) {
-    IntegrationUsageService.assertCanConsumeTask(
-      'QuickBooks',
-      scope == null ? 1 : scope.size()
-    );
-
     Map<String, String> fieldMap = new Map<String, String>();
     try { fieldMap = QBObjectMappings.getCreditMemoMapping(); } catch(Exception e){}
     if (fieldMap == null) fieldMap = new Map<String, String>();

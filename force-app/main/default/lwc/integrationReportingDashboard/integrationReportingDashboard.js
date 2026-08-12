@@ -125,18 +125,6 @@ export default class IntegrationReportingDashboard extends LightningElement {
         "utility:connected_apps"
       ),
       this.buildMetric(
-        "Task Usage",
-        product.taskUsageCount,
-        product.taskUsageLimit,
-        "utility:task"
-      ),
-      this.buildMetric(
-        "Active Schedules",
-        product.activeScheduleCount,
-        product.activeScheduleLimit,
-        "utility:clock"
-      ),
-      this.buildMetric(
         "Subscription",
         product.subscriptionStatus,
         null,

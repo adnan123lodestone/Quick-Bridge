@@ -19,7 +19,6 @@ public with sharing class IntegrationConnectorRegistry {
         @AuraEnabled public Boolean hasCheckout { get; set; }
         @AuraEnabled public Boolean hasPayment { get; set; }
         @AuraEnabled public Boolean hasCarrier { get; set; }
-        @AuraEnabled public Boolean countsTowardScheduleLimit { get; set; }
         @AuraEnabled public String logoUrl { get; set; }
         @AuraEnabled public Boolean catalogActive { get; set; }
         @AuraEnabled public Date startDate { get; set; }
@@ -103,7 +102,6 @@ public with sharing class IntegrationConnectorRegistry {
         connector.hasCheckout = source.hasCheckout;
         connector.hasPayment = source.hasPayment;
         connector.hasCarrier = source.hasCarrier;
-        connector.countsTowardScheduleLimit = source.countsTowardScheduleLimit;
         connector.logoUrl = source.logoUrl;
         connector.catalogActive = source.catalogActive;
         connector.startDate = source.startDate;

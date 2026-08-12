@@ -192,7 +192,6 @@ public with sharing class QBSchedulerController {
             Integer safeValue = Integer.valueOf(freqValue.trim());
             String logicalJobName = SchedulerEntitlementService.normalizeLogicalJobName(jobName);
             createLogicalSchedule('Shopify', selectedObject, freqValue, freqType, logicalJobName, isSfToShopify ? 'Out' : 'In');
-            IntegrationUsageService.incrementTaskUsage('Shopify', 1);
             QuickBridgeAdminGuard.audit('SCHEDULE_EDIT', 'shopify', 'Success', jobName, null);
             return 'Success: Shopify job updated for every ' + safeValue + ' ' + freqType;
         } catch (Exception e) { throw schedulerException('Shopify', 'QBSchedulerController.editShopifyJob', e, 'Error updating Shopify job: '); }

@@ -103,8 +103,6 @@ public with sharing class PayPalPaymentService {
                 throw new AuraHandledException('PayPal client configuration is incomplete.');
             }
 
-            IntegrationUsageService.assertCanConsumeTask('PayPal', 1);
-
             String baseEndpoint = getBaseEndpoint(config.useSandbox);
             Database.rollback(pendingWorkSavepoint);
             Database.releaseSavepoint(pendingWorkSavepoint);
@@ -186,8 +184,6 @@ public with sharing class PayPalPaymentService {
             if (availabilityMessage != null) {
                 throw new AuraHandledException(availabilityMessage);
             }
-
-            IntegrationUsageService.assertCanConsumeTask('PayPal', 1);
 
             String baseEndpoint = getBaseEndpoint(config.useSandbox);
             Database.rollback(pendingWorkSavepoint);

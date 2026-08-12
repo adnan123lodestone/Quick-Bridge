@@ -249,7 +249,6 @@ private class ShopifyRetryAndSchedulerTest {
     }
     Test.stopTest();
     try {
-      IntegrationUsageService.incrementTaskUsage(null, -1);
       new ShopifySyncScheduler('BadObject', true).execute(null);
     } catch(Exception e) {}
   }

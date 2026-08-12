@@ -162,6 +162,17 @@ private class ConnectorAsyncRuntimeTest {
   }
 
   @IsTest
+  static void leaseRefreshCanBeSkippedWhenGovernorHeadroomIsExhausted() {
+    ConnectorScheduleService.leaseRefreshCapacityOverride = false;
+    try {
+      System.assertEquals(false, ConnectorScheduleService.hasLeaseRefreshCapacity());
+    } finally {
+      ConnectorScheduleService.leaseRefreshCapacityOverride = null;
+    }
+    System.assertEquals(true, ConnectorScheduleService.hasLeaseRefreshCapacity());
+  }
+
+  @IsTest
   static void inboundBatchCompletesOnlyAfterTerminalPage() {
     ConnectorExecutionRequest request = registerOperation('Inbound');
     request.leaseToken = 'lease-inbound';

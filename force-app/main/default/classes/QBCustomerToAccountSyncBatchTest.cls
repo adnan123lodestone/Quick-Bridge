@@ -55,8 +55,6 @@ private class QBCustomerToAccountSyncBatchTest {
             Record_Sync_Count__c = 0,
             Error_Count__c = 0,
             Endpoint_Usage_Count__c = 0,
-            Task_Usage_Count__c = 0,
-            Active_Schedule_Count__c = 0,
             Subscription_Status__c = 'Active',
             Last_Updated_At__c = System.now()
         );
@@ -164,6 +162,73 @@ private class QBCustomerToAccountSyncBatchTest {
     }
 
     @isTest
+    static void testInboundNotesAndAddressMappings() {
+        QBObjectMappings.testDynamicMappings = new List<Field_Mapping__mdt>{
+            customerMapping('Name', 'DisplayName', 'QBO to SF'),
+            customerMapping('Description', 'Notes', 'QBO to SF'),
+            customerMapping('BillingStreet', 'BillAddr.Line1', 'QBO to SF'),
+            customerMapping('BillingCity', 'BillAddr.City', 'QBO to SF'),
+            customerMapping('BillingState', 'BillAddr.CountrySubDivisionCode', 'QBO to SF'),
+            customerMapping('BillingPostalCode', 'BillAddr.PostalCode', 'QBO to SF'),
+            customerMapping('BillingCountry', 'BillAddr.Country', 'QBO to SF'),
+            customerMapping('ShippingStreet', 'ShipAddr.Line1', 'QBO to SF'),
+            customerMapping('ShippingCity', 'ShipAddr.City', 'QBO to SF'),
+            customerMapping('ShippingState', 'ShipAddr.CountrySubDivisionCode', 'QBO to SF'),
+            customerMapping('ShippingPostalCode', 'ShipAddr.PostalCode', 'QBO to SF'),
+            customerMapping('ShippingCountry', 'ShipAddr.Country', 'QBO to SF')
+        };
+        String customerPayload = JSON.serialize(
+            new Map<String, Object>{
+                'Id' => 'CUST-ADDR',
+                'DisplayName' => 'Mapped Address Customer',
+                'CompanyName' => 'Mapped Address Customer',
+                'Notes' => 'QuickBooks customer notes',
+                'BillAddr' => new Map<String, Object>{
+                    'Line1' => '1 Billing Way',
+                    'City' => 'Billing City',
+                    'CountrySubDivisionCode' => 'BS',
+                    'PostalCode' => '11111',
+                    'Country' => 'US'
+                },
+                'ShipAddr' => new Map<String, Object>{
+                    'Line1' => '2 Shipping Way',
+                    'City' => 'Shipping City',
+                    'CountrySubDivisionCode' => 'SS',
+                    'PostalCode' => '22222',
+                    'Country' => 'US'
+                }
+            }
+        );
+
+        Test.startTest();
+        new QBCustomerToAccountSyncBatch().execute(
+            null,
+            new List<String>{ customerPayload }
+        );
+        Test.stopTest();
+
+        Account syncedAccount = [
+            SELECT Description,
+                   BillingStreet, BillingCity, BillingState, BillingPostalCode, BillingCountry,
+                   ShippingStreet, ShippingCity, ShippingState, ShippingPostalCode, ShippingCountry
+            FROM Account
+            WHERE QuickbookID__c = 'CUST-ADDR'
+            LIMIT 1
+        ];
+        System.assertEquals('QuickBooks customer notes', syncedAccount.Description);
+        System.assertEquals('1 Billing Way', syncedAccount.BillingStreet);
+        System.assertEquals('Billing City', syncedAccount.BillingCity);
+        System.assertEquals('BS', syncedAccount.BillingState);
+        System.assertEquals('11111', syncedAccount.BillingPostalCode);
+        System.assertEquals('US', syncedAccount.BillingCountry);
+        System.assertEquals('2 Shipping Way', syncedAccount.ShippingStreet);
+        System.assertEquals('Shipping City', syncedAccount.ShippingCity);
+        System.assertEquals('SS', syncedAccount.ShippingState);
+        System.assertEquals('22222', syncedAccount.ShippingPostalCode);
+        System.assertEquals('US', syncedAccount.ShippingCountry);
+    }
+
+    @isTest
     static void testProcessSingleCustomerFallbackStillHydratesById() {
         Test.setMock(HttpCalloutMock.class, new QBCustomerSingleRecordMock());
 
@@ -222,5 +287,21 @@ static void testPersonAccountSync() {
         batch.processSingleCustomer('CUST-1'); // Triggering hydrate paths
         Test.stopTest();
         System.assert(true);
+    }
+
+    private static Field_Mapping__mdt customerMapping(
+        String sfField,
+        String externalField,
+        String direction
+    ) {
+        return new Field_Mapping__mdt(
+            Integration__c = 'qbonline',
+            SF_Object__c = 'Account',
+            SF_Field__c = sfField,
+            External_Field__c = externalField,
+            Sync_Direction__c = direction,
+            Target_Object_API_Name__c = 'Customer',
+            Is_Active__c = true
+        );
     }
 }

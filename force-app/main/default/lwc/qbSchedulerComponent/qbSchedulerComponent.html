@@ -25,17 +25,8 @@
           label="+ New Schedule"
           variant="brand"
           onclick={handleNewSchedule}
-          disabled={isScheduleLimitReached}
         ></lightning-button>
       </div>
-    </div>
-
-    <div class={usageCardClass}>
-      <div>
-        <p class="usage-label">Active Schedules</p>
-        <p class="usage-message">{usageSummary.message}</p>
-      </div>
-      <div class="usage-count">{usageCounterText}</div>
     </div>
 
     <div class="slds-grid slds-gutters">
@@ -330,14 +321,6 @@
   </template>
 
   <template if:true={isNewScheduleView}>
-    <div class={usageCardClass}>
-      <div>
-        <p class="usage-label">Active Schedules</p>
-        <p class="usage-message">{usageSummary.message}</p>
-      </div>
-      <div class="usage-count">{usageCounterText}</div>
-    </div>
-
     <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
       <template for:each={syncObjects} for:item="obj">
         <div key={obj.id} class="slds-col slds-size_1-of-2 slds-m-bottom_small">
@@ -417,7 +400,6 @@
       <button
         class="action-btn-full primary-btn slds-m-bottom_small"
         onclick={handleSetSchedule}
-        disabled={isScheduleLimitReached}
       >
         Set Schedule
       </button>

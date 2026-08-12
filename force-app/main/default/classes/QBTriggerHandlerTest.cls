@@ -67,4 +67,39 @@ private class QBTriggerHandlerTest {
 
         System.assertEquals(false, QBTriggerHandler.isProductProcessing);
     }
+
+    @isTest
+    static void accountTriggerBulkEnqueuesInOneQueryAndDml() {
+        List<Account> accounts = new List<Account>();
+        for (Integer index = 0; index < 200; index++) {
+            accounts.add(new Account(Name = 'Bulk QB Account ' + index));
+        }
+        QBTriggerHandler.isAccountProcessing = true;
+        try {
+            insert accounts;
+        } finally {
+            QBTriggerHandler.isAccountProcessing = false;
+        }
+
+        Integer queriesBefore = Limits.getQueries();
+        Integer dmlBefore = Limits.getDmlStatements();
+        QBTriggerHandler.handleAccountTrigger(
+            accounts,
+            new Map<Id, Account>(),
+            true,
+            false
+        );
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Set<Id> accountIds = new Map<Id, Account>(accounts).keySet();
+
+        System.assertEquals(200, [
+            SELECT Count()
+            FROM Integration_Work_Item__c
+            WHERE Operation__c = 'AccountUpsert'
+            AND Source_Salesforce_Id__c IN :accountIds
+        ]);
+        System.assertEquals(1, queriesUsed);
+        System.assertEquals(1, dmlUsed);
+    }
 }

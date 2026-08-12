@@ -14,7 +14,6 @@ public with sharing class MetaInsightsSyncService {
         summary.campaignsUpdated = updateCampaignInsights(campaignRows);
         summary.adSetsUpdated = updateAdSetInsights(adSetRows);
         summary.adsUpdated = updateAdInsights(adRows);
-        IntegrationUsageService.incrementTaskUsage('Meta', summary.campaignsUpdated + summary.adSetsUpdated + summary.adsUpdated);
         return summary;
     }
 

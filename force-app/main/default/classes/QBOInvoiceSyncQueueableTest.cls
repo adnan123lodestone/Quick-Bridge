@@ -142,4 +142,36 @@ private class QBOInvoiceSyncQueueableTest {
 
         System.assertEquals(1, [SELECT Count() FROM OrderItem WHERE OrderId = :ord.Id]);
     }
+
+    @IsTest
+    static void invoiceHydrationDoesNotWritePersonAccountName() {
+        List<RecordType> personRecordTypes = [
+            SELECT Id
+            FROM RecordType
+            WHERE SObjectType = 'Account' AND IsPersonType = true AND IsActive = true
+            LIMIT 1
+        ];
+        if (personRecordTypes.isEmpty()) {
+            return;
+        }
+        QBTriggerHandler.isAccountProcessing = true;
+        Account person = new Account(
+            RecordTypeId = personRecordTypes[0].Id,
+            FirstName = 'Invoice',
+            LastName = 'Person',
+            QuickbookID__c = 'CUST-1'
+        );
+        insert person;
+        QBTriggerHandler.isAccountProcessing = false;
+
+        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
+        Test.setMock(HttpCalloutMock.class, new BulkInvoiceMock());
+        Test.startTest();
+        new QBOInvoiceSyncQueueable(new Set<String>{ 'INV-1' }).executeSync();
+        Test.stopTest();
+
+        Account refreshed = [SELECT FirstName, LastName FROM Account WHERE Id = :person.Id];
+        System.assertEquals('Invoice', refreshed.FirstName);
+        System.assertEquals('Person', refreshed.LastName);
+    }
 }

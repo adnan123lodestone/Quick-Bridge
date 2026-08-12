@@ -32,21 +32,6 @@ public class QBPurchaseOrderInboundBatch implements Database.Batchable<String>, 
   }
 
   public void execute(Database.BatchableContext bc, List<String> scope) {
-    try {
-      IntegrationUsageService.assertCanConsumeTask(
-        'QuickBooks',
-        scope == null ? 1 : scope.size()
-      );
-    } catch (Exception e) {
-      ErrorLogUtility.logException(
-        'QuickBooks',
-        'QBPurchaseOrderInboundBatch.execute',
-        e,
-        null,
-        null
-      );
-      return;
-    }
     List<Purchase_Order__c> recordsToUpsert = new List<Purchase_Order__c>();
     Map<String, List<Map<String, Object>>> poLinesByQbId = new Map<String, List<Map<String, Object>>>();
 

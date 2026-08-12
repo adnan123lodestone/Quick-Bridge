@@ -66,9 +66,6 @@ public with sharing class LegacyConnectorRegistryFallback {
         if (connector == 'qr') {
             return 'QRIntegrationWorker';
         }
-        if (connector == 'usage') {
-            return 'UsageIntegrationWorker';
-        }
         return null;
     }
 
@@ -138,7 +135,6 @@ public with sharing class LegacyConnectorRegistryFallback {
         descriptor.hasCheckout = hasCheckout;
         descriptor.hasPayment = hasPayment;
         descriptor.hasCarrier = hasCarrier;
-        descriptor.countsTowardScheduleLimit = hasScheduler == true;
         return descriptor;
     }
 

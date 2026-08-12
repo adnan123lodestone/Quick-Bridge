@@ -33,7 +33,6 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
     }
 
     try {
-      IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
       String safeDirection = String.isBlank(job.Direction__c)
         ? 'Out'
         : job.Direction__c;
@@ -254,15 +253,11 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
     if (accountIds == null || accountIds.isEmpty()) {
       return new List<Account>();
     }
-    String accountFields = buildAccountQueryFields();
-    return Database.query(
-      'SELECT ' + accountFields + ' FROM Account WHERE Id IN :accountIds'
-    );
+    return QBAccountSelector.selectForOutbound(accountIds);
   }
 
   public static void run(String targetObject, String direction) {
     try {
-      IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
       String safeDirection = String.isBlank(direction) ? 'Out' : direction;
 
       if (targetObject == 'Account' || targetObject == 'Accounts') {
@@ -487,7 +482,9 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
   // unconditionally; person-account fields are included only when they exist.
   private static String buildAccountQueryFields() {
     Map<String, Schema.SObjectField> schemaFields = Schema.SObjectType.Account.fields.getMap();
-    Set<String> fieldApiNames = new Set<String>{ 'Id', 'Name', 'RecordTypeId' };
+    Set<String> fieldApiNames = new Set<String>{
+      'Id', 'Name', 'RecordTypeId', 'QuickbookID__c'
+    };
 
     // Add all SF-side fields from the active mapping (Customer and Vendor)
     for (

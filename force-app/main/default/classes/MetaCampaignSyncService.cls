@@ -26,7 +26,6 @@ public with sharing class MetaCampaignSyncService {
         summary.campaignsProcessed = campaignRows.size();
         summary.adSetsProcessed = adSetRows.size();
         summary.adsProcessed = adRows.size();
-        IntegrationUsageService.incrementTaskUsage('Meta', summary.campaignsProcessed + summary.adSetsProcessed + summary.adsProcessed);
         return summary;
     }
 

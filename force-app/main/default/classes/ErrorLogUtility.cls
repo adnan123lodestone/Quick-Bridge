@@ -108,6 +108,7 @@ public without sharing class ErrorLogUtility {
             return;
         }
         
+        List<LogContext> contexts = new List<LogContext>();
         Integer limitSize = records.size() < results.size() ? records.size() : results.size();
         for (Integer index = 0; index < limitSize; index++) {
             if (results[index] == null || results[index].isSuccess()) {
@@ -118,17 +119,18 @@ public without sharing class ErrorLogUtility {
             Id failedRecordId = failedRecord == null ? null : (Id) failedRecord.get('Id');
             String objectApiName = failedRecord == null ? null : failedRecord.getSObjectType().getDescribe().getName();
             String message = buildDmlErrorMessage(results[index].getErrors());
-            logDmlFailure(
+            contexts.add(buildDmlFailureContext(
                 gatewayName,
-            classMethodName,
-            dmlOperation,
-            objectApiName,
-            failedRecordId,
-            message,
-            actionSourceObjectApiName,
-            actionSourceRecordId
-                );
+                classMethodName,
+                dmlOperation,
+                objectApiName,
+                failedRecordId,
+                message,
+                actionSourceObjectApiName,
+                actionSourceRecordId
+            ));
         }
+        logErrors(contexts);
     }
     
     public static void logUpsertResults(
@@ -144,6 +146,7 @@ public without sharing class ErrorLogUtility {
             return;
         }
         
+        List<LogContext> contexts = new List<LogContext>();
         Integer limitSize = records.size() < results.size() ? records.size() : results.size();
         for (Integer index = 0; index < limitSize; index++) {
             if (results[index] == null || results[index].isSuccess()) {
@@ -154,66 +157,135 @@ public without sharing class ErrorLogUtility {
             Id failedRecordId = failedRecord == null ? null : (Id) failedRecord.get('Id');
             String objectApiName = failedRecord == null ? null : failedRecord.getSObjectType().getDescribe().getName();
             String message = buildDmlErrorMessage(results[index].getErrors());
-            logDmlFailure(
+            contexts.add(buildDmlFailureContext(
                 gatewayName,
-            classMethodName,
-            dmlOperation,
-            objectApiName,
-            failedRecordId,
-            message,
-            actionSourceObjectApiName,
-            actionSourceRecordId
-                );
+                classMethodName,
+                dmlOperation,
+                objectApiName,
+                failedRecordId,
+                message,
+                actionSourceObjectApiName,
+                actionSourceRecordId
+            ));
         }
+        logErrors(contexts);
     }
     
     public static void logError(LogContext context) {
         if (context == null) {
             return;
         }
-        
+        logErrors(new List<LogContext>{ context });
+    }
+
+    /**
+     * Persists a collection of errors with a fixed number of DML statements.
+     * The input index is retained through the partial-success insert so links
+     * and usage events are only created for Error Logs that were saved.
+     */
+    public static void logErrors(List<LogContext> contexts) {
+        if (contexts == null || contexts.isEmpty()) {
+            return;
+        }
+
         try {
-            Error_Log__c errorRecord = new Error_Log__c();
-            errorRecord.Gateway_Name__c = context.gatewayName;
-            errorRecord.Class_Method_Name__c = context.classMethodName;
-            errorRecord.Error_Message__c = abbreviate(context.errorMessage, ERROR_MESSAGE_MAX_LENGTH);
-            errorRecord.Order_Id__c = context.sourceObjectApiName == 'Order'
-                ? firstNonBlank(context.sourceRecordIdText, context.sourceRecordId == null ? null : String.valueOf(context.sourceRecordId))
-                : null;
-            errorRecord.Is_Retryable__c = isRetryableError(context);
-            errorRecord.Retry_Status__c = 'Pending';
-            errorRecord.Retry_Count__c = 0;
-            putIfPresent(errorRecord, 'Source_Object__c', context.sourceObjectApiName);
-            putIfPresent(errorRecord, 'Source_Record_Id__c', firstNonBlank(context.sourceRecordIdText, context.sourceRecordId == null ? null : String.valueOf(context.sourceRecordId)));
-            putIfPresent(errorRecord, 'Action_Source_Object__c', context.actionSourceObjectApiName);
-            putIfPresent(errorRecord, 'Action_Source_Record_Id__c', firstNonBlank(context.actionSourceRecordIdText, context.actionSourceRecordId == null ? null : String.valueOf(context.actionSourceRecordId)));
-            putIfPresent(errorRecord, 'Error_Category__c', context.errorCategory);
-            putIfPresent(errorRecord, 'Dml_Operation__c', context.dmlOperation);
-            putIfPresent(errorRecord, 'Http_Status_Code__c', context.httpStatusCode);
-            putIfPresent(errorRecord, 'External_Reference__c', context.externalReference);
-            putIfPresent(errorRecord, 'Stack_Trace__c', abbreviate(context.stackTrace, STACK_TRACE_MAX_LENGTH));
-            Database.SaveResult result = Database.insert(errorRecord, false);
-            if (result != null && result.isSuccess()) {
-                createGenericLinks(result.getId(), context);
-                IntegrationUsageService.incrementError(context.gatewayName, 1);
-            } else if (result != null) {
-                System.debug(LoggingLevel.ERROR, 'Error Log Insert Failed: ' + buildDmlErrorMessage(result.getErrors()));
+            List<Error_Log__c> errorRecords = new List<Error_Log__c>();
+            List<LogContext> alignedContexts = new List<LogContext>();
+            for (LogContext context : contexts) {
+                if (context == null) {
+                    continue;
+                }
+                errorRecords.add(buildErrorRecord(context));
+                alignedContexts.add(context);
+            }
+            if (errorRecords.isEmpty()) {
+                return;
+            }
+
+            Database.SaveResult[] results = Database.insert(errorRecords, false);
+            List<Error_Log_Link__c> links = new List<Error_Log_Link__c>();
+            List<String> successfulGateways = new List<String>();
+            for (Integer index = 0; index < results.size(); index++) {
+                Database.SaveResult result = results[index];
+                if (result != null && result.isSuccess()) {
+                    LogContext context = alignedContexts[index];
+                    addGenericLinks(links, result.getId(), context);
+                    successfulGateways.add(context.gatewayName);
+                } else if (result != null) {
+                    System.debug(
+                        LoggingLevel.ERROR,
+                        'Error Log Insert Failed: ' + buildDmlErrorMessage(result.getErrors())
+                    );
+                }
+            }
+            if (!links.isEmpty()) {
+                Database.insert(links, false);
+            }
+            if (!successfulGateways.isEmpty()) {
+                IntegrationUsageService.incrementErrors(successfulGateways);
             }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Error Log Insert Failed: ' + e.getMessage());
         }
     }
 
-    private static void createGenericLinks(Id errorLogId, LogContext context) {
+    private static Error_Log__c buildErrorRecord(LogContext context) {
+        Error_Log__c errorRecord = new Error_Log__c();
+        errorRecord.Gateway_Name__c = context.gatewayName;
+        errorRecord.Class_Method_Name__c = context.classMethodName;
+        errorRecord.Error_Message__c = abbreviate(context.errorMessage, ERROR_MESSAGE_MAX_LENGTH);
+        errorRecord.Order_Id__c = context.sourceObjectApiName == 'Order'
+            ? firstNonBlank(context.sourceRecordIdText, context.sourceRecordId == null ? null : String.valueOf(context.sourceRecordId))
+            : null;
+        errorRecord.Is_Retryable__c = isRetryableError(context);
+        errorRecord.Retry_Status__c = 'Pending';
+        errorRecord.Retry_Count__c = 0;
+        putIfPresent(errorRecord, 'Source_Object__c', context.sourceObjectApiName);
+        putIfPresent(errorRecord, 'Source_Record_Id__c', firstNonBlank(context.sourceRecordIdText, context.sourceRecordId == null ? null : String.valueOf(context.sourceRecordId)));
+        putIfPresent(errorRecord, 'Action_Source_Object__c', context.actionSourceObjectApiName);
+        putIfPresent(errorRecord, 'Action_Source_Record_Id__c', firstNonBlank(context.actionSourceRecordIdText, context.actionSourceRecordId == null ? null : String.valueOf(context.actionSourceRecordId)));
+        putIfPresent(errorRecord, 'Error_Category__c', context.errorCategory);
+        putIfPresent(errorRecord, 'Dml_Operation__c', context.dmlOperation);
+        putIfPresent(errorRecord, 'Http_Status_Code__c', context.httpStatusCode);
+        putIfPresent(errorRecord, 'External_Reference__c', context.externalReference);
+        putIfPresent(errorRecord, 'Stack_Trace__c', abbreviate(context.stackTrace, STACK_TRACE_MAX_LENGTH));
+        if (context.sourceObjectApiName == 'Account') {
+            putIfPresent(errorRecord, 'Account__c', context.sourceRecordId);
+        }
+        return errorRecord;
+    }
+
+    private static LogContext buildDmlFailureContext(
+        String gatewayName,
+        String classMethodName,
+        String dmlOperation,
+        String sourceObjectApiName,
+        Id sourceRecordId,
+        String errorMessage,
+        String actionSourceObjectApiName,
+        Id actionSourceRecordId
+    ) {
+        LogContext context = new LogContext();
+        context.gatewayName = gatewayName;
+        context.classMethodName = classMethodName;
+        context.errorMessage = errorMessage;
+        context.sourceObjectApiName = sourceObjectApiName;
+        context.sourceRecordId = sourceRecordId;
+        context.sourceRecordIdText = sourceRecordId == null ? null : String.valueOf(sourceRecordId);
+        context.actionSourceObjectApiName = actionSourceObjectApiName;
+        context.actionSourceRecordId = actionSourceRecordId;
+        context.actionSourceRecordIdText = actionSourceRecordId == null ? null : String.valueOf(actionSourceRecordId);
+        context.errorCategory = 'DML Failure';
+        context.dmlOperation = dmlOperation;
+        return context;
+    }
+
+    private static void addGenericLinks(List<Error_Log_Link__c> links, Id errorLogId, LogContext context) {
         if (errorLogId == null || context == null) {
             return;
         }
-        List<Error_Log_Link__c> links = new List<Error_Log_Link__c>();
         addLink(links, errorLogId, context.sourceObjectApiName, context.sourceRecordIdText, context.sourceRecordId, 'Source');
         addLink(links, errorLogId, context.actionSourceObjectApiName, context.actionSourceRecordIdText, context.actionSourceRecordId, 'Action Source');
-        if (!links.isEmpty()) {
-            Database.insert(links, false);
-        }
     }
 
     private static void addLink(List<Error_Log_Link__c> links, Id errorLogId, String objectApiName, String recordIdText, Id recordId, String role) {

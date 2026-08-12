@@ -134,12 +134,6 @@ public inherited sharing class ConnectorInboundOperationExecutor implements Conn
     );
 
     if (!payloads.isEmpty()) {
-      // Surface entitlement exhaustion to the shared batch instead of
-      // allowing legacy Account processing to log-and-return success.
-      IntegrationUsageService.assertCanConsumeTask(
-        'QuickBooks',
-        payloads.size()
-      );
       if (entity == 'customer') {
         return finalizeQuickBooksPage(
           new QBCustomerToAccountSyncBatch(syncDate)

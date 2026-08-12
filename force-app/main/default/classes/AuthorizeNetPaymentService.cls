@@ -95,8 +95,6 @@ public without sharing class AuthorizeNetPaymentService {
                 throw new AuraHandledException(availabilityMessage);
             }
 
-            IntegrationUsageService.assertCanConsumeTask('Authorize.Net', 1);
-
             String requestBody = buildTransactionPayload(request);
             Database.rollback(pendingWorkSavepoint);
             Database.releaseSavepoint(pendingWorkSavepoint);

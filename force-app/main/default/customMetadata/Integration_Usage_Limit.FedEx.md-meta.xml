@@ -3,10 +3,6 @@
     <label>FedEx</label>
     <protected>false</protected>
     <values>
-        <field>Active_Schedule_Limit__c</field>
-        <value xsi:type="xsd:double">10.0</value>
-    </values>
-    <values>
         <field>Endpoint_Usage_Limit__c</field>
         <value xsi:type="xsd:double">100000.0</value>
     </values>
@@ -21,9 +17,5 @@
     <values>
         <field>Record_Sync_Limit__c</field>
         <value xsi:type="xsd:double">100000.0</value>
-    </values>
-    <values>
-        <field>Task_Usage_Limit__c</field>
-        <value xsi:type="xsd:double">10000.0</value>
     </values>
 </CustomMetadata>

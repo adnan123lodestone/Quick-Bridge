@@ -28,10 +28,6 @@ global class ShopifyOrdersBatch implements Database.Batchable<Integer>, Database
             return;
         }
         
-        if (!bypassAuthCheckForTest) {
-            IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
-        }
-        
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {

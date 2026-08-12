@@ -87,8 +87,6 @@
         <name>CustomObject</name>
     </types>
     <types>
-        <members
-    >Integration_Connector__mdt.Counts_Toward_Schedule_Limit__c</members>
         <members>Integration_Connector__mdt.Integration_Type__c</members>
         <members>Integration_Product__c.System_Managed__c</members>
         <members>Integration_Product_Default__mdt.Active_Field__c</members>

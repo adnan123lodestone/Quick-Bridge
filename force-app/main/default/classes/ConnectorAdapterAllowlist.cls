@@ -26,7 +26,6 @@ public with sharing class ConnectorAdapterAllowlist {
     'MetaScheduledOperationAdapter',
     'NetSuiteIntegrationWorker',
     'NetSuiteScheduledOperationAdapter',
-    'UsageIntegrationWorker',
     'CarrierIntegrationWorker',
     'PaymentIntegrationWorker',
     'QRIntegrationWorker',

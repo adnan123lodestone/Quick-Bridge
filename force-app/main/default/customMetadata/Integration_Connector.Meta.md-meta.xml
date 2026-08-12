@@ -23,10 +23,6 @@
         <value xsi:type="xsd:string">meta</value>
     </values>
     <values>
-        <field>Counts_Toward_Schedule_Limit__c</field>
-        <value xsi:type="xsd:boolean">true</value>
-    </values>
-    <values>
         <field>Display_Order__c</field>
         <value xsi:type="xsd:double">90.0</value>
     </values>

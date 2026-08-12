@@ -97,7 +97,6 @@ private class AuthorizeNetPaymentServiceTest {
     static void approvedResponseSurvivesSettlementFailures() {
         Test.setMock(HttpCalloutMock.class, new SuccessMock());
         PaymentSettlementService.forcedFailureStages = new Set<String>{
-            'usage',
             'invoice',
             'order'
         };

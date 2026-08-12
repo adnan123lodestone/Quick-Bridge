@@ -7,7 +7,6 @@
     <values><field>Category__c</field><value xsi:type="xsd:string">ERP</value></values>
     <values><field>Config_Record_Name__c</field><value xsi:type="xsd:string">NetSuite</value></values>
     <values><field>Connector_Key__c</field><value xsi:type="xsd:string">netsuite</value></values>
-    <values><field>Counts_Toward_Schedule_Limit__c</field><value xsi:type="xsd:boolean">true</value></values>
     <values><field>Display_Order__c</field><value xsi:type="xsd:double">95.0</value></values>
     <values><field>Editable_Fields__c</field><value xsi:type="xsd:string">account_id,environment,rest_web_services_url,suiteql_url,named_credential_name,auth_type,consumer_key_reference,consumer_secret_reference,token_id_reference,token_secret_reference,default_subsidiary,default_currency,default_price_level,default_location,default_department,default_class,default_item_record_type,payment_account_reference,ar_account_reference,default_fulfillment_location,sync_direction,enable_customer_sync,enable_item_sync,enable_sales_order_sync,enable_invoice_sync,enable_payment_sync,enable_fulfillment_sync,polling_interval_minutes,webhook_enabled,last_successful_sync_at</value></values>
     <values><field>Enabled__c</field><value xsi:type="xsd:boolean">true</value></values>

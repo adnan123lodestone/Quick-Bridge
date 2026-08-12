@@ -62,7 +62,9 @@ public with sharing class IntegrationWorkProcessor implements Queueable, Databas
             }
         } catch (Exception e) {
             IntegrationRetryPolicy.RetryDecision decision = IntegrationRetryPolicy.classify(e);
-            String failureMessage = e.getTypeName() + ': ' + e.getMessage();
+            String failureMessage = e instanceof IntegrationRetryPolicy.StatusCodeException
+                ? ConnectorExecutionResult.sanitizeError(e.getMessage())
+                : e.getTypeName() + ': ' + ConnectorExecutionResult.sanitizeError(e.getMessage());
             RetryOutcome retryOutcome = markRetry(
                 item,
                 failureMessage,

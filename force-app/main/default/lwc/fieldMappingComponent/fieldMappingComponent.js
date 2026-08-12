@@ -129,7 +129,9 @@ export default class FieldMappingComponent extends LightningElement {
       this.qbFieldOptions = (result || []).map((field) => ({
         ...field,
         type: this.normalizeType(field.type),
-        required: Boolean(field.required)
+        required: Boolean(field.required),
+        inboundAllowed: field.inboundAllowed !== false,
+        outboundAllowed: field.outboundAllowed !== false
       }));
     });
   }
@@ -323,11 +325,11 @@ export default class FieldMappingComponent extends LightningElement {
   }
 
   updateRowDropdowns() {
-    const allowedDirections = this.getAllowedSyncDirectionOptions();
     this.mappingRows = this.mappingRows.map((row) => {
       const qbField = this.qbFieldOptions.find(
         (option) => option.value === row.externalField
       );
+      const allowedDirections = this.getAllowedSyncDirectionOptions(qbField);
       const qbType = qbField ? qbField.type : null;
       const availableSfOptions = qbType
         ? this.sfFieldOptions.filter((option) =>
@@ -650,16 +652,26 @@ export default class FieldMappingComponent extends LightningElement {
     return this.directionAvailability?.message || "";
   }
 
-  getAllowedSyncDirectionOptions() {
+  getAllowedSyncDirectionOptions(qbField = null) {
     const allowed = this.syncDirectionBaseOptions.filter((option) => {
       if (option.value === "Two-Way") {
-        return this.directionAvailability.twoWayAllowed;
+        return (
+          this.directionAvailability.twoWayAllowed &&
+          qbField?.inboundAllowed !== false &&
+          qbField?.outboundAllowed !== false
+        );
       }
       if (option.value === "QBO to SF") {
-        return this.directionAvailability.inboundAllowed;
+        return (
+          this.directionAvailability.inboundAllowed &&
+          qbField?.inboundAllowed !== false
+        );
       }
       if (option.value === "SF to QBO") {
-        return this.directionAvailability.outboundAllowed;
+        return (
+          this.directionAvailability.outboundAllowed &&
+          qbField?.outboundAllowed !== false
+        );
       }
       return true;
     });
@@ -668,8 +680,9 @@ export default class FieldMappingComponent extends LightningElement {
       : [{ label: "No available direction", value: "" }];
   }
 
-  getDefaultSyncDirection() {
-    const allowedDirections = this.getAllowedSyncDirectionOptions();
+  getDefaultSyncDirection(
+    allowedDirections = this.getAllowedSyncDirectionOptions()
+  ) {
     const twoWay = allowedDirections.find(
       (option) => option.value === "Two-Way"
     );
@@ -680,10 +693,11 @@ export default class FieldMappingComponent extends LightningElement {
     value,
     allowedDirections = this.getAllowedSyncDirectionOptions()
   ) {
-    const currentValue = value || this.getDefaultSyncDirection();
+    const defaultValue = this.getDefaultSyncDirection(allowedDirections);
+    const currentValue = value || defaultValue;
     return allowedDirections.some((option) => option.value === currentValue)
       ? currentValue
-      : this.getDefaultSyncDirection();
+      : defaultValue;
   }
 
   normalizeType(type) {

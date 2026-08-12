@@ -15,8 +15,6 @@ global class QBSyncScheduler implements Schedulable {
     global void execute(SchedulableContext sc) {
         try {
             System.debug('Running scheduler for Object: ' + targetObject);
-            IntegrationUsageService.incrementTaskUsage('QuickBooks', 1);
-
             if (targetObject == 'Account' || targetObject == 'Accounts') {
                 QBCustomerToAccountSyncBatch customerBatch = new QBCustomerToAccountSyncBatch();
                 Database.executeBatch(customerBatch, 50);

@@ -20,15 +20,17 @@ public class QBTriggerHandler {
             }
             
             if (!accountsToSync.isEmpty()) {
+                List<IntegrationWorkRequest> requests = new List<IntegrationWorkRequest>();
                 for (Account accountRecord : accountsToSync) {
-                    IntegrationWorkService.enqueueQuickBooksWork(
+                    requests.add(IntegrationWorkRequest.quickBooks(
                         'AccountUpsert',
                         'Account',
                         accountRecord.Id,
                         'Account:' + String.valueOf(accountRecord.Id),
-                        isInsert
-                    );
+                        new Map<String, Object>{ 'isInitialSync' => isInsert == true }
+                    ));
                 }
+                IntegrationWorkService.enqueue(requests);
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleAccountTrigger: ' + e.getMessage());
@@ -59,15 +61,17 @@ public class QBTriggerHandler {
             }
             
             if (!productsToSync.isEmpty()) {
+                List<IntegrationWorkRequest> requests = new List<IntegrationWorkRequest>();
                 for (Product2 productRecord : productsToSync) {
-                    IntegrationWorkService.enqueueQuickBooksWork(
+                    requests.add(IntegrationWorkRequest.quickBooks(
                         'ProductUpsert',
                         'Product2',
                         productRecord.Id,
                         'Product2:' + String.valueOf(productRecord.Id),
-                        isInsert
-                    );
+                        new Map<String, Object>{ 'isInitialSync' => isInsert == true }
+                    ));
                 }
+                IntegrationWorkService.enqueue(requests);
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleProductTrigger: ' + e.getMessage());
@@ -98,15 +102,17 @@ public class QBTriggerHandler {
             }
             
             if (!quotesToSync.isEmpty()) {
+                List<IntegrationWorkRequest> requests = new List<IntegrationWorkRequest>();
                 for (Quote quoteRecord : quotesToSync) {
-                    IntegrationWorkService.enqueueQuickBooksWork(
+                    requests.add(IntegrationWorkRequest.quickBooks(
                         'QuoteUpsert',
                         'Quote',
                         quoteRecord.Id,
                         'Quote:' + String.valueOf(quoteRecord.Id),
-                        isInsert
-                    );
+                        new Map<String, Object>{ 'isInitialSync' => isInsert == true }
+                    ));
                 }
+                IntegrationWorkService.enqueue(requests);
             }
         } catch (Exception e) {
             System.debug('Error in QBTriggerHandler.handleQuoteTrigger: ' + e.getMessage());
@@ -125,7 +131,13 @@ public class QBTriggerHandler {
     private static Boolean shouldSyncAccount(Account newAcc, Account oldAcc) {
         if (oldAcc == null) return true;
         
-        Map<String, String> fieldMap = QBObjectMappings.getAccountToCustomerMapping();
+        Map<String, String> fieldMap = isVendorAccount(newAcc)
+            ? QBVendorFieldCapabilities.filterOutboundMappings(
+                QBObjectMappings.getAccountToVendorMapping()
+            )
+            : QBCustomerFieldCapabilities.filterOutboundMappings(
+                QBObjectMappings.getAccountToCustomerMapping()
+            );
         for (String sfField : fieldMap.keySet()) {
             try {
                 if (newAcc.get(sfField) != oldAcc.get(sfField)) return true;
@@ -133,6 +145,17 @@ public class QBTriggerHandler {
         }
         
         return false;
+    }
+
+    private static Boolean isVendorAccount(Account accountRecord) {
+        if (accountRecord == null || accountRecord.RecordTypeId == null) {
+            return false;
+        }
+        Schema.RecordTypeInfo info = Schema.SObjectType.Account
+            .getRecordTypeInfosById()
+            .get(accountRecord.RecordTypeId);
+        return info != null &&
+            (info.getDeveloperName() == 'Vendor' || info.getName() == 'Vendor');
     }
     
     private static Boolean shouldSyncProduct(Product2 newProd, Product2 oldProd) {

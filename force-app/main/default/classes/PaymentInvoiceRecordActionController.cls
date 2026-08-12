@@ -121,8 +121,6 @@ public with sharing class PaymentInvoiceRecordActionController {
                 throw new InvoiceException('Stripe is not active in QuickBridge settings.');
             }
 
-            IntegrationUsageService.assertCanConsumeTask(STRIPE_LABEL, 1);
-
             MappingConfig mappingConfig = loadMappingConfig(normalizedGateway, objectApiName);
             validateExecutableMapping(mappingConfig, objectApiName);
 
@@ -146,8 +144,6 @@ public with sharing class PaymentInvoiceRecordActionController {
                 sendInvoiceEmail(sourceContext, stripeResult.hostedInvoiceUrl);
                 result.emailSent = true;
             }
-
-            IntegrationUsageService.recordSuccessfulPaymentTask(STRIPE_LABEL);
 
             result.success = true;
             result.invoiceRecordId = invoiceId;

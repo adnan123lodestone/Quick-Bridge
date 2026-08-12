@@ -74,8 +74,10 @@ public without sharing class ConnectorInboundBatch implements Database.Batchable
   }
 
   private void renewScheduleLease(Database.BatchableContext context) {
+    if (request.scheduleId == null || !ConnectorScheduleService.hasLeaseRefreshCapacity()) {
+      return;
+    }
     if (
-      request.scheduleId != null &&
       !ConnectorScheduleService.markRunning(
         request.scheduleId,
         request.leaseToken,

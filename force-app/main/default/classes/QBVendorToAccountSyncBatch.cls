@@ -48,7 +48,6 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
     }
 
     public void execute(Database.BatchableContext bc, List<String> scope) {
-        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         QBTriggerHandler.isAccountProcessing = true;
 
         try {

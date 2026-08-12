@@ -72,6 +72,7 @@ public with sharing class FieldMappingController {
           .getDescribe();
         if (
           fieldDescribe.isAccessible() &&
+          fieldDescribe.getType() != Schema.DisplayType.Address &&
           MappingFieldEligibilityService.isSalesforceFieldAllowed(
             fieldDescribe.getName()
           )
@@ -469,6 +470,19 @@ public with sharing class FieldMappingController {
       MappingFieldEligibilityService.assertNoBlockedSalesforceFields(
         sfFieldNames
       );
+      assertNoCompoundAddressFields(sfObject, sfFieldNames);
+      validateExternalFieldCapabilities(
+        integration,
+        sfObject,
+        qbObject,
+        requestedMappings
+      );
+      validateNoOverlappingSalesforceTargets(
+        integration,
+        sfObject,
+        qbObject,
+        requestedMappings
+      );
 
       validateObjectDirectionAvailability(
         integration,
@@ -772,6 +786,156 @@ public with sharing class FieldMappingController {
         throw new AuraHandledException(
           'Map every required QuickBooks field before saving.'
         );
+      }
+    }
+  }
+
+  private static void validateExternalFieldCapabilities(
+    String integration,
+    String sfObject,
+    String externalObject,
+    List<MappingRow> requestedMappings
+  ) {
+    if (
+      integration != INTEGRATION_QBO ||
+      sfObject != 'Account' ||
+      (externalObject != 'Customer' && externalObject != 'Vendor')
+    ) {
+      return;
+    }
+    for (MappingRow row : requestedMappings) {
+      Boolean includesInbound = row.syncDirection == DIRECTION_QBO_TO_SF ||
+        row.syncDirection == DIRECTION_TWO_WAY;
+      Boolean includesOutbound = row.syncDirection == DIRECTION_SF_TO_QBO ||
+        row.syncDirection == DIRECTION_TWO_WAY;
+      if (
+        includesOutbound &&
+        !isQboAccountFieldOutboundWritable(externalObject, row.externalField)
+      ) {
+        throw new AuraHandledException(
+          'QuickBooks ' + externalObject + ' field "' + row.externalField +
+          '" is read-only and can only use QBO to SF.'
+        );
+      }
+      if (includesInbound && !isWritableInboundSalesforceField(sfObject, row.sfField)) {
+        throw new AuraHandledException(
+          'Salesforce field "' + row.sfField +
+          '" is read-only and cannot receive QuickBooks values.'
+        );
+      }
+    }
+  }
+
+  private static Boolean isQboAccountFieldOutboundWritable(
+    String externalObject,
+    String externalField
+  ) {
+    return externalObject == 'Vendor'
+      ? QBVendorFieldCapabilities.isOutboundWritable(externalField)
+      : QBCustomerFieldCapabilities.isOutboundWritable(externalField);
+  }
+
+  private static Boolean isWritableInboundSalesforceField(
+    String sfObject,
+    String sfField
+  ) {
+    Schema.SObjectType objectType = getSObjectType(sfObject);
+    if (objectType == null || String.isBlank(sfField) || sfField.contains('.')) {
+      return false;
+    }
+    Map<String, Schema.SObjectField> fieldMap = objectType
+      .getDescribe(SObjectDescribeOptions.DEFERRED)
+      .fields.getMap();
+    Schema.SObjectField fieldToken = fieldMap.get(sfField.toLowerCase());
+    if (fieldToken == null) {
+      String normalizedField = sfField.toLowerCase();
+      for (String candidate : fieldMap.keySet()) {
+        if (
+          candidate.equalsIgnoreCase(sfField) ||
+          candidate.toLowerCase().endsWith('__' + normalizedField)
+        ) {
+          fieldToken = fieldMap.get(candidate);
+          break;
+        }
+      }
+    }
+    if (fieldToken == null) {
+      return false;
+    }
+    Schema.DescribeFieldResult fieldDescribe = fieldToken.getDescribe();
+    return !fieldDescribe.isCalculated() &&
+      !fieldDescribe.isAutoNumber() &&
+      (fieldDescribe.isCreateable() || fieldDescribe.isUpdateable());
+  }
+
+  private static void validateNoOverlappingSalesforceTargets(
+    String integration,
+    String sfObject,
+    String externalObject,
+    List<MappingRow> requestedMappings
+  ) {
+    if (
+      integration != INTEGRATION_QBO ||
+      sfObject != 'Account' ||
+      (externalObject != 'Customer' && externalObject != 'Vendor')
+    ) {
+      return;
+    }
+    Set<String> inboundTargets = new Set<String>();
+    Set<String> outboundSources = new Set<String>();
+    for (MappingRow row : requestedMappings) {
+      Boolean includesInbound = row.syncDirection == DIRECTION_QBO_TO_SF ||
+        row.syncDirection == DIRECTION_TWO_WAY;
+      Boolean includesOutbound = row.syncDirection == DIRECTION_SF_TO_QBO ||
+        row.syncDirection == DIRECTION_TWO_WAY;
+      if (includesInbound && !inboundTargets.add(row.sfField)) {
+        throw new AuraHandledException(
+          'A Salesforce field can only receive one QuickBooks ' + externalObject + ' field in overlapping inbound directions: ' +
+          row.sfField + '.'
+        );
+      }
+      if (includesOutbound && !outboundSources.add(row.sfField)) {
+        throw new AuraHandledException(
+          'A Salesforce field can only populate one QuickBooks ' + externalObject + ' field in overlapping outbound directions: ' +
+          row.sfField + '.'
+        );
+      }
+    }
+  }
+
+  private static void assertNoCompoundAddressFields(
+    String sfObject,
+    List<String> sfFieldNames
+  ) {
+    if (String.isBlank(sfObject) || sfFieldNames == null) {
+      return;
+    }
+
+    Schema.SObjectType objectType = getSObjectType(sfObject);
+    if (objectType == null) {
+      return;
+    }
+
+    Map<String, Schema.SObjectField> fields = objectType
+      .getDescribe(SObjectDescribeOptions.DEFERRED)
+      .fields.getMap();
+    for (String sfFieldName : sfFieldNames) {
+      if (String.isBlank(sfFieldName)) {
+        continue;
+      }
+
+      Schema.SObjectField fieldToken = fields.get(sfFieldName.toLowerCase());
+      if (
+        fieldToken != null &&
+        fieldToken.getDescribe().getType() == Schema.DisplayType.Address
+      ) {
+        String message =
+          'Field "' +
+          fieldToken.getDescribe().getName() +
+          '" is a compound address and cannot be used in a mapping. Map its Street, City, State, Postal Code, and Country fields separately.';
+        AuraHandledException exceptionValue = new AuraHandledException(message);
+        exceptionValue.setMessage(message);
+        throw exceptionValue;
       }
     }
   }
@@ -1246,6 +1410,7 @@ public with sharing class FieldMappingController {
       fieldDefinitions.put(fieldPath, definition);
     }
 
+    applyQBFieldCapabilities(qbEntity, fieldDefinitions);
     return fieldDefinitions;
   }
 
@@ -1306,19 +1471,104 @@ public with sharing class FieldMappingController {
       );
       addQBFieldDefinition(
         qbFields,
-        'QB - Street',
+        'QB - Billing Street',
         'BillAddr.Line1',
         'STRING',
         false
       );
       addQBFieldDefinition(
         qbFields,
-        'QB - City',
+        'QB - Billing City',
         'BillAddr.City',
         'STRING',
         false
       );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Billing State/Province',
+        'BillAddr.CountrySubDivisionCode',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Billing Postal Code',
+        'BillAddr.PostalCode',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Billing Country',
+        'BillAddr.Country',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Shipping Street',
+        'ShipAddr.Line1',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Shipping City',
+        'ShipAddr.City',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Shipping State/Province',
+        'ShipAddr.CountrySubDivisionCode',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Shipping Postal Code',
+        'ShipAddr.PostalCode',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Shipping Country',
+        'ShipAddr.Country',
+        'STRING',
+        false
+      );
       addQBFieldDefinition(qbFields, 'QB - Notes', 'Notes', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Balance', 'Balance', 'NUMBER', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Balance With Jobs',
+        'BalanceWithJobs',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Fully Qualified Name',
+        'FullyQualifiedName',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Print On Check Name',
+        'PrintOnCheckName',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Currency Name',
+        'CurrencyRef.name',
+        'STRING',
+        false
+      );
     } else if (qbEntity == 'Vendor') {
       addQBFieldDefinition(
         qbFields,
@@ -1348,6 +1598,9 @@ public with sharing class FieldMappingController {
         'STRING',
         false
       );
+      addQBFieldDefinition(qbFields, 'QB - MiddleName', 'MiddleName', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Suffix', 'Suffix', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Account Number', 'AcctNum', 'STRING', false);
       addQBFieldDefinition(
         qbFields,
         'QB - Primary Email',
@@ -1355,6 +1608,25 @@ public with sharing class FieldMappingController {
         'STRING',
         false
       );
+      addQBFieldDefinition(qbFields, 'QB - Billing Street', 'BillAddr.Line1', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Billing City', 'BillAddr.City', 'STRING', false);
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Billing State/Province',
+        'BillAddr.CountrySubDivisionCode',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(qbFields, 'QB - Billing Postal Code', 'BillAddr.PostalCode', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Billing Country', 'BillAddr.Country', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Notes', 'Notes', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Balance', 'Balance', 'NUMBER', false);
+      addQBFieldDefinition(qbFields, 'QB - Print On Check Name', 'PrintOnCheckName', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Currency Name', 'CurrencyRef.name', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Currency Id', 'CurrencyRef.value', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Terms Id', 'TermRef.value', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - Tax Identifier', 'TaxIdentifier', 'STRING', false);
+      addQBFieldDefinition(qbFields, 'QB - 1099 Vendor', 'Vendor1099', 'BOOLEAN', false);
       addQBFieldDefinition(
         qbFields,
         'QB - Primary Phone',
@@ -1647,6 +1919,7 @@ public with sharing class FieldMappingController {
       );
     }
 
+    applyQBFieldCapabilities(qbEntity, qbFields);
     return qbFields;
   }
 
@@ -1662,7 +1935,26 @@ public with sharing class FieldMappingController {
     definition.value = value;
     definition.type = normalizeType(type);
     definition.required = required;
+    definition.inboundAllowed = true;
+    definition.outboundAllowed = true;
     fieldMap.put(value, definition);
+  }
+
+  private static void applyQBFieldCapabilities(
+    String qbEntity,
+    Map<String, QBFieldDefinition> definitions
+  ) {
+    if (definitions == null) {
+      return;
+    }
+    for (QBFieldDefinition definition : definitions.values()) {
+      definition.inboundAllowed = true;
+      definition.outboundAllowed = qbEntity == 'Customer'
+        ? QBCustomerFieldCapabilities.isOutboundWritable(definition.value)
+        : qbEntity == 'Vendor'
+          ? QBVendorFieldCapabilities.isOutboundWritable(definition.value)
+          : true;
+    }
   }
 
   private static List<Map<String, Object>> convertQBFieldDefinitions(
@@ -1679,6 +1971,8 @@ public with sharing class FieldMappingController {
       row.put('value', definition.value);
       row.put('type', definition.type);
       row.put('required', definition.required == true);
+      row.put('inboundAllowed', definition.inboundAllowed != false);
+      row.put('outboundAllowed', definition.outboundAllowed != false);
       result.add(row);
     }
     return result;
@@ -4187,6 +4481,8 @@ public with sharing class FieldMappingController {
     public String value { get; set; }
     public String type { get; set; }
     public Boolean required { get; set; }
+    public Boolean inboundAllowed { get; set; }
+    public Boolean outboundAllowed { get; set; }
 
     public Integer compareTo(Object obj) {
       QBFieldDefinition other = (QBFieldDefinition) obj;

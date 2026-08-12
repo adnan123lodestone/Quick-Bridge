@@ -17,13 +17,11 @@ public inherited sharing class PaymentSettlementService {
   }
 
   public class SettlementResult {
-    public Boolean usageRecorded { get; set; }
     public Boolean invoiceProcessed { get; set; }
     public Boolean orderGatewayUpdated { get; set; }
     public String errorSummary { get; set; }
 
     public SettlementResult() {
-      usageRecorded = false;
       invoiceProcessed = false;
       orderGatewayUpdated = false;
     }
@@ -55,28 +53,9 @@ public inherited sharing class PaymentSettlementService {
     request.providerName = approvedProvider;
     request.sourceMethod = canonicalSourceMethod(approvedProvider);
 
-    recordUsage(request, result);
     processInvoice(request, result);
     updateOrderGateway(request, result);
     return result;
-  }
-
-  private static void recordUsage(
-    SettlementRequest request,
-    SettlementResult result
-  ) {
-    try {
-      failForTest('usage');
-      IntegrationUsageService.recordSuccessfulPaymentTask(request.providerName);
-      result.usageRecorded = true;
-    } catch (Exception exceptionValue) {
-      addDiagnostic(result, 'Usage accounting: ' + exceptionValue.getMessage());
-      safeLogException(
-        request,
-        request.sourceMethod + '.usageAccounting',
-        exceptionValue
-      );
-    }
   }
 
   private static void processInvoice(

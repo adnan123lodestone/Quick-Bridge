@@ -132,7 +132,6 @@ public with sharing class GenericSchedulerController {
   ) {
     QuickBridgeAdminGuard.requireRunSync();
     validateScheduleConfiguration(connectorKey);
-    SchedulerEntitlementService.assertCanCreateSchedule();
     Integer safeValue = Integer.valueOf(freqValue.trim());
     String integrationType = connectorKeyToIntegrationType(connectorKey);
     String selectedObjectSafe = String.isBlank(selectedObject)
@@ -167,7 +166,6 @@ public with sharing class GenericSchedulerController {
       trackedJob.Direction__c = direction;
       update trackedJob;
     }
-    IntegrationUsageService.incrementTaskUsage(integrationType, 1);
     QuickBridgeAdminGuard.audit(
       'SCHEDULE_CREATE',
       connectorKey,

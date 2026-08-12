@@ -9,7 +9,6 @@ import getRecentRuns from "@salesforce/apex/GenericSchedulerController.getRecent
 import togglePauseStatus from "@salesforce/apex/GenericSchedulerController.togglePauseStatus";
 import deleteJob from "@salesforce/apex/GenericSchedulerController.deleteJob";
 import editJob from "@salesforce/apex/GenericSchedulerController.editJob";
-import getUsageSummary from "@salesforce/apex/SchedulerEntitlementService.getUsageSummary";
 export default class QbSchedulerComponent extends LightningElement {
   connectorKey = "qbo";
   @track isNewScheduleView = false;
@@ -26,15 +25,6 @@ export default class QbSchedulerComponent extends LightningElement {
   @track freqValue = "10";
   @track freqType = "Minutes";
   @track recentRuns = [];
-  @track usageSummary = {
-    activeCount: 0,
-    maxActiveSchedules: 10,
-    remaining: 10,
-    limitReached: false,
-    message: ""
-  };
-  wiredUsageResult;
-
   statusOptions = [
     { label: "All Status", value: "all" },
     { label: "Active", value: "active" },
@@ -110,30 +100,6 @@ export default class QbSchedulerComponent extends LightningElement {
     }
   }
 
-  @wire(getUsageSummary)
-  wiredUsage(result) {
-    this.wiredUsageResult = result;
-    if (result.data) {
-      this.usageSummary = result.data;
-    } else if (result.error) {
-      console.error("Error fetching schedule usage:", result.error);
-    }
-  }
-
-  get usageCounterText() {
-    return `${this.usageSummary.activeCount} / ${this.usageSummary.maxActiveSchedules}`;
-  }
-
-  get usageCardClass() {
-    return this.usageSummary.limitReached
-      ? "usage-card usage-card-limit"
-      : "usage-card";
-  }
-
-  get isScheduleLimitReached() {
-    return this.usageSummary.limitReached === true;
-  }
-
   get hasRecentRuns() {
     return this.recentRuns && this.recentRuns.length > 0;
   }
@@ -174,14 +140,6 @@ export default class QbSchedulerComponent extends LightningElement {
   }
 
   handleNewSchedule() {
-    if (this.isScheduleLimitReached) {
-      this.showToast(
-        "Schedule Limit Reached",
-        this.usageSummary.message,
-        "warning"
-      );
-      return;
-    }
     this.isNewScheduleView = true;
     this.syncObjects = this.syncObjects.map((obj) => {
       return {
@@ -218,7 +176,6 @@ export default class QbSchedulerComponent extends LightningElement {
       this.isNewScheduleView = false;
 
       await refreshApex(this.wiredJobsResult);
-      await refreshApex(this.wiredUsageResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
     }
@@ -230,7 +187,6 @@ export default class QbSchedulerComponent extends LightningElement {
         connectorKey: this.connectorKey
       });
       this.showToast("Schedule Stopped", result, "info");
-      await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast(
@@ -335,11 +291,11 @@ export default class QbSchedulerComponent extends LightningElement {
       btnClass: "obj-btn"
     },
     {
-      id: "Quotes",             
-      label: "Quotes",          
-      icon: "utility:quote",    
-      isSelected: false,        
-      btnClass: "obj-btn"       
+      id: "Quotes",
+      label: "Quotes",
+      icon: "utility:quote",
+      isSelected: false,
+      btnClass: "obj-btn"
     }
   ];
 
@@ -402,7 +358,6 @@ export default class QbSchedulerComponent extends LightningElement {
           : "Scheduler Resumed!",
         "success"
       );
-      await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
@@ -435,7 +390,6 @@ export default class QbSchedulerComponent extends LightningElement {
 
       this.selectedJobId = null;
       this.isEditMode = false;
-      await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");
@@ -452,7 +406,6 @@ export default class QbSchedulerComponent extends LightningElement {
       });
       this.showToast("Success", "Schedule updated successfully!", "success");
       this.isEditMode = false;
-      await refreshApex(this.wiredUsageResult);
       return refreshApex(this.wiredJobsResult);
     } catch (error) {
       this.showToast("Error", error.body?.message, "error");

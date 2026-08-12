@@ -32,7 +32,6 @@ public with sharing class ShopifyScheduledOperationAdapter implements ScheduledO
         }
 
         try {
-            IntegrationUsageService.incrementTaskUsage('Shopify', 1);
             Boolean outbound = job.Direction__c == 'Out';
             Boolean customer = targetObject == 'Customers' || targetObject == 'Customer';
             Boolean product = targetObject == 'Products' || targetObject == 'Product';
@@ -87,7 +86,6 @@ public with sharing class ShopifyScheduledOperationAdapter implements ScheduledO
 
     public static void run(String targetObject, String direction) {
         try {
-            IntegrationUsageService.incrementTaskUsage('Shopify', 1);
             Boolean isSfToShopify = direction == 'Out';
 
             if (targetObject == 'Customers' || targetObject == 'Customer') {

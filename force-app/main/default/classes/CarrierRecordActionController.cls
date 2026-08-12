@@ -253,10 +253,8 @@ public with sharing class CarrierRecordActionController {
         carrierType
       );
 
-      IntegrationUsageService.assertCanConsumeTask(carrierType, 1);
-
       if (actionName == 'validateAddress') {
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.validateAddress(
             recordId,
@@ -267,7 +265,7 @@ public with sharing class CarrierRecordActionController {
         );
       }
       if (actionName == 'validateAddressAndUpdate') {
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.validateAddress(
             recordId,
@@ -278,7 +276,7 @@ public with sharing class CarrierRecordActionController {
         );
       }
       if (actionName == 'getRateQuote') {
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.getRateQuote(
             recordId,
@@ -288,7 +286,7 @@ public with sharing class CarrierRecordActionController {
         );
       }
       if (actionName == 'createShipment') {
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.createShipment(
             recordId,
@@ -299,7 +297,7 @@ public with sharing class CarrierRecordActionController {
         );
       }
       if (actionName == 'createShipmentWithLabel') {
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.createShipment(
             recordId,
@@ -310,7 +308,7 @@ public with sharing class CarrierRecordActionController {
         );
       }
       if (actionName == 'generateLabel') {
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.createShipment(
             recordId,
@@ -322,21 +320,21 @@ public with sharing class CarrierRecordActionController {
       }
       if (actionName == 'syncTrackingStatus') {
         Id shipmentId = resolveShipmentId(recordId, objectApiName, integration);
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.syncTrackingStatus(shipmentId, carrierType)
         );
       }
       if (actionName == 'voidShipment') {
         Id shipmentId = resolveShipmentId(recordId, objectApiName, integration);
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.voidShipment(shipmentId, carrierType)
         );
       }
       if (actionName == 'createReturnLabel') {
         Id shipmentId = resolveShipmentId(recordId, objectApiName, integration);
-        return trackTaskAndReturn(
+        return returnOperationResult(
           carrierType,
           CarrierOperationsService.createReturnLabel(
             recordId,
@@ -566,13 +564,10 @@ public with sharing class CarrierRecordActionController {
     return shipments[0].Id;
   }
 
-  private static CarrierOperationsService.OperationResult trackTaskAndReturn(
+  private static CarrierOperationsService.OperationResult returnOperationResult(
     String carrierType,
     CarrierOperationsService.OperationResult result
   ) {
-    if (result != null && result.success == true) {
-      IntegrationUsageService.recordSuccessfulApiTask(carrierType);
-    }
     return result;
   }
 

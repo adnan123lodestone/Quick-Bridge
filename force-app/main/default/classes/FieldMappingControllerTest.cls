@@ -18,6 +18,7 @@ public class FieldMappingControllerTest {
         '"Active": true,' +
         '"Balance": 150.50,' +
         '"MetaData": {"CreateTime": "2023-01-01"},' +
+        '"BillAddr": {"Line1": "Only Street Is Populated"},' +
         '"LineItems": [{"Id": "1"}],' +
         '"Name": "Test"' +
         '}]}}';
@@ -343,7 +344,67 @@ public class FieldMappingControllerTest {
     );
 
     Test.stopTest();
-    Assert.isTrue(qbFields.size() > 0);
+    Set<String> customerFieldPaths = values(qbFields);
+    Assert.isTrue(customerFieldPaths.contains('BillAddr.Line1'));
+    Assert.isTrue(customerFieldPaths.contains('BillAddr.City'));
+    Assert.isTrue(customerFieldPaths.contains('BillAddr.CountrySubDivisionCode'));
+    Assert.isTrue(customerFieldPaths.contains('BillAddr.PostalCode'));
+    Assert.isTrue(customerFieldPaths.contains('BillAddr.Country'));
+    Assert.isTrue(customerFieldPaths.contains('ShipAddr.Line1'));
+    Assert.isTrue(customerFieldPaths.contains('ShipAddr.City'));
+    Assert.isTrue(customerFieldPaths.contains('ShipAddr.CountrySubDivisionCode'));
+    Assert.isTrue(customerFieldPaths.contains('ShipAddr.PostalCode'));
+    Assert.isTrue(customerFieldPaths.contains('ShipAddr.Country'));
+    Assert.isTrue(customerFieldPaths.contains('Notes'));
+  }
+
+  @isTest
+  static void accountFieldDiscoveryExcludesCompoundAddresses() {
+    Test.startTest();
+    List<Map<String, String>> accountFields = FieldMappingController.getObjectFields(
+      'Account'
+    );
+    Test.stopTest();
+
+    Set<String> fieldValues = new Set<String>();
+    for (Map<String, String> fieldInfo : accountFields) {
+      fieldValues.add(fieldInfo.get('value'));
+    }
+    Assert.isFalse(fieldValues.contains('BillingAddress'));
+    Assert.isFalse(fieldValues.contains('ShippingAddress'));
+    Assert.isTrue(fieldValues.contains('BillingStreet'));
+    Assert.isTrue(fieldValues.contains('ShippingCity'));
+  }
+
+  @isTest
+  static void saveFieldMappingsRejectsCompoundAddressField() {
+    String mappingsJson = JSON.serialize(
+      new List<Object>{
+        new Map<String, Object>{
+          'sfField' => 'BillingAddress',
+          'externalField' => 'BillAddr.Line1',
+          'syncDirection' => 'Two-Way'
+        }
+      }
+    );
+
+    Boolean didThrow = false;
+    Test.startTest();
+    try {
+      FieldMappingController.saveFieldMappings(
+        'qbonline',
+        'Account',
+        'Customer',
+        mappingsJson
+      );
+    } catch (AuraHandledException e) {
+      didThrow = true;
+      Assert.isTrue(e.getMessage().contains('compound address'));
+      Assert.isTrue(e.getMessage().contains('BillingAddress'));
+    }
+    Test.stopTest();
+
+    Assert.isTrue(didThrow, 'Compound address mappings must be rejected.');
   }
 
   @isTest
@@ -850,6 +911,143 @@ public class FieldMappingControllerTest {
     Test.stopTest();
 
     Assert.isTrue(didThrow, 'Meta mappings should reject non-Meta directions.');
+  }
+
+  @IsTest
+  static void customerFieldCapabilitiesMarkReadOnlySampleFieldsInboundOnly() {
+    Test.setMock(HttpCalloutMock.class, new QBSuccessMock());
+    List<Map<String, Object>> fields = FieldMappingController.getQuickBooksFields(
+      'Account',
+      'Customer'
+    );
+    Map<String, Object> balance = fieldByValue(fields, 'Balance');
+    Map<String, Object> displayName = fieldByValue(fields, 'DisplayName');
+    Assert.isNotNull(balance);
+    Assert.areEqual(true, balance.get('inboundAllowed'));
+    Assert.areEqual(false, balance.get('outboundAllowed'));
+    Assert.areEqual(true, displayName.get('outboundAllowed'));
+  }
+
+  @IsTest
+  static void vendorFieldCapabilitiesMarkReadOnlyFieldsInboundOnly() {
+    Test.setMock(HttpCalloutMock.class, new QBSuccessMock());
+    List<Map<String, Object>> fields = FieldMappingController.getQuickBooksFields(
+      'Account',
+      'Vendor'
+    );
+    Map<String, Object> balance = fieldByValue(fields, 'Balance');
+    Map<String, Object> currencyName = fieldByValue(fields, 'CurrencyRef.name');
+    Map<String, Object> displayName = fieldByValue(fields, 'DisplayName');
+    Assert.isNotNull(balance);
+    Assert.areEqual(true, balance.get('inboundAllowed'));
+    Assert.areEqual(false, balance.get('outboundAllowed'));
+    Assert.areEqual(false, currencyName.get('outboundAllowed'));
+    Assert.areEqual(true, displayName.get('outboundAllowed'));
+  }
+
+  @IsTest
+  static void saveRejectsReadOnlyVendorDirectionsAndSalesforceTargets() {
+    String outboundJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'DisplayName',
+        'syncDirection' => 'QBO to SF'
+      },
+      new Map<String, Object>{
+        'sfField' => 'Smile_Points_Balance__c',
+        'externalField' => 'Balance',
+        'syncDirection' => 'Two-Way'
+      }
+    });
+    String inboundJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'DisplayName',
+        'syncDirection' => 'SF to QBO'
+      },
+      new Map<String, Object>{
+        'sfField' => 'LastActivityDate',
+        'externalField' => 'MetaData.LastUpdatedTime',
+        'syncDirection' => 'QBO to SF'
+      }
+    });
+
+    Boolean outboundRejected = false;
+    Boolean inboundRejected = false;
+    try {
+      FieldMappingController.saveFieldMappings('qbonline', 'Account', 'Vendor', outboundJson);
+    } catch (AuraHandledException expected) {
+      outboundRejected = true;
+    }
+    try {
+      FieldMappingController.saveFieldMappings('qbonline', 'Account', 'Vendor', inboundJson);
+    } catch (AuraHandledException expected) {
+      inboundRejected = true;
+    }
+    Assert.isTrue(outboundRejected);
+    Assert.isTrue(inboundRejected);
+  }
+
+  @IsTest
+  static void saveRejectsReadOnlyCustomerOutboundDirection() {
+    String mappingsJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'DisplayName',
+        'syncDirection' => 'QBO to SF'
+      },
+      new Map<String, Object>{
+        'sfField' => 'Smile_Points_Balance__c',
+        'externalField' => 'Balance',
+        'syncDirection' => 'Two-Way'
+      }
+    });
+    Boolean didThrow = false;
+    try {
+      FieldMappingController.saveFieldMappings(
+        'qbonline', 'Account', 'Customer', mappingsJson
+      );
+    } catch (AuraHandledException expected) {
+      didThrow = true;
+    }
+    Assert.isTrue(didThrow);
+  }
+
+  @IsTest
+  static void saveRejectsOverlappingInboundSalesforceTargets() {
+    String mappingsJson = JSON.serialize(new List<Object>{
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'DisplayName',
+        'syncDirection' => 'QBO to SF'
+      },
+      new Map<String, Object>{
+        'sfField' => 'Name',
+        'externalField' => 'CompanyName',
+        'syncDirection' => 'QBO to SF'
+      }
+    });
+    Boolean didThrow = false;
+    try {
+      FieldMappingController.saveFieldMappings(
+        'qbonline', 'Account', 'Customer', mappingsJson
+      );
+    } catch (AuraHandledException expected) {
+      didThrow = true;
+    }
+    Assert.isTrue(didThrow);
+  }
+
+  private static Map<String, Object> fieldByValue(
+    List<Map<String, Object>> fields,
+    String value
+  ) {
+    for (Map<String, Object> fieldInfo : fields) {
+      if (fieldInfo.get('value') == value) {
+        return fieldInfo;
+      }
+    }
+    return null;
   }
 
   private static Set<String> values(List<Map<String, Object>> fields) {

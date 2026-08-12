@@ -2,6 +2,11 @@ public with sharing class IntegrationUsageAggregator implements Queueable {
   private static Boolean aggregationQueued = false;
   private static final Integer DEFAULT_BATCH_SIZE = 2000;
   private static final Integer DEFAULT_STALE_MINUTES = 60;
+  private static final Set<String> SUPPORTED_SUMMARY_FIELDS = new Set<String>{
+    'Record_Sync_Count__c',
+    'Error_Count__c',
+    'Endpoint_Usage_Count__c'
+  };
 
   public void execute(QueueableContext context) {
     aggregatePendingEvents();
@@ -59,7 +64,8 @@ public with sharing class IntegrationUsageAggregator implements Queueable {
       for (Integration_Usage_Event__c eventRecord : events) {
         if (
           String.isBlank(eventRecord.Product_Key__c) ||
-          String.isBlank(eventRecord.Summary_Field__c)
+          String.isBlank(eventRecord.Summary_Field__c) ||
+          !SUPPORTED_SUMMARY_FIELDS.contains(eventRecord.Summary_Field__c)
         ) {
           continue;
         }

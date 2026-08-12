@@ -230,6 +230,158 @@ describe("dynamic discovery mapping screens", () => {
     jest.clearAllMocks();
   });
 
+  it("shows scalar QBO customer addresses and preserves the configured Notes direction", async () => {
+    getObjectFields.mockResolvedValue([
+      { label: "Account Description", value: "Description", type: "STRING" },
+      { label: "Billing Street", value: "BillingStreet", type: "STRING" },
+      { label: "Shipping City", value: "ShippingCity", type: "STRING" }
+    ]);
+    getQuickBooksFields.mockResolvedValue([
+      { label: "QB - Billing Street", value: "BillAddr.Line1", type: "STRING" },
+      { label: "QB - Billing City", value: "BillAddr.City", type: "STRING" },
+      {
+        label: "QB - Billing State/Province",
+        value: "BillAddr.CountrySubDivisionCode",
+        type: "STRING"
+      },
+      {
+        label: "QB - Billing Postal Code",
+        value: "BillAddr.PostalCode",
+        type: "STRING"
+      },
+      {
+        label: "QB - Billing Country",
+        value: "BillAddr.Country",
+        type: "STRING"
+      },
+      {
+        label: "QB - Shipping Street",
+        value: "ShipAddr.Line1",
+        type: "STRING"
+      },
+      { label: "QB - Shipping City", value: "ShipAddr.City", type: "STRING" },
+      {
+        label: "QB - Shipping State/Province",
+        value: "ShipAddr.CountrySubDivisionCode",
+        type: "STRING"
+      },
+      {
+        label: "QB - Shipping Postal Code",
+        value: "ShipAddr.PostalCode",
+        type: "STRING"
+      },
+      {
+        label: "QB - Shipping Country",
+        value: "ShipAddr.Country",
+        type: "STRING"
+      },
+      { label: "QB - Notes", value: "Notes", type: "STRING" }
+    ]);
+    getExistingMappings.mockResolvedValue([
+      {
+        sfField: "Description",
+        externalField: "Notes",
+        syncDirection: "QBO to SF"
+      }
+    ]);
+
+    const element = createElement("c-field-mapping-component", {
+      is: FieldMappingComponent
+    });
+    document.body.appendChild(element);
+    await flushPromises();
+    await flushPromises();
+
+    const externalSelect = element.shadowRoot.querySelector(
+      'tbody select[name="externalField"]'
+    );
+    const externalValues = [...externalSelect.options].map(
+      (option) => option.value
+    );
+    expect(externalValues).toEqual(
+      expect.arrayContaining([
+        "BillAddr.Line1",
+        "BillAddr.City",
+        "BillAddr.CountrySubDivisionCode",
+        "BillAddr.PostalCode",
+        "BillAddr.Country",
+        "ShipAddr.Line1",
+        "ShipAddr.City",
+        "ShipAddr.CountrySubDivisionCode",
+        "ShipAddr.PostalCode",
+        "ShipAddr.Country",
+        "Notes"
+      ])
+    );
+
+    const salesforceSelect = element.shadowRoot.querySelector(
+      'tbody select[name="sfField"]'
+    );
+    const salesforceValues = [...salesforceSelect.options].map(
+      (option) => option.value
+    );
+    expect(salesforceValues).not.toContain("BillingAddress");
+    expect(salesforceValues).not.toContain("ShippingAddress");
+
+    const directionSelect = element.shadowRoot.querySelector(
+      'tbody select[name="syncDirection"]'
+    );
+    expect(directionSelect.value).toBe("QBO to SF");
+    directionSelect.value = "SF to QBO";
+    directionSelect.dispatchEvent(new CustomEvent("change"));
+    await flushPromises();
+
+    saveButton(element).click();
+    await flushPromises();
+    const savedRows = JSON.parse(
+      saveFieldMappings.mock.calls.at(-1)[0].mappingsJson
+    );
+    expect(savedRows).toContainEqual(
+      expect.objectContaining({
+        sfField: "Description",
+        externalField: "Notes",
+        syncDirection: "SF to QBO"
+      })
+    );
+  });
+
+  it("limits read-only QBO customer fields to inbound direction", async () => {
+    getObjectFields.mockResolvedValue([
+      { label: "Smile Points", value: "Smile_Points_Balance__c", type: "NUMBER" }
+    ]);
+    getQuickBooksFields.mockResolvedValue([
+      {
+        label: "QB - Balance",
+        value: "Balance",
+        type: "NUMBER",
+        inboundAllowed: true,
+        outboundAllowed: false
+      }
+    ]);
+    getExistingMappings.mockResolvedValue([
+      {
+        sfField: "Smile_Points_Balance__c",
+        externalField: "Balance",
+        syncDirection: "Two-Way"
+      }
+    ]);
+
+    const element = createElement("c-field-mapping-component", {
+      is: FieldMappingComponent
+    });
+    document.body.appendChild(element);
+    await flushPromises();
+    await flushPromises();
+
+    const directionSelect = element.shadowRoot.querySelector(
+      'tbody select[name="syncDirection"]'
+    );
+    expect(directionSelect.value).toBe("QBO to SF");
+    expect([...directionSelect.options].map((option) => option.value)).toEqual([
+      "QBO to SF"
+    ]);
+  });
+
   it.each([
     ["c-field-mapping-component", FieldMappingComponent],
     ["c-shopify-field-mapping-component", ShopifyFieldMappingComponent],

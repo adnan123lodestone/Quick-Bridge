@@ -1,4 +1,7 @@
 public class QBObjectMappings {
+    // Notes is intentionally not a runtime fallback. Account.Description and
+    // Customer.Notes participate only when the Config Panel saves an active
+    // mapping with a direction that applies to the current operation.
     private static final Map<String, String> ACCOUNT_TO_CUSTOMER_FALLBACK = new Map<String, String>{
         'Name' => 'DisplayName',
         'AccountNumber' => 'AcctNum',
@@ -9,9 +12,16 @@ public class QBObjectMappings {
         'BillingState' => 'BillAddr.CountrySubDivisionCode',
         'BillingPostalCode' => 'BillAddr.PostalCode',
         'BillingCountry' => 'BillAddr.Country',
-        'Terms__c' => 'SalesTermRef.value',
-        'External_Id__c' => 'ExternalId'
+        'ShippingStreet' => 'ShipAddr.Line1',
+        'ShippingCity' => 'ShipAddr.City',
+        'ShippingState' => 'ShipAddr.CountrySubDivisionCode',
+        'ShippingPostalCode' => 'ShipAddr.PostalCode',
+        'ShippingCountry' => 'ShipAddr.Country',
+        'Terms__c' => 'SalesTermRef.value'
     };
+
+    @TestVisible
+    private static List<Field_Mapping__mdt> testDynamicMappings;
     
     private static final Map<String, String> PRODUCT_TO_ITEM_FALLBACK = new Map<String, String>{
         'Name' => 'Name',
@@ -131,33 +141,86 @@ public class QBObjectMappings {
     // that two QBO objects sharing the same Salesforce object keep independent
     // mappings. Legacy rows with a blank Target_Object_API_Name__c still apply.
     private static Map<String, String> getDynamicMapping(String objectName, String syncDirection, String targetObject) {
-        Map<String, String> mapping = new Map<String, String>();
+        return getDynamicMappingResult(objectName, syncDirection, targetObject).mapping;
+    }
+
+    private static DynamicMappingResult getDynamicMappingResult(
+        String objectName,
+        String syncDirection,
+        String targetObject
+    ) {
+        DynamicMappingResult result = new DynamicMappingResult();
 
         try {
-            List<Field_Mapping__mdt> metadataList = [
-                SELECT SF_Field__c, External_Field__c, Target_Object_API_Name__c
-                FROM Field_Mapping__mdt
-                WHERE Integration__c = 'qbonline' AND SF_Object__c = :objectName AND Is_Active__c = true AND Sync_Direction__c IN ('Two-Way', :syncDirection)
-            ];
+            List<Field_Mapping__mdt> metadataList;
+            if (Test.isRunningTest() && testDynamicMappings != null) {
+                metadataList = testDynamicMappings;
+            } else {
+                metadataList = [
+                    SELECT Integration__c, SF_Object__c, SF_Field__c, External_Field__c,
+                           Target_Object_API_Name__c, Is_Active__c, Sync_Direction__c
+                    FROM Field_Mapping__mdt
+                    WHERE Integration__c = 'qbonline'
+                      AND SF_Object__c = :objectName
+                      AND Is_Active__c = true
+                ];
+            }
 
             Boolean scopeByObject = String.isNotBlank(targetObject);
-            for(Field_Mapping__mdt record : metadataList) {
-                // Skip rows that belong to a different QBO object; keep legacy
-                // (blank target object) rows so existing deployments are unaffected.
-                if (scopeByObject
-                    && String.isNotBlank(record.Target_Object_API_Name__c)
-                    && record.Target_Object_API_Name__c != targetObject) {
+            for (Field_Mapping__mdt record : metadataList) {
+                if (
+                    record == null ||
+                    record.Integration__c != 'qbonline' ||
+                    record.SF_Object__c != objectName ||
+                    record.Is_Active__c != true
+                ) {
                     continue;
                 }
-                if(String.isNotBlank(record.SF_Field__c) && String.isNotBlank(record.External_Field__c)) {
-                    mapping.put(record.SF_Field__c, record.External_Field__c);
+                // Skip rows that belong to a different QBO object; keep legacy
+                // (blank target object) rows so existing deployments are unaffected.
+                if (
+                    scopeByObject &&
+                    String.isNotBlank(record.Target_Object_API_Name__c) &&
+                    record.Target_Object_API_Name__c != targetObject
+                ) {
+                    continue;
+                }
+
+                result.hasConfiguredMappings = true;
+                if (
+                    record.Sync_Direction__c != 'Two-Way' &&
+                    record.Sync_Direction__c != syncDirection
+                ) {
+                    continue;
+                }
+                if (
+                    String.isNotBlank(record.SF_Field__c) &&
+                    String.isNotBlank(record.External_Field__c)
+                ) {
+                    Boolean isCustomerMapping = objectName == 'Account' && targetObject == 'Customer';
+                    if (
+                        isCustomerMapping &&
+                        syncDirection == 'SF to QBO' &&
+                        !QBCustomerFieldCapabilities.isOutboundWritable(record.External_Field__c)
+                    ) {
+                        continue;
+                    }
+                    Boolean isPreferredCustomerField = isCustomerMapping &&
+                        ACCOUNT_TO_CUSTOMER_FALLBACK.get(record.SF_Field__c) == record.External_Field__c;
+                    if (
+                        !isCustomerMapping ||
+                        !result.mapping.containsKey(record.SF_Field__c) ||
+                        isPreferredCustomerField
+                    ) {
+                        result.mapping.put(record.SF_Field__c, record.External_Field__c);
+                    }
                 }
             }
         } catch (Exception e) {
             System.debug('Mapping fetch error: ' + e.getMessage());
         }
 
-        return mapping;
+        return result;
     }
     
     public static Map<String, String> reverseMapping(Map<String, String> sourceMapping) {
@@ -178,20 +241,24 @@ public class QBObjectMappings {
     
     // 1. Account -> Customer
     public static Map<String, String> getAccountToCustomerMapping() {
-        Map<String, String> dynamicMap = getDynamicMapping('Account', 'SF to QBO', 'Customer');
-        if (dynamicMap != null && !dynamicMap.isEmpty()) { return dynamicMap; }
+        DynamicMappingResult dynamicResult = getDynamicMappingResult('Account', 'SF to QBO', 'Customer');
+        if (dynamicResult.hasConfiguredMappings) {
+            return QBCustomerFieldCapabilities.filterOutboundMappings(dynamicResult.mapping);
+        }
 
         // Fallback
-        return new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK);
+        return QBCustomerFieldCapabilities.filterOutboundMappings(
+            new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK)
+        );
     }
 
     // Reverse Mapping for Customer -> Account (Inbound Sync)
     public static Map<String, String> getCustomerToAccountMapping() {
-        Map<String, String> inboundFields = getDynamicMapping('Account', 'QBO to SF', 'Customer');
-        if (inboundFields == null || inboundFields.isEmpty()) {
+        DynamicMappingResult dynamicResult = getDynamicMappingResult('Account', 'QBO to SF', 'Customer');
+        if (!dynamicResult.hasConfiguredMappings) {
             return reverseMapping(new Map<String, String>(ACCOUNT_TO_CUSTOMER_FALLBACK));
         }
-        return reverseMapping(inboundFields);
+        return reverseMapping(dynamicResult.mapping);
     }
 
     // Account -> Vendor (Outbound Sync)
@@ -219,6 +286,11 @@ public class QBObjectMappings {
             }
         }
         return result;
+    }
+
+    private class DynamicMappingResult {
+        private Map<String, String> mapping = new Map<String, String>();
+        private Boolean hasConfiguredMappings = false;
     }
     
     // 2. Product2 -> Item

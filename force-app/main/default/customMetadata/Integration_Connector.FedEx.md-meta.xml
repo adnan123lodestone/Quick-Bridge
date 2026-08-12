@@ -23,10 +23,6 @@
         <value xsi:type="xsd:string">fedex</value>
     </values>
     <values>
-        <field>Counts_Toward_Schedule_Limit__c</field>
-        <value xsi:type="xsd:boolean">false</value>
-    </values>
-    <values>
         <field>Display_Order__c</field>
         <value xsi:type="xsd:double">60.0</value>
     </values>

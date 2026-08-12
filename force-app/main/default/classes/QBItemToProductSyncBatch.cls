@@ -62,11 +62,11 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     }
     
     public void execute(Database.BatchableContext bc, List<String> scope) {
-        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         QBTriggerHandler.isProductProcessing = true;
 
         try {
             List<Product2> productsToUpsert = new List<Product2>();
+            Set<String> mappingConfigurationErrors = new Set<String>();
             
             Set<String> qbIds = new Set<String>();
             List<Map<String, Object>> itemDataList = new List<Map<String, Object>>();
@@ -106,29 +106,27 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
                 }
             }
 
-            Map<String, Product2> existingProductsByQbId = new Map<String, Product2>();
-            if (!qbIds.isEmpty()) {
-                String qry = 'SELECT Id, ' + getProductQbIdSelectFields() + ', Sale_Price__c FROM Product2 WHERE ' + getProductQbIdWhereClause();
-                for (Product2 p : (List<Product2>)Database.query(qry)) {
-                    String qbId = getProductQbIdValue(p);
-                    if (String.isNotBlank(qbId)) {
-                        existingProductsByQbId.put(qbId, p);
-                    }
-                }
-            }
+            Map<String, Product2> existingProductsByQbId = loadExistingProductsByQbIds(qbIds);
 
             Map<String, String> mapping = QBObjectMappings.getItemToProductMapping();
 
             for (Map<String, Object> itemData : itemDataList) {
                 String qbId = asString(itemData.get('Id'));
                 Product2 existingProd = String.isNotBlank(qbId) ? existingProductsByQbId.get(qbId) : null;
-                Product2 productToSync = processItemData(itemData, existingProd, mapping);
+                Product2 productToSync = processItemData(
+                    itemData,
+                    existingProd,
+                    mapping,
+                    mappingConfigurationErrors
+                );
                 if (productToSync != null) {
                     productsToUpsert.add(productToSync);
                 } else {
                     recordSharedFailure(qbId, 'QuickBooks item did not produce a Product record.');
                 }
             }
+
+            logMappingConfigurationErrors(mappingConfigurationErrors);
             
             if (!productsToUpsert.isEmpty()) {
                 Map<String, Decimal> qbIdToSalePrice = new Map<String, Decimal>();
@@ -312,23 +310,19 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
     }
     
     private Product2 processItemData(Map<String, Object> itemData) {
-        return processItemData(itemData, null, null);
+        return processItemData(itemData, null, null, new Set<String>());
     }
 
-    private Product2 processItemData(Map<String, Object> itemData, Product2 existingProd, Map<String, String> mapping) {
+    private Product2 processItemData(
+        Map<String, Object> itemData,
+        Product2 existingProd,
+        Map<String, String> mapping,
+        Set<String> mappingConfigurationErrors
+    ) {
         if (itemData == null) return null;
         String qbId = asString(itemData.get('Id'));
         
         Product2 product = existingProd;
-        if (product == null && String.isNotBlank(qbId)) {
-            Set<String> qbIds = new Set<String>{ qbId };
-            String qry = 'SELECT Id, ' + getProductQbIdSelectFields() + ', Sale_Price__c FROM Product2 WHERE ' + getProductQbIdWhereClause() + ' LIMIT 1';
-            List<Product2> existingProducts = Database.query(qry);
-            if (!existingProducts.isEmpty()) {
-                product = existingProducts[0];
-            }
-        }
-        
         if (product == null) {
             product = new Product2();
             product.Is_Synced__c = true;
@@ -343,7 +337,11 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
             if (qbValue != null) {
                 try {
                     putFieldValue(product, mapping.get(qbField), qbValue);
-                } catch (Exception e) {}
+                } catch (InvalidMappingValueException invalidMapping) {
+                    if (mappingConfigurationErrors != null) {
+                        mappingConfigurationErrors.add(invalidMapping.getMessage());
+                    }
+                } catch (Exception ignored) {}
             }
         }
 
@@ -366,6 +364,40 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         }
         
         return product;
+    }
+
+    private static Map<String, Product2> loadExistingProductsByQbIds(Set<String> qbIds) {
+        Map<String, Product2> existingProductsByQbId = new Map<String, Product2>();
+        if (qbIds == null || qbIds.isEmpty()) {
+            return existingProductsByQbId;
+        }
+        String qry = 'SELECT Id, ' + getProductQbIdSelectFields() +
+            ', Sale_Price__c FROM Product2 WHERE ' + getProductQbIdWhereClause();
+        for (Product2 productRecord : (List<Product2>) Database.query(qry)) {
+            String qbId = getProductQbIdValue(productRecord);
+            if (String.isNotBlank(qbId)) {
+                existingProductsByQbId.put(qbId, productRecord);
+            }
+        }
+        return existingProductsByQbId;
+    }
+
+    private void logMappingConfigurationErrors(Set<String> configurationErrors) {
+        if (configurationErrors == null || configurationErrors.isEmpty()) {
+            return;
+        }
+        List<ErrorLogUtility.LogContext> contexts = new List<ErrorLogUtility.LogContext>();
+        for (String message : configurationErrors) {
+            ErrorLogUtility.LogContext context = new ErrorLogUtility.LogContext();
+            context.gatewayName = 'QuickBooks';
+            context.classMethodName = 'QBItemToProductSyncBatch.processItemData';
+            context.errorMessage = message;
+            context.sourceObjectApiName = 'Product2';
+            context.errorCategory = 'Configuration Error';
+            contexts.add(context);
+            recordSharedFailure(null, message);
+        }
+        ErrorLogUtility.logErrors(contexts);
     }
 
     private static String getProductQbIdSelectFields() {
@@ -428,23 +460,99 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         return current;
     }
 
+    @TestVisible
     private void putFieldValue(SObject record, String fieldName, Object value) {
         if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) {
             return;
         }
 
         Map<String, Schema.SObjectField> fields = record.getSObjectType().getDescribe().fields.getMap();
-        if (!fields.containsKey(fieldName)) {
+        Schema.SObjectField fieldToken = fields.get(fieldName.toLowerCase());
+        if (fieldToken == null) {
+            for (String candidate : fields.keySet()) {
+                if (
+                    candidate.equalsIgnoreCase(fieldName) ||
+                    candidate.toLowerCase().endsWith('__' + fieldName.toLowerCase())
+                ) {
+                    fieldToken = fields.get(candidate);
+                    break;
+                }
+            }
+        }
+        if (fieldToken == null) {
             return;
         }
 
-        Schema.DescribeFieldResult fieldDescribe = fields.get(fieldName).getDescribe();
+        Schema.DescribeFieldResult fieldDescribe = fieldToken.getDescribe();
+        String resolvedFieldName = fieldDescribe.getName();
         if (!fieldDescribe.isCreateable() && !fieldDescribe.isUpdateable()) {
             return;
         }
 
         Schema.DisplayType displayType = fieldDescribe.getType();
-        record.put(fieldName, coerceValue(value, displayType));
+        if (
+            (displayType == Schema.DisplayType.Picklist ||
+            displayType == Schema.DisplayType.MultiPicklist) &&
+            fieldDescribe.isRestrictedPicklist()
+        ) {
+            String resolvedPicklistValue = resolveActivePicklistValue(
+                fieldDescribe,
+                String.valueOf(value)
+            );
+            if (resolvedPicklistValue == null) {
+                throw new InvalidMappingValueException(
+                    'QuickBooks value "' + String.valueOf(value) +
+                    '" is not an active value for restricted Salesforce picklist ' +
+                    fieldDescribe.getName() + '. Correct the Product field mapping.'
+                );
+            }
+            value = resolvedPicklistValue;
+        }
+        if (displayType == Schema.DisplayType.Reference) {
+            try {
+                record.put(resolvedFieldName, Id.valueOf(String.valueOf(value)));
+            } catch (Exception invalidReferenceValue) {
+                // External identifiers are not Salesforce record IDs. Ignore an
+                // invalid mapping instead of failing the entire product batch.
+            }
+            return;
+        }
+        record.put(resolvedFieldName, coerceValue(value, displayType));
+    }
+
+    private static String resolveActivePicklistValue(
+        Schema.DescribeFieldResult fieldDescribe,
+        String rawValue
+    ) {
+        if (String.isBlank(rawValue)) {
+            return null;
+        }
+        Map<String, String> activeValuesByNormalizedValue = new Map<String, String>();
+        for (Schema.PicklistEntry entry : fieldDescribe.getPicklistValues()) {
+            if (entry.isActive()) {
+                activeValuesByNormalizedValue.put(
+                    normalizePicklistValue(entry.getValue()),
+                    entry.getValue()
+                );
+            }
+        }
+        List<String> resolvedValues = new List<String>();
+        for (String requestedValue : rawValue.split(';')) {
+            String resolvedValue = activeValuesByNormalizedValue.get(
+                normalizePicklistValue(requestedValue)
+            );
+            if (resolvedValue == null) {
+                return null;
+            }
+            resolvedValues.add(resolvedValue);
+        }
+        return resolvedValues.isEmpty() ? null : String.join(resolvedValues, ';');
+    }
+
+    private static String normalizePicklistValue(String value) {
+        return String.isBlank(value)
+            ? ''
+            : value.toLowerCase().replaceAll('[^a-z0-9]', '');
     }
 
     private Object coerceValue(Object value, Schema.DisplayType displayType) {
@@ -493,10 +601,23 @@ public class QBItemToProductSyncBatch implements Database.Batchable<String>, Dat
         if (res.getStatusCode() == 200) {
             Map<String, Object> data = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
             Map<String, Object> item = (Map<String, Object>) data.get('Item');
-            Product2 prod = processItemData(item);
+            String qbId = asString(item == null ? null : item.get('Id'));
+            Map<String, Product2> existingProducts = loadExistingProductsByQbIds(
+                String.isBlank(qbId) ? new Set<String>() : new Set<String>{ qbId }
+            );
+            Set<String> configurationErrors = new Set<String>();
+            Product2 prod = processItemData(
+                item,
+                existingProducts.get(qbId),
+                QBObjectMappings.getItemToProductMapping(),
+                configurationErrors
+            );
+            logMappingConfigurationErrors(configurationErrors);
             Database.upsert(prod, Product2.QuickbookID__c, false);
         } else {
             throw new CalloutException('Unable to fetch item from QBO: ' + res.getBody());
         }
     }
+
+    private class InvalidMappingValueException extends Exception {}
 }

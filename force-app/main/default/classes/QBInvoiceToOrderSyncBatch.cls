@@ -76,12 +76,6 @@ public class QBInvoiceToOrderSyncBatch implements Database.Batchable<String>, Da
     }
 
     public void execute(Database.BatchableContext bc, List<String> scope) {
-        try {
-            IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
-        } catch (Exception e) {
-            ErrorLogUtility.logException('QuickBooks', 'QBInvoiceToOrderSyncBatch.execute', e, null, null);
-            return;
-        }
         isProcessing = true;
         QuickBooksInvoiceHandler.isProcessing = true;
         QBTriggerHandler.isOrderProcessing = true;

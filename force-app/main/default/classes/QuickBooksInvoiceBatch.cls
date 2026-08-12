@@ -28,7 +28,6 @@ public class QuickBooksInvoiceBatch implements Database.Batchable<sObject>, Data
     }
 
     public void execute(Database.BatchableContext bc, List<SObject> scope) {
-        IntegrationUsageService.assertCanConsumeTask('QuickBooks', scope == null ? 1 : scope.size());
         QuickBooksInvoiceHandler.setBatchContext(true);
 
         try {

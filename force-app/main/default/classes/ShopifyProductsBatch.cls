@@ -27,10 +27,6 @@ global class ShopifyProductsBatch implements Database.Batchable<Integer>, Databa
             return;
         }
 
-        if (!bypassAuthCheckForTest) {
-            IntegrationUsageService.assertCanConsumeTask('Shopify', 1);
-        }
-
         try {
             API_Callout_Control__mdt calloutControl = getCalloutControl();
             if (!calloutControl.Allow_Callouts__c) {
