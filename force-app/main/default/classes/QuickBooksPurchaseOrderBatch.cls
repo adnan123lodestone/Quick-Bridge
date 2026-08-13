@@ -26,7 +26,8 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     }
     
     public Database.QueryLocator start(Database.BatchableContext bc) {
-        String query = 'SELECT Id FROM Purchase_Order__c WHERE Id IN :recordIds';
+        String poObjName = Schema.getGlobalDescribe().containsKey('QuickBridgeTLG__Purchase_Order__c') ? 'QuickBridgeTLG__Purchase_Order__c' : 'Purchase_Order__c';
+        String query = 'SELECT Id FROM ' + poObjName + ' WHERE Id IN :recordIds';
         return Database.getQueryLocator(query);
     }
     
@@ -37,36 +38,71 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
             Map<String, String> fieldMap = QBObjectMappings.getPurchaseOrderMapping();
             Map<String, String> lineFieldMap = QBObjectMappings.getPurchaseOrderLineMapping();
             
-            Set<String> fieldsToQuery = new Set<String>{'Id', 'External_Id__c', 'Supplier__c', 'Account__c'};
-            fieldsToQuery.addAll(fieldMap.keySet());
-            
-            List<String> queryFields = new List<String>(fieldsToQuery);
-            
+            Boolean isNamespaced = Schema.getGlobalDescribe().containsKey('QuickBridgeTLG__Purchase_Order__c');
+            String ns = isNamespaced ? 'QuickBridgeTLG__' : '';
+            String poObjName = ns + 'Purchase_Order__c';
+
+            Set<String> normalizedFields = new Set<String>{ 'id', (ns + 'external_id__c').toLowerCase(), (ns + 'supplier__c').toLowerCase(), (ns + 'account__c').toLowerCase(), (ns + 'vendor__c').toLowerCase() };
+            List<String> queryFields = new List<String>{ 'Id', ns + 'External_Id__c', ns + 'Supplier__c', ns + 'Account__c', ns + 'Vendor__c' };
+
+            if (fieldMap != null) {
+                for (String f : fieldMap.keySet()) {
+                    if (String.isBlank(f)) continue;
+                    String baseField = f.replace('QuickBridgeTLG__', '').toLowerCase();
+                    String fullField = (ns + f.replace('QuickBridgeTLG__', '')).toLowerCase();
+                    if (!normalizedFields.contains(baseField) && !normalizedFields.contains(fullField)) {
+                        normalizedFields.add(baseField);
+                        normalizedFields.add(fullField);
+                        queryFields.add(f);
+                    }
+                }
+            }
+
+            String lineSubquery = isNamespaced ?
+                '(SELECT Id, QuickBridgeTLG__Product__r.QuickBridgeTLG__QuickbookID__c, QuickBridgeTLG__Quantity__c, QuickBridgeTLG__Cost_Price__c, QuickBridgeTLG__Product_Description__c FROM QuickBridgeTLG__Purchase_Order_Lines__r)' :
+                '(SELECT Id, Product__r.QuickbookID__c, Quantity__c, Cost_Price__c, Product_Description__c FROM Purchase_Order_Lines__r)';
+
+            String supplierRel = isNamespaced ? 'QuickBridgeTLG__Supplier__r.QuickBridgeTLG__QuickbookID__c' : 'Supplier__r.QuickbookID__c';
+            String accountRel = isNamespaced ? 'QuickBridgeTLG__Account__r.QuickBridgeTLG__QuickbookID__c' : 'Account__r.QuickbookID__c';
+            String vendorRel = isNamespaced ? 'QuickBridgeTLG__Vendor__r.QuickBridgeTLG__QuickbookID__c' : 'Vendor__r.QuickbookID__c';
+
             String query = 'SELECT ' + String.join(queryFields, ', ') + 
-                           ', Supplier__r.QuickbookID__c, Account__r.QuickbookID__c, ' +
-                           '(SELECT Id, Product__r.QuickbookID__c, Quantity__c, Cost_Price__c, Product_Description__c FROM Purchase_Order_Lines__r) ' +
-                           'FROM Purchase_Order__c WHERE Id IN :recordIds';
+                           ', ' + supplierRel + ', ' + accountRel + ', ' + vendorRel + ', ' +
+                           lineSubquery +
+                           ' FROM ' + poObjName + ' WHERE Id IN :recordIds';
             
             Map<Id, SObject> recordsWithItems = new Map<Id, SObject>((List<SObject>)Database.query(query));
 
             for (SObject obj : scope) {
                 SObject currentRecord = recordsWithItems.get(obj.Id);
-                List<SObject> childItems = currentRecord.getSObjects('Purchase_Order_Lines__r');
+                List<SObject> childItems = new List<SObject>();
+                if (currentRecord != null) {
+                    if (currentRecord.getPopulatedFieldsAsMap().containsKey('Purchase_Order_Lines__r')) {
+                        childItems = currentRecord.getSObjects('Purchase_Order_Lines__r');
+                    } else if (currentRecord.getPopulatedFieldsAsMap().containsKey('QuickBridgeTLG__Purchase_Order_Lines__r')) {
+                        childItems = currentRecord.getSObjects('QuickBridgeTLG__Purchase_Order_Lines__r');
+                    }
+                }
                 
                 if (currentRecord == null || childItems == null || childItems.isEmpty()) {
                     recordSharedFailure(obj == null ? null : obj.Id, 'Purchase order has no line items.', false);
                     continue;
                 }
                 
-                String qbId = (String)currentRecord.get('External_Id__c');
+                String qbId = null;
+                try { qbId = (String)currentRecord.get('External_Id__c'); } catch(Exception e){}
+                if (qbId == null) {
+                    try { qbId = (String)currentRecord.get('QuickBridgeTLG__External_Id__c'); } catch(Exception e){}
+                }
                 
-                if (qbId == null && isInitialSync) {
+                if (String.isBlank(qbId)) {
                     String newQbId = createPurchaseOrder(currentRecord, childItems, fieldMap, lineFieldMap);
                     if (newQbId != null) {
-                        currentRecord.put('External_Id__c', newQbId);
+                        try { currentRecord.put('External_Id__c', newQbId); } catch(Exception e){}
+                        try { currentRecord.put('QuickBridgeTLG__External_Id__c', newQbId); } catch(Exception e){}
                         recordsToUpdate.add(currentRecord);
                     }
-                } else if (qbId != null && !isInitialSync) {
+                } else {
                     updatePurchaseOrder(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
                     sharedSuccessfulRecordIds.add(currentRecord.Id);
                 }
@@ -104,9 +140,21 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     private String createPurchaseOrder(SObject record, List<SObject> lineItems, Map<String, String> fieldMap, Map<String, String> lineFieldMap) {
         Map<String, Object> requestBody = new Map<String, Object>();
         
-        SObject vendorRef = record.getSObject('Supplier__r');
-        if (vendorRef != null && vendorRef.get('QuickbookID__c') != null) {
-            requestBody.put('VendorRef', new Map<String, String>{ 'value' => (String)vendorRef.get('QuickbookID__c') });
+        sObject vendorRef = null;
+        try { vendorRef = record.getSObject('Supplier__r'); } catch(Exception e){}
+        if(vendorRef == null) { try { vendorRef = record.getSObject('QuickBridgeTLG__Supplier__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('Vendor__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('QuickBridgeTLG__Vendor__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('Account__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('QuickBridgeTLG__Account__r'); } catch(Exception e){} }
+
+        if (vendorRef != null) {
+            String qbVendorId = null;
+            try { qbVendorId = (String)vendorRef.get('QuickbookID__c'); } catch(Exception e){}
+            if (qbVendorId == null) { try { qbVendorId = (String)vendorRef.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){} }
+            if (qbVendorId != null) {
+                requestBody.put('VendorRef', new Map<String, String>{ 'value' => qbVendorId });
+            }
         }
         
         applyDynamicMappings(requestBody, record, fieldMap);
@@ -117,7 +165,13 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         
         if (res != null && res.getStatusCode() == 200) {
             Map<String, Object> responseMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('PurchaseOrder');
-            return (String)responseMap.get('Id');
+            String newQbId = (String)responseMap.get('Id');
+            List<Object> qboLines = (List<Object>)responseMap.get('Line');
+            List<SObject> lineItemsToUpdate = updateLineItemsWithExternalIds(lineItems, qboLines, newQbId);
+            if (!lineItemsToUpdate.isEmpty()) {
+                update lineItemsToUpdate;
+            }
+            return newQbId;
         }
         ErrorLogUtility.logCalloutFailure(
             'QuickBooks',
@@ -157,12 +211,36 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
         requestBody.put('SyncToken', existingPO.get('SyncToken'));
         requestBody.put('sparse', true); 
         
+        sObject vendorRef = null;
+        try { vendorRef = record.getSObject('Supplier__r'); } catch(Exception e){}
+        if(vendorRef == null) { try { vendorRef = record.getSObject('QuickBridgeTLG__Supplier__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('Vendor__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('QuickBridgeTLG__Vendor__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('Account__r'); } catch(Exception e){} }
+        if(vendorRef == null) { try { vendorRef = record.getSObject('QuickBridgeTLG__Account__r'); } catch(Exception e){} }
+
+        if (vendorRef != null) {
+            String qbVendorId = null;
+            try { qbVendorId = (String)vendorRef.get('QuickbookID__c'); } catch(Exception e){}
+            if (qbVendorId == null) { try { qbVendorId = (String)vendorRef.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){} }
+            if (qbVendorId != null) {
+                requestBody.put('VendorRef', new Map<String, String>{ 'value' => qbVendorId });
+            }
+        }
+
         applyDynamicMappings(requestBody, record, fieldMap);
         requestBody.put('Line', buildLineItems(lineItems, record, lineFieldMap));
 
         String requestJson = JSON.serialize(requestBody);
         HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/purchaseorder', requestJson);
-        if (updateRes == null || updateRes.getStatusCode() != 200) {
+        if (updateRes != null && updateRes.getStatusCode() == 200) {
+            Map<String, Object> responseMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(updateRes.getBody())).get('PurchaseOrder');
+            List<Object> qboLines = (List<Object>)responseMap.get('Line');
+            List<SObject> lineItemsToUpdate = updateLineItemsWithExternalIds(lineItems, qboLines, qbId);
+            if (!lineItemsToUpdate.isEmpty()) {
+                update lineItemsToUpdate;
+            }
+        } else {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
                 'QuickBooksPurchaseOrderBatch.updatePurchaseOrder',
@@ -194,12 +272,13 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
             }
         }
     }
-
+    
     private void applyDynamicMappings(Map<String, Object> requestBody, SObject record, Map<String, String> fieldMap) {
+        if(fieldMap == null) return;
         for (String sfField : fieldMap.keySet()) {
             String qbField = fieldMap.get(sfField);
-            // Skip if the top-level QB key is already set (e.g. VendorRef already resolved via relationship)
             String topKey = qbField.contains('.') ? qbField.substringBefore('.') : qbField;
+            if (topKey.equalsIgnoreCase('ExternalId') || topKey.equalsIgnoreCase('Id')) continue;
             if (requestBody.containsKey(topKey)) continue;
 
             Object value = null;
@@ -228,9 +307,17 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
     
     private List<Map<String, Object>> buildLineItems(List<SObject> lineItems, SObject record, Map<String, String> lineFieldMap) {
         List<Map<String, Object>> qbLines = new List<Map<String, Object>>();
+        if (lineItems == null) return qbLines;
 
-        SObject customerRef = record.getSObject('Account__r');
-        String customerQbId = (customerRef != null) ? (String)customerRef.get('QuickbookID__c') : null;
+        sObject customerRef = null;
+        try { customerRef = record.getSObject('Account__r'); } catch(Exception e){}
+        if(customerRef == null) { try { customerRef = record.getSObject('QuickBridgeTLG__Account__r'); } catch(Exception e){} }
+
+        String customerQbId = null;
+        if(customerRef != null) {
+            try { customerQbId = (String)customerRef.get('QuickbookID__c'); } catch(Exception e){}
+            if(customerQbId == null) { try { customerQbId = (String)customerRef.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){} }
+        }
 
         String qtyField = fieldKeyFor(lineFieldMap, 'Line.ItemBasedExpenseLineDetail.Qty', 'Quantity__c');
         String rateField = fieldKeyFor(lineFieldMap, 'Line.ItemBasedExpenseLineDetail.UnitPrice', 'Cost_Price__c');
@@ -240,15 +327,26 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
             Decimal quantity = 0;
             Decimal rate = 0;
             try { quantity = (Decimal)item.get(qtyField); } catch(Exception e){}
+            if (quantity == null || quantity == 0) { try { quantity = (Decimal)item.get('QuickBridgeTLG__Quantity__c'); } catch(Exception e){} }
+
             try { rate = (Decimal)item.get(rateField); } catch(Exception e){}
+            if (rate == null || rate == 0) { try { rate = (Decimal)item.get('QuickBridgeTLG__Cost_Price__c'); } catch(Exception e){} }
+
             Decimal lineAmount = (quantity != null && rate != null) ? (quantity * rate) : 0;
 
             String descText = '';
             try { descText = (String)item.get(descField); } catch(Exception e){}
+            if (String.isBlank(descText)) { try { descText = (String)item.get('QuickBridgeTLG__Product_Description__c'); } catch(Exception e){} }
 
             SObject product = null;
             try { product = item.getSObject('Product__r'); } catch(Exception e){}
-            String productQbId = product != null ? (String)product.get('QuickbookID__c') : null;
+            if (product == null) { try { product = item.getSObject('QuickBridgeTLG__Product__r'); } catch(Exception e){} }
+
+            String productQbId = null;
+            if (product != null) {
+                try { productQbId = (String)product.get('QuickbookID__c'); } catch(Exception e){}
+                if (productQbId == null) { try { productQbId = (String)product.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){} }
+            }
 
             Map<String, Object> lineDetail = new Map<String, Object>{
                 'DetailType' => 'ItemBasedExpenseLineDetail',
@@ -283,5 +381,35 @@ public class QuickBooksPurchaseOrderBatch implements Database.Batchable<sObject>
             if (fieldMap.get(sf) == qbPath) return sf;
         }
         return defaultSfField;
+    }
+
+    private static List<SObject> updateLineItemsWithExternalIds(List<SObject> lineItems, List<Object> linesObj, String parentQbId) {
+        List<SObject> itemsToUpdate = new List<SObject>();
+        if (linesObj == null || lineItems == null) return itemsToUpdate;
+
+        Integer qboLineIndex = 0;
+        for (SObject item : lineItems) {
+            while (qboLineIndex < linesObj.size()) {
+                Map<String, Object> qbLine = (Map<String, Object>)linesObj[qboLineIndex];
+                String detailType = (String)qbLine.get('DetailType');
+                if (detailType == 'ItemBasedExpenseLineDetail' || detailType == 'SalesItemLineDetail' || detailType == 'GroupLineDetail') {
+                    String lineId = (String)qbLine.get('Id');
+                    String compositeLineId = String.isNotBlank(parentQbId) ? (parentQbId + '_' + lineId) : lineId;
+                    
+                    SObject itemToUpdate = item.Id.getSObjectType().newSObject(item.Id);
+                    Schema.SObjectType sot = item.Id.getSObjectType();
+                    Map<String, Schema.SObjectField> fields = sot.getDescribe().fields.getMap();
+                    
+                    String extIdField = fields.containsKey('quickbridgetlg__external_id__c') ? 'QuickBridgeTLG__External_Id__c' : 'External_Id__c';
+                    itemToUpdate.put(extIdField, compositeLineId);
+                    
+                    itemsToUpdate.add(itemToUpdate);
+                    qboLineIndex++;
+                    break;
+                }
+                qboLineIndex++;
+            }
+        }
+        return itemsToUpdate;
     }
 }

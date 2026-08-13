@@ -50,12 +50,14 @@ global class QBSyncScheduler implements Schedulable {
                 }
             }
             else if (targetObject == 'CreditMemos' || targetObject == 'Credit Memo') {
-                Map<Id, Credit_Memo__c> unsyncedMemos = new Map<Id, Credit_Memo__c>([SELECT Id FROM Credit_Memo__c WHERE External_Id__c = null]);
-                if (!unsyncedMemos.isEmpty()) Database.executeBatch(new QuickBooksCreditMemoBatch(unsyncedMemos.keySet(), true), 10);
+                String cmObjName = Schema.getGlobalDescribe().containsKey('QuickBridgeTLG__Credit_Memo__c') ? 'QuickBridgeTLG__Credit_Memo__c' : 'Credit_Memo__c';
+                List<SObject> unsyncedMemos = Database.query('SELECT Id FROM ' + cmObjName + ' WHERE External_Id__c = null');
+                if (!unsyncedMemos.isEmpty()) Database.executeBatch(new QuickBooksCreditMemoBatch(new Map<Id, SObject>(unsyncedMemos).keySet(), true), 10);
             }
             else if (targetObject == 'PurchaseOrders' || targetObject == 'Purchase Order') {
-                Map<Id, Purchase_Order__c> unsyncedPOs = new Map<Id, Purchase_Order__c>([SELECT Id FROM Purchase_Order__c WHERE External_Id__c = null]);
-                if (!unsyncedPOs.isEmpty()) Database.executeBatch(new QuickBooksPurchaseOrderBatch(unsyncedPOs.keySet(), true), 10);
+                String poObjName = Schema.getGlobalDescribe().containsKey('QuickBridgeTLG__Purchase_Order__c') ? 'QuickBridgeTLG__Purchase_Order__c' : 'Purchase_Order__c';
+                List<SObject> unsyncedPOs = Database.query('SELECT Id FROM ' + poObjName + ' WHERE External_Id__c = null');
+                if (!unsyncedPOs.isEmpty()) Database.executeBatch(new QuickBooksPurchaseOrderBatch(new Map<Id, SObject>(unsyncedPOs).keySet(), true), 10);
             }
         } catch (Exception e) {
             ErrorLogUtility.logException(

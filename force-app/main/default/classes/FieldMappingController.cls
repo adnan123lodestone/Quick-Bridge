@@ -1651,6 +1651,69 @@ public with sharing class FieldMappingController {
         'NUMBER',
         false
       );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - PurchaseCost',
+        'PurchaseCost',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Type',
+        'Type',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - Active',
+        'Active',
+        'BOOLEAN',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - TrackQtyOnHand',
+        'TrackQtyOnHand',
+        'BOOLEAN',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - QtyOnHand',
+        'QtyOnHand',
+        'NUMBER',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - InvStartDate',
+        'InvStartDate',
+        'DATE',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - IncomeAccountRef.value',
+        'IncomeAccountRef.value',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - ExpenseAccountRef.value',
+        'ExpenseAccountRef.value',
+        'STRING',
+        false
+      );
+      addQBFieldDefinition(
+        qbFields,
+        'QB - AssetAccountRef.value',
+        'AssetAccountRef.value',
+        'STRING',
+        false
+      );
     } else if (qbEntity == 'Invoice') {
       addQBFieldDefinition(
         qbFields,

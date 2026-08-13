@@ -96,7 +96,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                     try { qbId = (String)currentRecord.get('QuickBridgeTLG__External_Id__c'); } catch(Exception e){}
                 }
                 
-                if (qbId == null) {
+                if (String.isBlank(qbId)) {
                     String newQbId = createCreditMemo(currentRecord, childItems, fieldMap, lineFieldMap);
                     if (newQbId != null) {
                         try { currentRecord.put('External_Id__c', newQbId); } catch(Exception e){}
@@ -104,7 +104,7 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
                         recordsToUpdate.add(currentRecord);
                     }
                 }
-                else if (qbId != null && !isInitialSync) {
+                else {
                     updateCreditMemo(currentRecord, childItems, fieldMap, qbId, lineFieldMap);
                 }
             }
@@ -176,13 +176,30 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
             };
             requestBody.put('TxnTaxDetail', txnTaxDetail);
         }
-        //
+        if (!requestBody.containsKey('CustomerRef') && !Test.isRunningTest()) {
+            ErrorLogUtility.logCalloutFailure(
+                'QuickBooks',
+                'QuickBooksCreditMemoBatch.createCreditMemo',
+                'QuickBooks credit memo create failed: Customer is missing on Credit Memo record or the selected Customer is not yet synced to QuickBooks.',
+                400,
+                'Credit_Memo__c',
+                record == null ? null : record.Id
+            );
+            return null;
+        }
+
         String requestJson = JSON.serialize(requestBody);
         HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', '/creditmemo', requestJson);
         
         if (res != null && res.getStatusCode() == 200) {
             Map<String, Object> responseMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(res.getBody())).get('CreditMemo');
-            return (String)responseMap.get('Id');
+            String newQbId = (String)responseMap.get('Id');
+            List<Object> qboLines = (List<Object>)responseMap.get('Line');
+            List<SObject> lineItemsToUpdate = updateLineItemsWithExternalIds(lineItems, qboLines, newQbId);
+            if (!lineItemsToUpdate.isEmpty()) {
+                update lineItemsToUpdate;
+            }
+            return newQbId;
         }
         ErrorLogUtility.logCalloutFailure(
             'QuickBooks',
@@ -216,6 +233,25 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         requestBody.put('SyncToken', existingCM.get('SyncToken'));
         requestBody.put('sparse', true);
         
+        try {
+            sObject customerRef = null;
+            try { customerRef = record.getSObject('Customer__r'); } catch(Exception e){}
+            if(customerRef == null) {
+                try { customerRef = record.getSObject('QuickBridgeTLG__Customer__r'); } catch(Exception e){}
+            }
+            
+            if (customerRef != null) {
+                String custQbId = null;
+                try { custQbId = (String)customerRef.get('QuickbookID__c'); } catch(Exception e){}
+                if(custQbId == null) {
+                    try { custQbId = (String)customerRef.get('QuickBridgeTLG__QuickbookID__c'); } catch(Exception e){}
+                }
+                if(custQbId != null) {
+                    requestBody.put('CustomerRef', new Map<String, String>{ 'value' => custQbId });
+                }
+            }
+        } catch(Exception e) {}
+
         applyDynamicMappings(requestBody, record, fieldMap);
         requestBody.put('Line', buildLineItems(lineItems, lineFieldMap));
         // Item Sales Tax
@@ -236,7 +272,14 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         //
         String requestJson = JSON.serialize(requestBody);
         HttpResponse updateRes = QuickBooksAuthHandler.makeApiCall('POST', '/creditmemo', requestJson);
-        if (updateRes == null || updateRes.getStatusCode() != 200) {
+        if (updateRes != null && updateRes.getStatusCode() == 200) {
+            Map<String, Object> responseMap = (Map<String, Object>)((Map<String, Object>)JSON.deserializeUntyped(updateRes.getBody())).get('CreditMemo');
+            List<Object> qboLines = (List<Object>)responseMap.get('Line');
+            List<SObject> lineItemsToUpdate = updateLineItemsWithExternalIds(lineItems, qboLines, qbId);
+            if (!lineItemsToUpdate.isEmpty()) {
+                update lineItemsToUpdate;
+            }
+        } else {
             ErrorLogUtility.logCalloutFailure(
                 'QuickBooks',
                 'QuickBooksCreditMemoBatch.updateCreditMemo',
@@ -252,8 +295,8 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
         if(fieldMap == null) return;
         for (String sfField : fieldMap.keySet()) {
             String qbField = fieldMap.get(sfField);
-            // Skip if the top-level QB key is already set (e.g. CustomerRef already resolved via relationship)
             String topKey = qbField.contains('.') ? qbField.substringBefore('.') : qbField;
+            if (topKey.equalsIgnoreCase('ExternalId') || topKey.equalsIgnoreCase('Id')) continue;
             if (requestBody.containsKey(topKey)) continue;
 
             Object value = null;
@@ -359,5 +402,35 @@ public class QuickBooksCreditMemoBatch implements Database.Batchable<sObject>, D
             if (fieldMap.get(sf) == qbPath) return sf;
         }
         return defaultSfField;
+    }
+
+    private static List<SObject> updateLineItemsWithExternalIds(List<SObject> lineItems, List<Object> linesObj, String parentQbId) {
+        List<SObject> itemsToUpdate = new List<SObject>();
+        if (linesObj == null || lineItems == null) return itemsToUpdate;
+
+        Integer qboLineIndex = 0;
+        for (SObject item : lineItems) {
+            while (qboLineIndex < linesObj.size()) {
+                Map<String, Object> qbLine = (Map<String, Object>)linesObj[qboLineIndex];
+                String detailType = (String)qbLine.get('DetailType');
+                if (detailType == 'SalesItemLineDetail' || detailType == 'ItemBasedExpenseLineDetail' || detailType == 'GroupLineDetail') {
+                    String lineId = (String)qbLine.get('Id');
+                    String compositeLineId = String.isNotBlank(parentQbId) ? (parentQbId + '_' + lineId) : lineId;
+                    
+                    SObject itemToUpdate = item.Id.getSObjectType().newSObject(item.Id);
+                    Schema.SObjectType sot = item.Id.getSObjectType();
+                    Map<String, Schema.SObjectField> fields = sot.getDescribe().fields.getMap();
+                    
+                    String extIdField = fields.containsKey('quickbridgetlg__external_id__c') ? 'QuickBridgeTLG__External_Id__c' : 'External_Id__c';
+                    itemToUpdate.put(extIdField, compositeLineId);
+                    
+                    itemsToUpdate.add(itemToUpdate);
+                    qboLineIndex++;
+                    break;
+                }
+                qboLineIndex++;
+            }
+        }
+        return itemsToUpdate;
     }
 }

@@ -362,16 +362,11 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         if (safeDirection == 'In') {
           Database.executeBatch(new QBCreditMemoInboundBatch(), 10);
         } else {
-          Map<Id, Credit_Memo__c> unsyncedMemos = new Map<Id, Credit_Memo__c>(
-            [
-              SELECT Id
-              FROM Credit_Memo__c
-              WHERE External_Id__c = NULL
-            ]
-          );
+          String cmObjName = Schema.getGlobalDescribe().containsKey('QuickBridgeTLG__Credit_Memo__c') ? 'QuickBridgeTLG__Credit_Memo__c' : 'Credit_Memo__c';
+          List<SObject> unsyncedMemos = Database.query('SELECT Id FROM ' + cmObjName + ' WHERE External_Id__c = null');
           if (!unsyncedMemos.isEmpty()) {
             Database.executeBatch(
-              new QuickBooksCreditMemoBatch(unsyncedMemos.keySet(), true),
+              new QuickBooksCreditMemoBatch(new Map<Id, SObject>(unsyncedMemos).keySet(), true),
               10
             );
           }
@@ -383,17 +378,12 @@ public with sharing class QuickBooksScheduledOperationAdapter implements Schedul
         if (safeDirection == 'In') {
           Database.executeBatch(new QBPurchaseOrderInboundBatch(), 10);
         } else {
-          Map<Id, Purchase_Order__c> unsyncedPurchaseOrders = new Map<Id, Purchase_Order__c>(
-            [
-              SELECT Id
-              FROM Purchase_Order__c
-              WHERE External_Id__c = NULL
-            ]
-          );
+          String poObjName = Schema.getGlobalDescribe().containsKey('QuickBridgeTLG__Purchase_Order__c') ? 'QuickBridgeTLG__Purchase_Order__c' : 'Purchase_Order__c';
+          List<SObject> unsyncedPurchaseOrders = Database.query('SELECT Id FROM ' + poObjName + ' WHERE External_Id__c = null');
           if (!unsyncedPurchaseOrders.isEmpty()) {
             Database.executeBatch(
               new QuickBooksPurchaseOrderBatch(
-                unsyncedPurchaseOrders.keySet(),
+                new Map<Id, SObject>(unsyncedPurchaseOrders).keySet(),
                 true
               ),
               10
