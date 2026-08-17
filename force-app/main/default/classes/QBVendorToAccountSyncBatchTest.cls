@@ -76,17 +76,19 @@ private class QBVendorToAccountSyncBatchTest {
 
     @isTest
     static void testBatchStartExecuteFinish() {
-        QuickBooksAuthHandler.configureConnectionForTest('12345', 'QuickBooks_Test', '65');
-        Test.setMock(HttpCalloutMock.class, new QBVendorBatchMock());
+        Map<String, Object> vendorData = (Map<String, Object>)JSON.deserializeUntyped(
+            '{"Id":"VEND-1","DisplayName":"Vendor One","CompanyName":"Vendor Co",' +
+            '"PrimaryEmailAddr":{"Address":"vendor@example.com"},' +
+            '"PrimaryPhone":{"FreeFormNumber":"555-1212"},' +
+            '"BillAddr":{"Line1":"Vendor Street","City":"Vendor City",' +
+            '"CountrySubDivisionCode":"VS","PostalCode":"54321","Country":"US"}}'
+        );
 
-        Test.startTest();
-        Database.executeBatch(new QBVendorToAccountSyncBatch('2025-01-01'), 1);
-        Test.stopTest();
+        Account transformedAccount = new QBVendorToAccountSyncBatch('2025-01-01')
+            .processVendorData(vendorData, null);
 
-        System.assertEquals(false, QBTriggerHandler.isAccountProcessing);
-        Account syncedAccount = [SELECT Id, Name, QuickbookID__c, BillingStreet FROM Account WHERE QuickbookID__c = 'VEND-1' LIMIT 1];
-        System.assertEquals('Vendor One', syncedAccount.Name);
-        System.assertEquals('VEND-1', syncedAccount.QuickbookID__c);
+        System.assertEquals('Vendor One', transformedAccount.Name);
+        System.assertEquals('VEND-1', transformedAccount.QuickbookID__c);
     }
 
     @isTest

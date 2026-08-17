@@ -1,7 +1,13 @@
 {
-  "orgName": "Demo company",
+  "orgName": "QuickBridge Validation",
   "edition": "Developer",
-  "features": ["EnableSetPasswordInApi", "PersonAccounts"],
+  "features": [
+    "EnableSetPasswordInApi",
+    "AuthorApex",
+    "API",
+    "PersonAccounts",
+    "Communities"
+  ],
   "settings": {
     "lightningExperienceSettings": {
       "enableS1DesktopEnabled": true
@@ -9,12 +15,17 @@
     "mobileSettings": {
       "enableS1EncryptedStoragePref2": false
     },
+    "communitiesSettings": {
+      "enableNetworksEnabled": true
+    },
     "quoteSettings": {
-      "enableQuote": true,
-      "enableQuotesWithoutOppEnabled": true
+      "enableQuote": true
     },
     "customAddressFieldSettings": {
       "enableCustomAddressField": true
+    },
+    "orderSettings": {
+      "enableOrders": true
     }
   }
 }

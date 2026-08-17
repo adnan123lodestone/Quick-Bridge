@@ -1,4 +1,37 @@
 public with sharing class SchedulerEntitlementService {
+  private static final Integer FALLBACK_LIMIT = 10;
+  private static final Set<String> LIVE_TRACKED_STATUSES = new Set<String>{
+    'Active',
+    'Ready',
+    'Claimed',
+    'Running'
+  };
+
+  public class UsageSummary {
+    @AuraEnabled
+    public Integer activeCount { get; set; }
+    @AuraEnabled
+    public Integer maxActiveSchedules { get; set; }
+    @AuraEnabled
+    public Integer remaining { get; set; }
+    @AuraEnabled
+    public Boolean limitReached { get; set; }
+    @AuraEnabled
+    public String message { get; set; }
+  }
+
+  @AuraEnabled(cacheable=true)
+  public static UsageSummary getUsageSummary() {
+    return buildUsageSummary();
+  }
+
+  public static void assertCanCreateSchedule() {
+    UsageSummary summary = buildUsageSummary();
+    if (summary.limitReached == true) {
+      throw new AuraHandledException(summary.message);
+    }
+  }
+
   public static void recordScheduleCreated(
     String integrationType,
     String sourceObject,
@@ -115,6 +148,60 @@ public with sharing class SchedulerEntitlementService {
     }
 
     return jobName.trim().replaceAll('\\s\\(\\d+m\\)$', '');
+  }
+
+  private static UsageSummary buildUsageSummary() {
+    Integer maxSchedules = getMaxActiveSchedules();
+    Integer activeCount = countActiveLogicalSchedules();
+
+    UsageSummary summary = new UsageSummary();
+    summary.activeCount = activeCount;
+    summary.maxActiveSchedules = maxSchedules;
+    summary.remaining = Math.max(0, maxSchedules - activeCount);
+    summary.limitReached = activeCount >= maxSchedules;
+    summary.message = summary.limitReached
+      ? 'Your current plan allows ' +
+        maxSchedules +
+        ' active schedules. Delete an existing schedule or upgrade your plan.'
+      : summary.remaining +
+        ' active schedule slot' +
+        (summary.remaining == 1 ? '' : 's') +
+        ' remaining.';
+    return summary;
+  }
+
+  private static Integer getMaxActiveSchedules() {
+    try {
+      List<SObject> planLimits = Database.query(
+        'SELECT Max_Active_Schedules__c FROM Scheduler_Plan_Limit__mdt WHERE Is_Default__c = TRUE LIMIT 1'
+      );
+      if (!planLimits.isEmpty() && planLimits[0].get('Max_Active_Schedules__c') != null) {
+        return ((Decimal) planLimits[0].get('Max_Active_Schedules__c')).intValue();
+      }
+    } catch (Exception e) {
+      System.debug(
+        LoggingLevel.ERROR,
+        'SchedulerEntitlementService.getMaxActiveSchedules exception: ' +
+        e.getMessage()
+      );
+    }
+    return FALLBACK_LIMIT;
+  }
+
+  private static Integer countActiveLogicalSchedules() {
+    Set<String> activeKeys = new Set<String>();
+
+    for (Scheduled_Integration_Job__c trackedJob : [
+      SELECT Logical_Job_Key__c, Integration_Type__c
+      FROM Scheduled_Integration_Job__c
+      WHERE Status__c IN :LIVE_TRACKED_STATUSES
+    ]) {
+      if (String.isNotBlank(trackedJob.Logical_Job_Key__c)) {
+        activeKeys.add(normalizeLogicalJobName(trackedJob.Logical_Job_Key__c));
+      }
+    }
+
+    return activeKeys.size();
   }
 
   private static Decimal parseDecimal(String value) {

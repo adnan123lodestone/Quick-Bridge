@@ -1,4 +1,4 @@
-public class QBTriggerHandler {
+global class QBTriggerHandler {
     // Prevent recursion
     public static Boolean isAccountProcessing = false;
     public static Boolean isProductProcessing = false;

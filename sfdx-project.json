@@ -3,9 +3,15 @@
     {
       "path": "force-app",
       "default": true,
+      "package": "QuickBridge",
+      "versionName": "ver 0.4",
+      "versionNumber": "0.4.0.0"
+    },
+    {
+      "path": "force-app",
       "package": "QuickBridgeTLG",
-      "versionName": "ver 0.2",
-      "versionNumber": "0.2.0.NEXT"
+      "versionName": "ver 0.3",
+      "versionNumber": "0.3.0.0"
     }
   ],
   "namespace": "QuickBridgeTLG",
@@ -13,6 +19,7 @@
   "packageAliases": {
     "QuickBridgeTLG": "0Hoam0000003gsLCAQ",
     "QuickBridgeTLG@0.1.0-1": "04tam000006P41lAAC",
-    "QuickBridgeTLG@0.2.0-1": "04tam000006as9hAAA"
+    "QuickBridgeTLG@0.2.0-1": "04tam000006as9hAAA",
+    "QuickBridge": "0Hobn0000002HcfCAE"
   }
 }

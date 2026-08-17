@@ -31,12 +31,16 @@ private class QBOInvoiceMappingResolverTest {
      */
     @isTest
     static void testResolvesOrderExceptionPath() {
-        QBOInvoiceMappingResolver.clearTestFieldMappingRows();
+        // Use an explicit empty override so packaged Custom Metadata records
+        // cannot make this negative-path test depend on org/package contents.
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>());
         try {
             QBOInvoiceMappingResolver.ResolverResult result = QBOInvoiceMappingResolver.resolve();
             System.assertNotEquals(null, result);
         } catch (QBOInvoiceMappingResolver.ResolverException e) {
             System.assert(e.getMessage().contains('No active Field_Mapping__mdt'));
+        } finally {
+            QBOInvoiceMappingResolver.clearTestFieldMappingRows();
         }
     }
 
@@ -71,6 +75,34 @@ private class QBOInvoiceMappingResolverTest {
         System.assertNotEquals(null, result.headerMappings);
         System.assertNotEquals(null, result.lineMappings);
         
+        QBOInvoiceMappingResolver.clearTestFieldMappingRows();
+    }
+
+    @isTest
+    static void testResolveUsesTheRequestedObjectAndConfiguredInvoiceTarget() {
+        QBOInvoiceMappingResolver.setTestFieldMappingRows(new List<Field_Mapping__mdt>{
+            new Field_Mapping__mdt(
+                Integration__c = 'qbonline', SF_Object__c = 'Account', SF_Field__c = 'QuickbookID__c',
+                External_Field__c = 'Id', Sync_Direction__c = 'QBO to SF',
+                Target_Object_API_Name__c = 'Invoice', Is_Active__c = true
+            ),
+            new Field_Mapping__mdt(
+                Integration__c = 'qbonline', SF_Object__c = 'Account', SF_Field__c = 'Description',
+                External_Field__c = 'CustomerMemo.value', Sync_Direction__c = 'SF to QBO',
+                Target_Object_API_Name__c = 'Invoice', Is_Active__c = true
+            ),
+            new Field_Mapping__mdt(
+                Integration__c = 'qbonline', SF_Object__c = 'Account', SF_Field__c = 'Website',
+                External_Field__c = 'InvoiceLink', Sync_Direction__c = 'QBO to SF',
+                Target_Object_API_Name__c = 'Invoice', Is_Active__c = true
+            )
+        });
+
+        QBOInvoiceMappingResolver.ResolverResult result = QBOInvoiceMappingResolver.resolve('Account');
+
+        System.assertEquals('Account', result.invoiceSourceObject);
+        System.assertEquals('QuickbookID__c', result.qboIdField);
+        System.assertEquals('Website', result.invoiceLinkField);
         QBOInvoiceMappingResolver.clearTestFieldMappingRows();
     }
 

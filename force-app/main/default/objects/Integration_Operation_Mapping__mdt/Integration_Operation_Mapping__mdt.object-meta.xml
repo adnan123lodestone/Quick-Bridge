@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Field and JSON path rules used by generic integration operations.</description>
+    <label>Integration Operation Mapping</label>
+    <pluralLabel>Integration Operation Mappings</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

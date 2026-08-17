@@ -26,214 +26,16 @@ public with sharing class QBOrderSummaryRecordActionController {
     @AuraEnabled
     public static ActionResponse syncToQuickBooks(Id orderSummaryId) {
         try {
-            if (orderSummaryId == null) {
-                throw new AuraHandledException('Order Summary Id is required.');
-            }
-
-            if (!Schema.getGlobalDescribe().containsKey('OrderSummary')) {
-                throw new AuraHandledException('OrderSummary object is not available in this org.');
-            }
-
-            String orderSummaryFields = buildOrderSummaryQueryFields();
-            String itemSummaryFields = buildOrderItemSummaryQueryFields();
-
-            String query = 'SELECT ' + orderSummaryFields + 
-                           ', Account.QuickbookID__c' +
-                           ', (SELECT Id, Quantity, UnitPrice, Description, TotalPrice, Product2Id, Product2.Name, Product2.QuickbookID__c, QB_LineItemID__c' + 
-                           itemSummaryFields + 
-                           ' FROM OrderItemSummaries) ' +
-                           ' FROM OrderSummary WHERE Id = :orderSummaryId LIMIT 1';
-
-            List<SObject> summaries = Database.query(query);
-            if (summaries.isEmpty()) {
-                throw new AuraHandledException('Order Summary not found.');
-            }
-            SObject summary = summaries[0];
-
-            // 2. Preflight checks
-            Id accId = (Id)getFieldValue(summary, 'AccountId');
-            SObject accSObj = summary.getSObject('Account');
-            String qbCustomerId = accSObj != null ? (String)getFieldValue(accSObj, 'QuickbookID__c') : null;
-
-            if (accId == null || String.isBlank(qbCustomerId)) {
-                throw new AuraHandledException('The associated Account does not have a QuickBooks ID. Please sync the Account to QuickBooks first.');
-            }
-
-            List<SObject> items = (List<SObject>)summary.getSObjects('OrderItemSummaries');
-            if (items == null) {
-                items = new List<SObject>();
-            }
-
-            Set<String> missingProducts = new Set<String>();
-            for (SObject item : items) {
-                Id prodId = (Id)getFieldValue(item, 'Product2Id');
-                SObject prodSObj = item.getSObject('Product2');
-                String qbProdId = prodSObj != null ? (String)getFieldValue(prodSObj, 'QuickbookID__c') : null;
-                String prodName = prodSObj != null ? (String)getFieldValue(prodSObj, 'Name') : null;
-
-                if (prodId == null || String.isBlank(qbProdId)) {
-                    missingProducts.add(String.isNotBlank(prodName) ? prodName : String.valueOf(prodId));
-                }
-            }
-
-            if (!missingProducts.isEmpty()) {
-                throw new AuraHandledException('The following products on this Order Summary do not have a QuickBooks ID. Please sync the products to QuickBooks first: ' + String.join(new List<String>(missingProducts), ', '));
-            }
-
-            // 3. Target info (Invoices for Order Summary)
-            String statusVal = (String)getFieldValue(summary, 'Status');
-            QboTargetInfo targetInfo = getQboTargetInfo(statusVal);
-            String endpointPath = targetInfo.endpointPath;
-            String qboObjectName = targetInfo.qboObjectName;
-
-            // 4. Build request payload
-            Map<String, Object> requestBody = new Map<String, Object>();
-            Map<String, String> headerMap = QBObjectMappings.getOrderSummaryToInvoiceMapping();
-            Map<String, String> lineMap = QBObjectMappings.getOrderItemSummaryMapping();
-
-            String qbId = (String)getFieldValue(summary, 'QuickbookID__c');
-            Boolean isCreate = String.isBlank(qbId);
-
-            for (String sfField : headerMap.keySet()) {
-                String qboFieldMapping = headerMap.get(sfField);
-                if (String.isBlank(qboFieldMapping) || qboFieldMapping == 'CustomerRef.value' || qboFieldMapping == 'CustomerRef') {
-                    continue;
-                }
-                String rootProp = qboFieldMapping.contains('.') ? qboFieldMapping.substringBefore('.') : qboFieldMapping;
-                if (QBO_READONLY_PROPS.contains(rootProp)) {
-                    continue;
-                }
-                if (rootProp == 'Id' && isCreate) {
-                    continue;
-                }
-                Object val = getFieldValue(summary, sfField);
-                if (val != null) {
-                    if (val instanceof Date) {
-                        val = DateTime.newInstance((Date)val, Time.newInstance(0, 0, 0, 0)).format('yyyy-MM-dd');
-                    }
-                    putPath(requestBody, qboFieldMapping, val);
-                }
-            }
-
-            // Customer Ref
-            requestBody.put('CustomerRef', new Map<String, String>{ 'value' => qbCustomerId });
-
-            // Lines
-            List<Map<String, Object>> lines = new List<Map<String, Object>>();
-            for (SObject item : items) {
-                Map<String, Object> line = new Map<String, Object>();
-                line.put('DetailType', 'SalesItemLineDetail');
-
-                Map<String, Object> itemDetail = new Map<String, Object>();
-                Decimal quantity = (Decimal)getFieldValue(item, 'Quantity');
-                Decimal unitPrice = (Decimal)getFieldValue(item, 'UnitPrice');
-                if (quantity == null) quantity = 1;
-                if (unitPrice == null) unitPrice = 0;
-
-                for (String sfField : lineMap.keySet()) {
-                    Object val = getFieldValue(item, sfField);
-                    String qboField = lineMap.get(sfField);
-                    if (val == null || String.isBlank(qboField)) {
-                        continue;
-                    }
-                    String leaf = normalizeLineLeaf(qboField);
-                    if (leaf == 'Qty') {
-                        quantity = (Decimal)val;
-                        itemDetail.put('Qty', quantity);
-                    } else if (leaf == 'UnitPrice') {
-                        unitPrice = (Decimal)val;
-                        itemDetail.put('UnitPrice', unitPrice);
-                    } else if (leaf == 'Description') {
-                        line.put('Description', val);
-                    } else if (leaf == 'Amount') {
-                        continue;
-                    } else if (leaf == 'ItemRef.value' || leaf == 'ItemRef') {
-                        continue;
-                    } else if (!leaf.contains('.')) {
-                        itemDetail.put(leaf, val);
-                    }
-                }
-
-                line.put('Amount', quantity * unitPrice);
-                SObject prodSObj = item.getSObject('Product2');
-                String qbProdId = (String)getFieldValue(prodSObj, 'QuickbookID__c');
-                itemDetail.put('ItemRef', new Map<String, String>{ 'value' => qbProdId });
-                line.put('SalesItemLineDetail', itemDetail);
-
-                String lineQbId = (String)getFieldValue(item, 'QB_LineItemID__c');
-                if (String.isNotBlank(lineQbId) && lineQbId.contains(':')) {
-                    if (qboObjectName != 'Invoice') {
-                        line.put('Id', lineQbId.split(':')[1]);
-                    }
-                }
-                lines.add(line);
-            }
-            requestBody.put('Line', lines);
-
-            // Existing QBO ID handling
-            String syncToken = (String)getFieldValue(summary, 'SyncToken__c');
-            if (String.isNotBlank(qbId)) {
-                requestBody.put('Id', qbId);
-                requestBody.put('SyncToken', String.isBlank(syncToken) ? '0' : syncToken);
-                requestBody.put('sparse', true);
-            }
-
-            // 5. Call API
-            String jsonBody = JSON.serialize(requestBody);
-            HttpResponse res = QuickBooksAuthHandler.makeApiCall('POST', endpointPath, jsonBody);
-
-            if (res != null && res.getStatusCode() == 200) {
-                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(res.getBody());
-                Map<String, Object> qboResponseObj = (Map<String, Object>)responseMap.get(qboObjectName);
-
-                QuickBooksInvoiceHandler.setBatchContext(true);
-                QBTriggerHandler.isOrderProcessing = true;
-                try {
-                    SObject summaryToUpdate = Schema.getGlobalDescribe().get('OrderSummary').newSObject((Id)summary.get('Id'));
-                    String returnedQbId = (String)qboResponseObj.get('Id');
-                    String returnedSyncToken = (String)qboResponseObj.get('SyncToken');
-
-                    putFieldValue(summaryToUpdate, 'QuickbookID__c', returnedQbId);
-                    putFieldValue(summaryToUpdate, 'SyncToken__c', returnedSyncToken);
-                    update summaryToUpdate;
-
-                    List<Object> qboLines = (List<Object>)qboResponseObj.get('Line');
-                    if (qboLines != null && !items.isEmpty()) {
-                        List<SObject> itemsToUpdate = new List<SObject>();
-                        Integer qboLineIndex = 0;
-                        for (SObject item : items) {
-                            while (qboLineIndex < qboLines.size()) {
-                                Map<String, Object> qbLine = (Map<String, Object>)qboLines[qboLineIndex];
-                                if (qbLine.get('DetailType') == 'SalesItemLineDetail') {
-                                    SObject itemToUpdate = Schema.getGlobalDescribe().get('OrderItemSummary').newSObject((Id)item.get('Id'));
-                                    putFieldValue(itemToUpdate, 'QB_LineItemID__c', returnedQbId + ':' + (String)qbLine.get('Id'));
-                                    itemsToUpdate.add(itemToUpdate);
-                                    qboLineIndex++;
-                                    break;
-                                }
-                                qboLineIndex++;
-                            }
-                        }
-                        if (!itemsToUpdate.isEmpty()) {
-                            update itemsToUpdate;
-                        }
-                    }
-
-                    ActionResponse actionResponse = new ActionResponse();
-                    actionResponse.success = true;
-                    actionResponse.quickBooksId = returnedQbId;
-                    actionResponse.message = 'Order Summary successfully synced to QuickBooks ' + qboObjectName + ' ' + returnedQbId + '.';
-                    return actionResponse;
-                } finally {
-                    QuickBooksInvoiceHandler.setBatchContext(false);
-                    QBTriggerHandler.isOrderProcessing = false;
-                }
-            } else {
-                String errorMsg = (res != null) ? res.getStatusCode() + ' - ' + res.getBody() : 'Null Response';
-                ErrorLogUtility.logCalloutFailure('QuickBooks', 'QBOrderSummaryRecordActionController.syncToQuickBooks', 'QBO Order Summary sync failed: ' + errorMsg, res == null ? null : res.getStatusCode(), 'OrderSummary', orderSummaryId);
-                throw new AuraHandledException(getQuickBooksErrorMessage(res, 'QuickBooks Order Summary sync failed.'));
-            }
-
+            QBORecordInvoiceSyncService.SyncResult syncResult =
+                QBORecordInvoiceSyncService.sync(
+                    orderSummaryId,
+                    orderSummaryId == null ? null : orderSummaryId.getSObjectType().getDescribe().getName()
+                );
+            ActionResponse actionResponse = new ActionResponse();
+            actionResponse.success = true;
+            actionResponse.quickBooksId = syncResult.quickBooksId;
+            actionResponse.message = syncResult.message;
+            return actionResponse;
         } catch (Exception e) {
             ErrorLogUtility.logException('QuickBooks', 'QBOrderSummaryRecordActionController.syncToQuickBooks', e, 'OrderSummary', orderSummaryId);
             throw buildActionException(e);
@@ -359,7 +161,7 @@ public with sharing class QBOrderSummaryRecordActionController {
         return additional.isEmpty() ? '' : ', ' + String.join(additional, ', ');
     }
 
-    private static QboTargetInfo getQboTargetInfo(String status) {
+    public static QboTargetInfo getQboTargetInfo(String status) {
         Boolean mapDraftOrdersAsEstimates = false;
         try {
             mapDraftOrdersAsEstimates = ConnectorConfigResolver.getBoolean('qbo', 'Map_Draft_Orders_as_Estimates__c');
@@ -378,7 +180,7 @@ public with sharing class QBOrderSummaryRecordActionController {
         }
     }
 
-    private static Object getFieldValue(SObject obj, String fieldPath) {
+    public static Object getFieldValue(SObject obj, String fieldPath) {
         if (obj == null || String.isBlank(fieldPath)) return null;
         
         Map<String, Schema.SObjectField> fields = obj.getSObjectType().getDescribe().fields.getMap();
@@ -412,7 +214,7 @@ public with sharing class QBOrderSummaryRecordActionController {
         }
     }
 
-    private static void putFieldValue(SObject record, String fieldName, Object value) {
+    public static void putFieldValue(SObject record, String fieldName, Object value) {
         if (record == null || String.isBlank(fieldName) || fieldName.contains('.') || value == null) {
             return;
         }
@@ -464,7 +266,7 @@ public with sharing class QBOrderSummaryRecordActionController {
         return current;
     }
 
-    private static void putPath(Map<String, Object> root, String dottedPath, Object value) {
+    public static void putPath(Map<String, Object> root, String dottedPath, Object value) {
         if (root == null || String.isBlank(dottedPath)) {
             return;
         }
@@ -484,7 +286,7 @@ public with sharing class QBOrderSummaryRecordActionController {
         current.put(parts[parts.size() - 1], value);
     }
 
-    private static String normalizeLineLeaf(String qboField) {
+    public static String normalizeLineLeaf(String qboField) {
         String leaf = qboField;
         if (leaf.startsWith('Line.')) {
             leaf = leaf.substringAfter('Line.');
@@ -495,7 +297,7 @@ public with sharing class QBOrderSummaryRecordActionController {
         return leaf;
     }
 
-    private static String getQuickBooksErrorMessage(HttpResponse response, String fallbackMessage) {
+    public static String getQuickBooksErrorMessage(HttpResponse response, String fallbackMessage) {
         if (response == null) {
             return fallbackMessage;
         }

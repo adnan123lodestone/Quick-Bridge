@@ -1,7 +1,7 @@
 ﻿{
     "source":  "C:\\Production Project\\Quick Bridge\\force-app\\main\\default\\customMetadata.zip",
     "generatedAt":  "2026-08-11T23:58:08.4409090+05:00",
-    "recordCount":  284,
+    "recordCount":  282,
     "countsByType":  {
                          "API_Callout_Control":  3,
                          "AuthorizeNet_Config":  1,
@@ -15,7 +15,7 @@
                          "Integration_Usage_Limit":  8,
                          "Integration_Work_Setting":  7,
                          "PayPal_Config":  1,
-                         "QuickBooks_Config":  2,
+
                          "Quickbridge_Config":  8,
                          "Shopify_Config":  1,
                          "Stripe_Config":  1
@@ -8171,46 +8171,7 @@
                                                                    }
                                                 }
                                             ],
-                          "QuickBooks_Config":  [
-                                                    {
-                                                        "file":  "customMetadata/QuickBooks_Config.Default.md-meta.xml",
-                                                        "metadataType":  "QuickBooks_Config",
-                                                        "developerName":  "Default",
-                                                        "label":  "Default",
-                                                        "protected":  false,
-                                                        "values":  {
-                                                                       "Minor_Version__c":  "65",
-                                                                       "Named_Credential__c":  "QuickBookSandbox",
-                                                                       "QuickBooks_Is_Active__c":  false,
-                                                                       "Realm_ID__c":  null
-                                                                   },
-                                                        "valueTypes":  {
-                                                                           "Minor_Version__c":  "xsd:string",
-                                                                           "Named_Credential__c":  "xsd:string",
-                                                                           "QuickBooks_Is_Active__c":  "xsd:boolean",
-                                                                           "Realm_ID__c":  null
-                                                                       }
-                                                    },
-                                                    {
-                                                        "file":  "customMetadata/QuickBooks_Config.Sandbox_Config.md-meta.xml",
-                                                        "metadataType":  "QuickBooks_Config",
-                                                        "developerName":  "Sandbox_Config",
-                                                        "label":  "Sandbox Config",
-                                                        "protected":  false,
-                                                        "values":  {
-                                                                       "Minor_Version__c":  "65",
-                                                                       "Named_Credential__c":  "QuickBookSandbox",
-                                                                       "QuickBooks_Is_Active__c":  false,
-                                                                       "Realm_ID__c":  null
-                                                                   },
-                                                        "valueTypes":  {
-                                                                           "Minor_Version__c":  "xsd:string",
-                                                                           "Named_Credential__c":  "xsd:string",
-                                                                           "QuickBooks_Is_Active__c":  "xsd:boolean",
-                                                                           "Realm_ID__c":  null
-                                                                       }
-                                                    }
-                                                ],
+
                           "Quickbridge_Config":  [
                                                      {
                                                          "file":  "customMetadata/Quickbridge_Config.AuthorizeNet.md-meta.xml",

@@ -4,6 +4,7 @@ public with sharing class QBOInvoiceMappingResolver {
         @AuraEnabled public String invoiceSourceObject;
         @AuraEnabled public String qboIdField;
         @AuraEnabled public String qboIdFieldDirection;
+        @AuraEnabled public String invoiceLinkField;
         @AuraEnabled public String displayNameField;
         @AuraEnabled public Map<String, String> headerMappings;
         @AuraEnabled public String lineChildRelationship;
@@ -30,17 +31,7 @@ public with sharing class QBOInvoiceMappingResolver {
     }
 
     public static ResolverResult resolve() {
-        List<Field_Mapping__mdt> allRows;
-        if (testFieldMappingRows != null) {
-            allRows = testFieldMappingRows;
-        } else {
-            allRows = [
-                SELECT SF_Object__c, SF_Field__c, External_Field__c, Sync_Direction__c, Is_Active__c
-                FROM Field_Mapping__mdt
-                WHERE Integration__c = :INTEGRATION
-                AND Is_Active__c = true
-            ];
-        }
+        List<Field_Mapping__mdt> allRows = activeMappings();
 
         // Group rows by SF_Object__c
         Map<String, List<Field_Mapping__mdt>> byObject = new Map<String, List<Field_Mapping__mdt>>();
@@ -52,11 +43,10 @@ public with sharing class QBOInvoiceMappingResolver {
             byObject.get(row.SF_Object__c).add(row);
         }
 
-        // Keep only objects that resolve to QBO Invoice
+        // Keep only objects that resolve to QBO Invoice.
         List<String> invoiceObjects = new List<String>();
         for (String sfObject : byObject.keySet()) {
-            String resolved = IntegrationEntityRegistry.resolveExternalEntity(INTEGRATION, sfObject, null, null);
-            if (EXTERNAL_ENTITY.equalsIgnoreCase(resolved)) {
+            if (isInvoiceSource(sfObject, byObject.get(sfObject))) {
                 invoiceObjects.add(sfObject);
             }
         }
@@ -74,8 +64,38 @@ public with sharing class QBOInvoiceMappingResolver {
             );
         }
 
-        String sourceObject = invoiceObjects[0];
-        List<Field_Mapping__mdt> rows = byObject.get(sourceObject);
+        return resolve(invoiceObjects[0]);
+    }
+
+    // Resolves the active Invoice mapping for an explicitly supplied source object.
+    // This is the package API path; resolve() above remains for legacy UI callers.
+    public static ResolverResult resolve(String requestedObjectApiName) {
+        if (String.isBlank(requestedObjectApiName)) {
+            throw new ResolverException('A Salesforce object API name is required.');
+        }
+
+        List<Field_Mapping__mdt> allRows = activeMappings();
+        String sourceObject = resolveConfiguredObjectName(requestedObjectApiName, allRows);
+        if (String.isBlank(sourceObject)) {
+            throw new ResolverException(
+                'No active qbonline Invoice mapping is configured for ' + requestedObjectApiName + '.'
+            );
+        }
+        List<Field_Mapping__mdt> rows = mappingsForObject(sourceObject, allRows);
+        if (!isInvoiceSource(sourceObject, rows)) {
+            throw new ResolverException(
+                'The active qbonline mapping for ' + requestedObjectApiName + ' is not configured for QBO Invoice.'
+            );
+        }
+
+        return buildResult(sourceObject, rows, allRows);
+    }
+
+    private static ResolverResult buildResult(
+        String sourceObject,
+        List<Field_Mapping__mdt> rows,
+        List<Field_Mapping__mdt> allRows
+    ) {
 
         ResolverResult result = new ResolverResult();
         result.invoiceSourceObject = sourceObject;
@@ -97,6 +117,13 @@ public with sharing class QBOInvoiceMappingResolver {
             if (dir == 'SF to QBO' || dir == 'Two-Way') {
                 result.headerMappings.put(row.SF_Field__c, row.External_Field__c);
             }
+            if (
+                (dir == 'QBO to SF' || dir == 'Two-Way') &&
+                row.External_Field__c == 'InvoiceLink' &&
+                !row.SF_Field__c.contains('.')
+            ) {
+                result.invoiceLinkField = row.SF_Field__c;
+            }
         }
 
         // Resolve line child object and relationship
@@ -104,12 +131,12 @@ public with sharing class QBOInvoiceMappingResolver {
         if (String.isNotBlank(lineObject)) {
             result.lineSourceObject = lineObject;
             result.lineChildRelationship = resolveChildRelationshipName(sourceObject, lineObject);
-            List<Field_Mapping__mdt> lineRows = byObject.get(lineObject);
+            List<Field_Mapping__mdt> lineRows = mappingsForObject(lineObject, allRows);
             if (lineRows != null) {
                 for (Field_Mapping__mdt row : lineRows) {
                     if (String.isBlank(row.SF_Field__c) || String.isBlank(row.External_Field__c)) continue;
                     String dir = row.Sync_Direction__c;
-                    if (dir == 'SF to QBO' || dir == 'Two-Way') {
+                    if (isInvoiceLineMapping(row) && (dir == 'SF to QBO' || dir == 'Two-Way')) {
                         result.lineMappings.put(row.SF_Field__c, row.External_Field__c);
                     }
                 }
@@ -117,6 +144,45 @@ public with sharing class QBOInvoiceMappingResolver {
         }
 
         return result;
+    }
+
+    private static List<Field_Mapping__mdt> activeMappings() {
+        if (testFieldMappingRows != null) return testFieldMappingRows;
+        return [
+            SELECT SF_Object__c, SF_Field__c, External_Field__c, Sync_Direction__c,
+                   Target_Object_API_Name__c, Is_Active__c
+            FROM Field_Mapping__mdt
+            WHERE Integration__c = :INTEGRATION
+            AND Is_Active__c = true
+        ];
+    }
+
+    private static List<Field_Mapping__mdt> mappingsForObject(
+        String objectApiName,
+        List<Field_Mapping__mdt> allRows
+    ) {
+        List<Field_Mapping__mdt> result = new List<Field_Mapping__mdt>();
+        for (Field_Mapping__mdt row : allRows) {
+            if (row != null && objectMatches(row.SF_Object__c, objectApiName)) result.add(row);
+        }
+        return result;
+    }
+
+    private static String resolveConfiguredObjectName(String requestedObjectApiName, List<Field_Mapping__mdt> allRows) {
+        for (Field_Mapping__mdt row : allRows) {
+            if (row != null && objectMatches(row.SF_Object__c, requestedObjectApiName)) {
+                return row.SF_Object__c;
+            }
+        }
+        return null;
+    }
+
+    private static Boolean isInvoiceSource(String objectApiName, List<Field_Mapping__mdt> rows) {
+        for (Field_Mapping__mdt row : rows) {
+            if (row != null && EXTERNAL_ENTITY.equalsIgnoreCase(row.Target_Object_API_Name__c)) return true;
+        }
+        String resolved = IntegrationEntityRegistry.resolveExternalEntity(INTEGRATION, objectApiName, null, null);
+        return EXTERNAL_ENTITY.equalsIgnoreCase(resolved);
     }
 
     private class QboIdResolution {
@@ -182,7 +248,11 @@ public with sharing class QBOInvoiceMappingResolver {
     private static String resolveLineObject(String sourceObject, List<Field_Mapping__mdt> allRows) {
         Set<String> candidateObjects = new Set<String>();
         for (Field_Mapping__mdt row : allRows) {
-            if (String.isBlank(row.SF_Object__c) || row.SF_Object__c == sourceObject) continue;
+            if (
+                String.isBlank(row.SF_Object__c) ||
+                objectMatches(row.SF_Object__c, sourceObject) ||
+                !isInvoiceLineMapping(row)
+            ) continue;
             candidateObjects.add(row.SF_Object__c);
         }
 
@@ -199,6 +269,12 @@ public with sharing class QBOInvoiceMappingResolver {
             }
         }
         return null;
+    }
+
+    private static Boolean isInvoiceLineMapping(Field_Mapping__mdt row) {
+        if (row == null || String.isBlank(row.External_Field__c)) return false;
+        return row.External_Field__c.startsWith('Line.') ||
+            'InvoiceLine'.equalsIgnoreCase(row.Target_Object_API_Name__c);
     }
 
     // Finds the child relationship name on sourceObject that points to lineObject.
@@ -222,6 +298,10 @@ public with sharing class QBOInvoiceMappingResolver {
             return name.substringAfter('__').toLowerCase();
         }
         return name.toLowerCase();
+    }
+
+    public static Boolean objectMatches(String leftObjectApiName, String rightObjectApiName) {
+        return normalizeObjectName(leftObjectApiName) == normalizeObjectName(rightObjectApiName);
     }
 
     private static String getNamespacePrefix() {

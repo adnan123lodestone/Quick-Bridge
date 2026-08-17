@@ -180,6 +180,7 @@ public class QBVendorToAccountSyncBatch implements Database.Batchable<String>, D
         }
     }
 
+    @TestVisible
     private Account processVendorData(Map<String, Object> vendorData, Id vendorRecordTypeId) {
         String qbId = (String)vendorData.get('Id');
 

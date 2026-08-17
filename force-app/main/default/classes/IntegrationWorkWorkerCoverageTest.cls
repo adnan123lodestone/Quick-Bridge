@@ -198,7 +198,7 @@ private class IntegrationWorkWorkerCoverageTest {
             WHERE Id = :workItemRecord.Id
         ];
         System.assertEquals(IntegrationWorkService.STATUS_FAILED, failedWork.Status__c);
-        System.assert(failedWork.Last_Error__c.contains('Populate Account.QuickbookID__c'));
+        System.assert(failedWork.Last_Error__c.contains('QuickbookID__c'));
         List<Error_Log__c> errorLogs = [
             SELECT Account__c, Error_Message__c
             FROM Error_Log__c

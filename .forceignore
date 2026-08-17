@@ -141,3 +141,9 @@ package.xml
 **/quickActions/NewOpportunity.quickAction-meta.xml
 **/quickActions/NewTask.quickAction-meta.xml
 **/quickActions/SendEmail.quickAction-meta.xml
+
+# Connection metadata is subscriber-specific and can contain org credentials.
+# It is configured after package installation and must never be staged with a package version.
+**/authproviders/**
+**/externalCredentials/**
+**/namedCredentials/**

@@ -1,4 +1,4 @@
-public class QuickBooksInvoiceHandler {
+global class QuickBooksInvoiceHandler {
 
     public static Boolean isProcessing = false;
     private static Boolean isBatchContext = false;

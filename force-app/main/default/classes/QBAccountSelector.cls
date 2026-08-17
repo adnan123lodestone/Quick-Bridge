@@ -18,6 +18,9 @@ public inherited sharing class QBAccountSelector {
         Set<String> requestedFields = new Set<String>{
             'Id', 'Name', 'QuickbookID__c', 'RecordTypeId'
         };
+        Set<String> requiredOutboundFields = new Set<String>{
+            'Id', 'Name', 'QuickbookID__c', 'RecordTypeId'
+        };
         requestedFields.addAll(QBObjectMappings.getAccountToCustomerMapping().keySet());
         requestedFields.addAll(QBObjectMappings.getAccountToVendorMapping().keySet());
         requestedFields.addAll(new Set<String>{
@@ -31,7 +34,15 @@ public inherited sharing class QBAccountSelector {
                 continue;
             }
             Schema.SObjectField token = findField(accountFields, requestedField);
-            if (token != null && token.getDescribe().isAccessible()) {
+            // This selector backs an internal integration worker as well as the
+            // record action. The core identity fields are required to decide
+            // whether to create or update, even when the executing user lacks
+            // explicit FLS on a managed-package field in a packaging scratch org.
+            // Dynamically mapped fields retain the existing FLS gate.
+            if (
+                token != null &&
+                (requiredOutboundFields.contains(requestedField) || token.getDescribe().isAccessible())
+            ) {
                 queryFields.add(token.getDescribe().getName());
             }
         }

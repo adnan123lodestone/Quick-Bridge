@@ -1,4 +1,4 @@
-public with sharing class IntegrationWorkService {
+global with sharing class IntegrationWorkService {
     public static final String STATUS_PENDING = 'Pending';
     public static final String STATUS_PROCESSING = 'Processing';
     public static final String STATUS_RETRY = 'Retry';
